@@ -80,7 +80,7 @@ class Script(scripts.Script):
 
 		print("Loading midas model weights ..")
 
-		#"dpt_large" # DPT-Large
+		#"dpt_large"
 		if model_type == 0: 
 			model_path = f"{model_dir}/dpt_large-midas-2f21e586.pt"
 			print(model_path)
@@ -95,7 +95,7 @@ class Script(scripts.Script):
 			resize_mode = "minimal"
 			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
-		#"dpt_hybrid" #DPT-Hybrid
+		#"dpt_hybrid"
 		elif model_type == 1: 
 			model_path = f"{model_dir}/dpt_hybrid-midas-501f0c75.pt"
 			print(model_path)

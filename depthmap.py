@@ -1,11 +1,5 @@
-# Author: thygate@gmail.com
-#
-# install in AUTOMATIC1111's webui: 
-#    copy this file into scripts folder
-#    clone midas repo into repositories:
-#    	 git clone https://github.com/isl-org/MiDaS.git  repositories/midas
-#    pip install timm ??
-#
+# Author: thygate
+# https://github.com/thygate/stable-diffusion-webui-depthmap-script
 
 import modules.scripts as scripts
 import gradio as gr

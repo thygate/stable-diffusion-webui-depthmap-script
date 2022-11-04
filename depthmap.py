@@ -194,7 +194,7 @@ class Script(scripts.Script):
 			bits=2
 			depth_min = depth.min()
 			depth_max = depth.max()
-			max_val = 65535 #(2**(8*bits))-1
+			max_val = (2**(8*bits))-1
 
 			if depth_max - depth_min > np.finfo("float").eps:
 				out = max_val * (depth - depth_min) / (depth_max - depth_min)
@@ -202,18 +202,18 @@ class Script(scripts.Script):
 				out = np.zeros(depth.shape, dtype=depth.type)
 
 			img_output = out.astype("uint16")
-			img2 = np.zeros_like(processed.images[count])
-			img2[:,:,0] = img_output / 256.0
-			img2[:,:,1] = img_output / 256.0
-			img2[:,:,2] = img_output / 256.0
-
+			img_output2 = np.zeros_like(processed.images[count])
+			img_output2[:,:,0] = img_output / 256.0
+			img_output2[:,:,1] = img_output / 256.0
+			img_output2[:,:,2] = img_output / 256.0
+			
 			if not combine_output:
 				if show_depth:
-					processed.images.append(img_output)
+					processed.images.append(img_output2)
 				if save_depth:
-					images.save_image(Image.fromarray(img2), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
+					images.save_image(Image.fromarray(img_output), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
 			else:
-				img_concat = np.concatenate((processed.images[count], img2), axis=combine_output_axis)
+				img_concat = np.concatenate((processed.images[count], img_output2), axis=combine_output_axis)
 				if show_depth:
 					processed.images.append(img_concat)
 				if save_depth:

@@ -23,7 +23,7 @@ from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareF
 import numpy as np
 
 debug = False
-scriptname = "DepthMap v0.1.0"
+scriptname = "DepthMap v0.1.1"
 
 
 class Script(scripts.Script):
@@ -194,7 +194,7 @@ class Script(scripts.Script):
 			bits=2
 			depth_min = depth.min()
 			depth_max = depth.max()
-			max_val = (2**(8*bits))-1
+			max_val = 65535 #(2**(8*bits))-1
 
 			if depth_max - depth_min > np.finfo("float").eps:
 				out = max_val * (depth - depth_min) / (depth_max - depth_min)
@@ -203,9 +203,9 @@ class Script(scripts.Script):
 
 			img_output = out.astype("uint16")
 			img2 = np.zeros_like(processed.images[count])
-			img2[:,:,0] = img_output / 255.0
-			img2[:,:,1] = img_output / 255.0
-			img2[:,:,2] = img_output / 255.0
+			img2[:,:,0] = img_output / 256.0
+			img2[:,:,1] = img_output / 256.0
+			img2[:,:,2] = img_output / 256.0
 
 			if not combine_output:
 				if show_depth:

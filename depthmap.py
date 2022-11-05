@@ -23,7 +23,7 @@ from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareF
 import numpy as np
 
 debug = False
-scriptname = "DepthMap v0.1.1"
+scriptname = "DepthMap v0.1.2"
 
 
 class Script(scripts.Script):
@@ -37,14 +37,15 @@ class Script(scripts.Script):
 
 		model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small'], value='dpt_large', visible=False, type="index", elem_id="model_type")
 		compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index", visible=False)
+		net_size = gr.Slider(minimum=256, maximum=1024, step=128, label='Net size', value=384, visible=False)
 		save_depth = gr.Checkbox(label="Save DepthMap",value=True)
 		show_depth = gr.Checkbox(label="Show DepthMap",value=True)
 		combine_output = gr.Checkbox(label="Combine into one image.",value=True)
 		combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index", visible=False)
 
-		return [model_type, compute_device, save_depth, show_depth, combine_output, combine_output_axis]
+		return [model_type, net_size, compute_device, save_depth, show_depth, combine_output, combine_output_axis]
 
-	def run(self, p, model_type, compute_device, save_depth, show_depth, combine_output, combine_output_axis):
+	def run(self, p, model_type, net_size, compute_device, save_depth, show_depth, combine_output, combine_output_axis):
 
 		def download_file(filename, url):
 			print("Downloading midas model weights to %s" % filename)
@@ -130,6 +131,9 @@ class Script(scripts.Script):
 				mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
 			)
 
+		# override network size
+		net_w, net_h = net_size, net_size
+
 		# init transform
 		transform = Compose(
 			[
@@ -207,9 +211,11 @@ class Script(scripts.Script):
 			img_output2[:,:,1] = img_output / 256.0
 			img_output2[:,:,2] = img_output / 256.0
 			
+			#img_output2 = cv2.applyColorMap(img_output2, cv2.COLORMAP_HOT)
+
 			if not combine_output:
 				if show_depth:
-					processed.images.append(img_output2)
+					processed.images.append(img_output)
 				if save_depth:
 					images.save_image(Image.fromarray(img_output), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
 			else:

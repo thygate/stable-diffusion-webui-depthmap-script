@@ -13,6 +13,7 @@ import torch
 import cv2
 import requests
 import os.path
+import contextlib
 
 from torchvision.transforms import Compose
 from repositories.midas.midas.dpt_depth import DPTDepthModel
@@ -22,9 +23,7 @@ from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareF
 
 import numpy as np
 
-debug = False
-scriptname = "DepthMap v0.1.3"
-
+scriptname = "DepthMap v0.1.4"
 
 class Script(scripts.Script):
 	def title(self):
@@ -35,13 +34,13 @@ class Script(scripts.Script):
 
 	def ui(self, is_img2img):
 
-		model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small'], value='dpt_large', visible=True, type="index", elem_id="model_type")
-		compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index", visible=True)
-		net_size = gr.Slider(minimum=256, maximum=1024, step=128, label='Net size', value=384, visible=True)
+		model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small'], value='dpt_large', type="index", elem_id="model_type")
+		compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index")
+		net_size = gr.Slider(minimum=256, maximum=1024, step=128, label='Net size', value=384)
 		save_depth = gr.Checkbox(label="Save DepthMap",value=True)
 		show_depth = gr.Checkbox(label="Show DepthMap",value=True)
 		combine_output = gr.Checkbox(label="Combine into one image.",value=True)
-		combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index", visible=True)
+		combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index")
 
 		return [model_type, net_size, compute_device, save_depth, show_depth, combine_output, combine_output_axis]
 
@@ -156,7 +155,8 @@ class Script(scripts.Script):
 		# optimize
 		if device == torch.device("cuda"):
 			model = model.to(memory_format=torch.channels_last)  
-			model = model.half()
+			if not cmd_opts.no_half:
+				model = model.half()
 
 		model.to(device)
 
@@ -172,14 +172,14 @@ class Script(scripts.Script):
 			img = cv2.cvtColor(np.asarray(processed.images[count]), cv2.COLOR_BGR2RGB) / 255.0
 			img_input = transform({"image": img})["image"]
 
-			info = create_infotext(p, p.all_prompts, p.all_seeds, p.all_subseeds, "", 0, 0)
-
 			# compute
-			with torch.no_grad():
+			precision_scope = torch.autocast if shared.cmd_opts.precision == "autocast" and device == torch.device("cuda") else contextlib.nullcontext
+			with torch.no_grad(), precision_scope("cuda"):
 				sample = torch.from_numpy(img_input).to(device).unsqueeze(0)
 				if device == torch.device("cuda"):
-					sample = sample.to(memory_format=torch.channels_last)  
-					sample = sample.half()
+					sample = sample.to(memory_format=torch.channels_last) 
+					if not cmd_opts.no_half:
+						sample = sample.half()
 				prediction = model.forward(sample)
 				prediction = (
 					torch.nn.functional.interpolate(
@@ -195,23 +195,30 @@ class Script(scripts.Script):
 
 			# output
 			depth = prediction
-			bits=2
+			numbytes=2
 			depth_min = depth.min()
 			depth_max = depth.max()
-			max_val = (2**(8*bits))-1
+			max_val = (2**(8*numbytes))-1
 
+			# check output before mapping to 16 bit
 			if depth_max - depth_min > np.finfo("float").eps:
 				out = max_val * (depth - depth_min) / (depth_max - depth_min)
 			else:
 				out = np.zeros(depth.shape)
 			
+			# single channel, 16 bit image
 			img_output = out.astype("uint16")
+
+			# three channel, 8 bits per channel image
 			img_output2 = np.zeros_like(processed.images[count])
 			img_output2[:,:,0] = img_output / 256.0
 			img_output2[:,:,1] = img_output / 256.0
 			img_output2[:,:,2] = img_output / 256.0
 			
 			#img_output2 = cv2.applyColorMap(img_output2, cv2.COLORMAP_HOT)
+			
+			# get generation parameters
+			info = create_infotext(p, p.all_prompts, p.all_seeds, p.all_subseeds, "", 0, 0)
 
 			if not combine_output:
 				if show_depth:

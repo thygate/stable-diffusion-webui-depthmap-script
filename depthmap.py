@@ -23,7 +23,7 @@ from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareF
 import numpy as np
 
 debug = False
-scriptname = "DepthMap v0.1.2"
+scriptname = "DepthMap v0.1.3"
 
 
 class Script(scripts.Script):
@@ -35,13 +35,13 @@ class Script(scripts.Script):
 
 	def ui(self, is_img2img):
 
-		model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small'], value='dpt_large', visible=False, type="index", elem_id="model_type")
-		compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index", visible=False)
-		net_size = gr.Slider(minimum=256, maximum=1024, step=128, label='Net size', value=384, visible=False)
+		model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small'], value='dpt_large', visible=True, type="index", elem_id="model_type")
+		compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index", visible=True)
+		net_size = gr.Slider(minimum=256, maximum=1024, step=128, label='Net size', value=384, visible=True)
 		save_depth = gr.Checkbox(label="Save DepthMap",value=True)
 		show_depth = gr.Checkbox(label="Show DepthMap",value=True)
 		combine_output = gr.Checkbox(label="Combine into one image.",value=True)
-		combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index", visible=False)
+		combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index", visible=True)
 
 		return [model_type, net_size, compute_device, save_depth, show_depth, combine_output, combine_output_axis]
 

@@ -23,7 +23,7 @@ from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareF
 
 import numpy as np
 
-scriptname = "DepthMap v0.1.4"
+scriptname = "DepthMap v0.1.5"
 
 class Script(scripts.Script):
 	def title(self):
@@ -224,13 +224,16 @@ class Script(scripts.Script):
 				if show_depth:
 					processed.images.append(img_output)
 				if save_depth:
-					images.save_image(Image.fromarray(img_output), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
+					# only save 16 bit single channel image when PNG format is selected
+					if opts.samples_format == "png":
+						images.save_image(Image.fromarray(img_output), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
+					else:
+						images.save_image(Image.fromarray(img_output2), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
 			else:
 				img_concat = np.concatenate((processed.images[count], img_output2), axis=combine_output_axis)
 				if show_depth:
 					processed.images.append(img_concat)
 				if save_depth:
 					images.save_image(Image.fromarray(img_concat), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
-
 
 		return processed

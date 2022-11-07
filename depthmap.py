@@ -22,8 +22,9 @@ from repositories.midas.midas.midas_net_custom import MidasNet_small
 from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareForNet
 
 import numpy as np
+#import matplotlib.pyplot as plt
 
-scriptname = "DepthMap v0.1.5"
+scriptname = "DepthMap v0.1.6"
 
 class Script(scripts.Script):
 	def title(self):
@@ -34,17 +35,18 @@ class Script(scripts.Script):
 
 	def ui(self, is_img2img):
 
-		model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small'], value='dpt_large', type="index", elem_id="model_type")
 		compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index")
+		model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small'], value='dpt_large', type="index", elem_id="model_type")
 		net_size = gr.Slider(minimum=256, maximum=1024, step=128, label='Net size', value=384)
+		invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)",value=False)
 		save_depth = gr.Checkbox(label="Save DepthMap",value=True)
 		show_depth = gr.Checkbox(label="Show DepthMap",value=True)
 		combine_output = gr.Checkbox(label="Combine into one image.",value=True)
 		combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index")
 
-		return [model_type, net_size, compute_device, save_depth, show_depth, combine_output, combine_output_axis]
+		return [compute_device, model_type, net_size, invert_depth, save_depth, show_depth, combine_output, combine_output_axis]
 
-	def run(self, p, model_type, net_size, compute_device, save_depth, show_depth, combine_output, combine_output_axis):
+	def run(self, p, compute_device, model_type, net_size, invert_depth, save_depth, show_depth, combine_output, combine_output_axis):
 
 		def download_file(filename, url):
 			print("Downloading midas model weights to %s" % filename)
@@ -200,7 +202,7 @@ class Script(scripts.Script):
 			depth_max = depth.max()
 			max_val = (2**(8*numbytes))-1
 
-			# check output before mapping to 16 bit
+			# check output before normalizing and mapping to 16 bit
 			if depth_max - depth_min > np.finfo("float").eps:
 				out = max_val * (depth - depth_min) / (depth_max - depth_min)
 			else:
@@ -209,14 +211,16 @@ class Script(scripts.Script):
 			# single channel, 16 bit image
 			img_output = out.astype("uint16")
 
+			# invert depth map
+			if invert_depth:
+				img_output = cv2.bitwise_not(img_output)
+
 			# three channel, 8 bits per channel image
 			img_output2 = np.zeros_like(processed.images[count])
 			img_output2[:,:,0] = img_output / 256.0
 			img_output2[:,:,1] = img_output / 256.0
 			img_output2[:,:,2] = img_output / 256.0
-			
-			#img_output2 = cv2.applyColorMap(img_output2, cv2.COLORMAP_HOT)
-			
+
 			# get generation parameters
 			info = create_infotext(p, p.all_prompts, p.all_seeds, p.all_subseeds, "", 0, 0)
 
@@ -235,5 +239,9 @@ class Script(scripts.Script):
 					processed.images.append(img_concat)
 				if save_depth:
 					images.save_image(Image.fromarray(img_concat), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
+
+			#colormap = plt.get_cmap('inferno')
+			#heatmap = (colormap(img_output2[:,:,0] / 256.0) * 2**16).astype(np.uint16)[:,:,:3]
+			#processed.images.append(heatmap)
 
 		return processed

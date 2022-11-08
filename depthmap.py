@@ -24,7 +24,7 @@ from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareF
 import numpy as np
 #import matplotlib.pyplot as plt
 
-scriptname = "DepthMap v0.1.6"
+scriptname = "DepthMap v0.1.7"
 
 class Script(scripts.Script):
 	def title(self):
@@ -222,11 +222,14 @@ class Script(scripts.Script):
 			img_output2[:,:,2] = img_output / 256.0
 
 			# get generation parameters
-			info = create_infotext(p, p.all_prompts, p.all_seeds, p.all_subseeds, "", 0, 0)
+			if hasattr(p, 'all_prompts') and opts.enable_pnginfo:
+				info = create_infotext(p, p.all_prompts, p.all_seeds, p.all_subseeds, "", 0, 0)
+			else:
+				info = None
 
 			if not combine_output:
 				if show_depth:
-					processed.images.append(img_output)
+					processed.images.append(Image.fromarray(img_output))
 				if save_depth:
 					# only save 16 bit single channel image when PNG format is selected
 					if opts.samples_format == "png":
@@ -236,12 +239,14 @@ class Script(scripts.Script):
 			else:
 				img_concat = np.concatenate((processed.images[count], img_output2), axis=combine_output_axis)
 				if show_depth:
-					processed.images.append(img_concat)
+					processed.images.append(Image.fromarray(img_concat))
 				if save_depth:
 					images.save_image(Image.fromarray(img_concat), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
 
 			#colormap = plt.get_cmap('inferno')
 			#heatmap = (colormap(img_output2[:,:,0] / 256.0) * 2**16).astype(np.uint16)[:,:,:3]
 			#processed.images.append(heatmap)
+
+			del model
 
 		return processed

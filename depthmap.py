@@ -4,12 +4,12 @@
 import modules.scripts as scripts
 import gradio as gr
 
-from modules import processing, images, shared, sd_samplers
+from modules import processing, images, shared, sd_samplers, devices
 from modules.processing import create_infotext, process_images, Processed
 from modules.shared import opts, cmd_opts, state, Options
 from PIL import Image
 
-import torch
+import torch, gc
 import cv2
 import requests
 import os.path
@@ -24,7 +24,7 @@ from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareF
 import numpy as np
 #import matplotlib.pyplot as plt
 
-scriptname = "DepthMap v0.1.8"
+scriptname = "DepthMap v0.1.9"
 
 class Script(scripts.Script):
 	def title(self):
@@ -62,6 +62,10 @@ class Script(scripts.Script):
 		# sd process 
 		processed = processing.process_images(p)
 
+		# unload sd model
+		shared.sd_model.cond_stage_model.to(devices.cpu)
+		shared.sd_model.first_stage_model.to(devices.cpu)
+
 		print('\n%s' % scriptname)
 		
 		# init torch device
@@ -76,7 +80,7 @@ class Script(scripts.Script):
 		# create path to model if not present
 		os.makedirs(model_dir, exist_ok=True)
 
-		print("Loading midas model weights ..")
+		print("Loading midas model weights from ", end=" ")
 
 		try:
 			#"dpt_large"
@@ -249,7 +253,18 @@ class Script(scripts.Script):
 				#colormap = plt.get_cmap('inferno')
 				#heatmap = (colormap(img_output2[:,:,0] / 256.0) * 2**16).astype(np.uint16)[:,:,:3]
 				#processed.images.append(heatmap)
+
+		except RuntimeError as e:
+			if 'out of memory' in str(e):
+				print("ERROR: out of memory, could not generate depthmap !")
+
 		finally:
 			del model
+			gc.collect()
+			devices.torch_gc()
+
+			# reload sd model
+			shared.sd_model.cond_stage_model.to(devices.device)
+			shared.sd_model.first_stage_model.to(devices.device)
 
 		return processed

@@ -24,7 +24,7 @@ from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareF
 import numpy as np
 #import matplotlib.pyplot as plt
 
-scriptname = "DepthMap v0.1.9"
+scriptname = "DepthMap v0.2.0"
 
 class Script(scripts.Script):
 	def title(self):
@@ -257,6 +257,8 @@ class Script(scripts.Script):
 		except RuntimeError as e:
 			if 'out of memory' in str(e):
 				print("ERROR: out of memory, could not generate depthmap !")
+			else:
+				print(e)
 
 		finally:
 			del model

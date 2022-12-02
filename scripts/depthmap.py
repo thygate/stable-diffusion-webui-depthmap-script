@@ -230,7 +230,7 @@ class Script(scripts.Script):
 
 				# get generation parameters
 				if hasattr(p, 'all_prompts') and opts.enable_pnginfo:
-					info = create_infotext(p, p.all_prompts, p.all_seeds, p.all_subseeds, "", 0, 0)
+					info = create_infotext(p, p.all_prompts, p.all_seeds, p.all_subseeds, "", 0, count-1)
 				else:
 					info = None
 
@@ -240,15 +240,15 @@ class Script(scripts.Script):
 					if save_depth:
 						# only save 16 bit single channel image when PNG format is selected
 						if opts.samples_format == "png":
-							images.save_image(Image.fromarray(img_output), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
+							images.save_image(Image.fromarray(img_output), p.outpath_samples, "", processed.all_seeds[count-1], processed.all_prompts[count-1], opts.samples_format, info=info, p=p, suffix="_depth")
 						else:
-							images.save_image(Image.fromarray(img_output2), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
+							images.save_image(Image.fromarray(img_output2), p.outpath_samples, "", processed.all_seeds[count-1], processed.all_prompts[count-1], opts.samples_format, info=info, p=p, suffix="_depth")
 				else:
 					img_concat = np.concatenate((processed.images[count], img_output2), axis=combine_output_axis)
 					if show_depth:
 						processed.images.append(Image.fromarray(img_concat))
 					if save_depth:
-						images.save_image(Image.fromarray(img_concat), p.outpath_samples, "", processed.seed, p.prompt, opts.samples_format, info=info, p=p, suffix="_depth")
+						images.save_image(Image.fromarray(img_concat), p.outpath_samples, "", processed.all_seeds[count-1], processed.all_prompts[count-1], opts.samples_format, info=info, p=p, suffix="_depth")
 
 				#colormap = plt.get_cmap('inferno')
 				#heatmap = (colormap(img_output2[:,:,0] / 256.0) * 2**16).astype(np.uint16)[:,:,:3]

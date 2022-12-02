@@ -24,7 +24,7 @@ from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareF
 import numpy as np
 #import matplotlib.pyplot as plt
 
-scriptname = "DepthMap v0.2.0"
+scriptname = "DepthMap v0.2.1"
 
 class Script(scripts.Script):
 	def title(self):

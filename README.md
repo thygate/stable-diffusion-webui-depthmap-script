@@ -7,6 +7,8 @@ To generate realistic depth maps from a single image, this script uses code and 
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.2.3 bugfix
+    * path error on linux fixed
 * v0.2.2 new features
     * added (experimental) support for AdelaiDepth/LeReS (GPU Only!)
     * new option to view depthmap as heatmap

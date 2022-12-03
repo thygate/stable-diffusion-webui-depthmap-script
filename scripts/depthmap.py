@@ -20,7 +20,7 @@ import contextlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-path_monorepo = Path.joinpath(Path().resolve(), "repositories\BoostingMonocularDepth")
+path_monorepo = Path.joinpath(Path().resolve(), "repositories/BoostingMonocularDepth")
 sys.path.append(str(path_monorepo))
 
 # AdelaiDepth imports

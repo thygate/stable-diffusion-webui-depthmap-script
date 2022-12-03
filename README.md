@@ -1,12 +1,16 @@
 ﻿# Depth Maps for Stable Diffusion WebUI
 This script is an addon for [AUTOMATIC1111's Stable Diffusion Web UI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depthmaps` from the generated images. The result can be viewed on 3D or holographic devices like VR headsets or [loogingglass](https://lookingglassfactory.com/) display, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
 
-To generate realistic depth maps from a single image, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) repository by Intel ISL. See [https://pytorch.org/hub/intelisl_midas_v2/](https://pytorch.org/hub/intelisl_midas_v2/) for more info.
+To generate realistic depth maps from a single image, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) repository by Intel ISL (see [https://pytorch.org/hub/intelisl_midas_v2/](https://pytorch.org/hub/intelisl_midas_v2/) for more info), or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. 
 
 ## Examples
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
-## Updates
+## Changelog
+* v0.2.2 new features
+    * added (experimental) support for AdelaiDepth/LeReS (GPU Only!)
+    * new option to view depthmap as heatmap
+    * optimised ui layout
 * v0.2.1 bugfix
     * Correct seed is now used in filename and pnginfo when running batches. (see [issue](https://github.com/thygate/stable-diffusion-webui-depthmap-script/issues/35))
 * v0.2.0 upgrade
@@ -37,6 +41,7 @@ To generate realistic depth maps from a single image, this script uses code and 
     * when not combining, depthmap is now saved as single channel 16 bit
 
 ## Install instructions
+The script is now also available to install from the `Available` subtab under the `Extensions` tab in the WebUI.
 ### Automatic installation 
 * In the WebUI, in the `Extensions` tab, in the `Install from URL` subtab, enter this repository 
 `https://github.com/thygate/stable-diffusion-webui-depthmap-script`
@@ -44,7 +49,9 @@ To generate realistic depth maps from a single image, this script uses code and 
 
 >The midas repository will be cloned to /repositories/midas
 
->Model `weights` will be downloaded automatically on first use and saved to /models/midas.
+>The [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) repository will be cloned to /repositories/BoostingMonocularDepth and added to sys.path
+
+>Model `weights` will be downloaded automatically on first use and saved to /models/midas or /models/leres
 
 ## Usage
 Select the "DepthMap vX.X.X" script from the script selection box in either txt2img or img2img.
@@ -52,7 +59,8 @@ Select the "DepthMap vX.X.X" script from the script selection box in either txt2
 
 The model can `Compute on` GPU and CPU, use CPU if low on VRAM. 
 
-There are four models available from the `Model` dropdown : dpt_large, dpt_hybrid, midas_v21_small, and midas_v21. See the [MiDaS](https://github.com/isl-org/MiDaS) repository for more info. The dpt_hybrid model yields good results in our experience, and is much smaller than the dpt_large model, which means shorter loading times when the model is reloaded on every run.
+There are five models available from the `Model` dropdown, the first four : dpt_large, dpt_hybrid, midas_v21_small, and midas_v21. See the [MiDaS](https://github.com/isl-org/MiDaS) repository for more info. The dpt_hybrid model yields good results in my experience, and is much smaller than the dpt_large model, which means shorter loading times when the model is reloaded on every run.
+For the fifth model, res101, see [AdelaiDepth/LeReS](https://github.com/aim-uofa/AdelaiDepth/tree/main/LeReS) for more info. It can only compute on GPU at this time.
 
 Net size can be set with `net width` and `net height`, or will be the same as the input image when `Match input size` is enabled. There is a trade-off between structural consistency and high-frequency details with respect to net size (see [observations](https://github.com/compphoto/BoostingMonocularDepth#observations)). Large maps will also need lots of VRAM.
 
@@ -61,6 +69,8 @@ When enabled, `Invert DepthMap` will result in a depthmap with black near and wh
 Regardless of global settings, `Save DepthMap` will always save the depthmap in the default txt2img or img2img directory with the filename suffix '_depth'. Generation parameters are saved with the image if enabled in settings.
 
 To see the generated output in the webui `Show DepthMap` should be enabled. When using Batch img2img this option should also be enabled.
+
+To make the depthmap easier to analyze for human eyes, `Show HeatMap` show an extra image in the WebUI that has a color gradient applied. It is not saved.
 
 When `Combine into one image` is enabled, the depthmap will be combined with the original image, the orientation can be selected with `Combine axis`. When disabled, the depthmap will be saved as a 16 bit single channel PNG as opposed to a three channel (RGB), 8 bit per channel image when the option is enabled.
 > 💡 Saving as any format other than PNG always produces an 8 bit, 3 channel RGB image. A single channel 16 bit image is only supported when saving as PNG.
@@ -92,7 +102,10 @@ Feel free to comment and share in the discussions.
 
 ## Acknowledgements
 
-This project uses code and information from following papers, from the repository [github.com/isl-org/MiDaS](https://github.com/isl-org/MiDaS) :
+This project uses code and information from following papers :
+
+MiDaS :
+
 ```
 @ARTICLE {Ranftl2022,
     author  = "Ren\'{e} Ranftl and Katrin Lasinger and David Hafner and Konrad Schindler and Vladlen Koltun",
@@ -112,5 +125,33 @@ Dense Prediction Transformers, DPT-based model :
 	title     = {Vision Transformers for Dense Prediction},
 	journal   = {ICCV},
 	year      = {2021},
+}
+```
+
+AdelaiDepth/LeReS :
+
+```
+@article{yin2022towards,
+  title={Towards Accurate Reconstruction of 3D Scene Shape from A Single Monocular Image},
+  author={Yin, Wei and Zhang, Jianming and Wang, Oliver and Niklaus, Simon and Chen, Simon and Liu, Yifan and Shen, Chunhua},
+  journal={TPAMI},
+  year={2022}
+}
+@inproceedings{Wei2021CVPR,
+  title     =  {Learning to Recover 3D Scene Shape from a Single Image},
+  author    =  {Wei Yin and Jianming Zhang and Oliver Wang and Simon Niklaus and Long Mai and Simon Chen and Chunhua Shen},
+  booktitle =  {Proc. IEEE Conf. Comp. Vis. Patt. Recogn. (CVPR)},
+  year      =  {2021}
+}
+```
+
+Boosting Monocular Depth Estimation Models to High-Resolution via Content-Adaptive Multi-Resolution Merging :
+
+```
+@INPROCEEDINGS{Miangoleh2021Boosting,
+author={S. Mahdi H. Miangoleh and Sebastian Dille and Long Mai and Sylvain Paris and Ya\u{g}{\i}z Aksoy},
+title={Boosting Monocular Depth Estimation Models to High-Resolution via Content-Adaptive Multi-Resolution Merging},
+journal={Proc. CVPR},
+year={2021},
 }
 ```

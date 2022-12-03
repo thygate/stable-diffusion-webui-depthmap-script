@@ -47,7 +47,6 @@ The script is now also available to install from the `Available` subtab under th
 
 ### Update instructions
 In the WebUI, in the `Extensions` tab, in the `Installed` subtab, click `Check for Updates` and then `Apply and restart UI`.
- and click install.
 
 ### Automatic installation 
 * In the WebUI, in the `Extensions` tab, in the `Install from URL` subtab, enter this repository 

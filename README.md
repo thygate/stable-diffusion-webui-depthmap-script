@@ -44,6 +44,11 @@ To generate realistic depth maps from a single image, this script uses code and 
 
 ## Install instructions
 The script is now also available to install from the `Available` subtab under the `Extensions` tab in the WebUI.
+
+## Update instructions
+In the WebUI, in the `Extensions` tab, in the `Installed` subtab, click `Check for Updates` and then `Apply and restart UI`.
+ and click install.
+
 ### Automatic installation 
 * In the WebUI, in the `Extensions` tab, in the `Install from URL` subtab, enter this repository 
 `https://github.com/thygate/stable-diffusion-webui-depthmap-script`

@@ -34,7 +34,7 @@ from repositories.midas.midas.midas_net import MidasNet
 from repositories.midas.midas.midas_net_custom import MidasNet_small
 from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareForNet
 
-scriptname = "DepthMap v0.2.2"
+scriptname = "DepthMap v0.2.3"
 
 class Script(scripts.Script):
 	def title(self):

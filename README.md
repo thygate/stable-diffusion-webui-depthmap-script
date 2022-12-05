@@ -81,7 +81,7 @@ Regardless of global settings, `Save DepthMap` will always save the depthmap in 
 
 To see the generated output in the webui `Show DepthMap` should be enabled. When using Batch img2img this option should also be enabled.
 
-To make the depthmap easier to analyze for human eyes, `Show HeatMap` show an extra image in the WebUI that has a color gradient applied. It is not saved.
+To make the depthmap easier to analyze for human eyes, `Show HeatMap` shows an extra image in the WebUI that has a color gradient applied. It is not saved.
 
 When `Combine into one image` is enabled, the depthmap will be combined with the original image, the orientation can be selected with `Combine axis`. When disabled, the depthmap will be saved as a 16 bit single channel PNG as opposed to a three channel (RGB), 8 bit per channel image when the option is enabled.
 > 💡 Saving as any format other than PNG always produces an 8 bit, 3 channel RGB image. A single channel 16 bit image is only supported when saving as PNG.

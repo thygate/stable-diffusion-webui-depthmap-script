@@ -1,12 +1,15 @@
-﻿# Depth Maps for Stable Diffusion WebUI
-This script is an addon for [AUTOMATIC1111's Stable Diffusion Web UI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depthmaps` from the generated images. The result can be viewed on 3D or holographic devices like VR headsets or [loogingglass](https://lookingglassfactory.com/) display, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
+﻿# High Resolution Depth Maps for Stable Diffusion WebUI
+This script is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depthmaps` from the generated images. The result can be viewed on 3D or holographic devices like VR headsets or [loogingglass](https://lookingglassfactory.com/) display, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
 
-To generate realistic depth maps from a single image, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) repository by Intel ISL (see [https://pytorch.org/hub/intelisl_midas_v2/](https://pytorch.org/hub/intelisl_midas_v2/) for more info), or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. 
+To generate realistic depth maps from a single image, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) repository by Intel ISL (see [https://pytorch.org/hub/intelisl_midas_v2/](https://pytorch.org/hub/intelisl_midas_v2/) for more info), or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. Multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) is used to generate high resolution depth maps.
 
 ## Examples
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.2.4 high resolution depthmaps
+    * multi-resolution merging is now implemented, significantly improving results!
+    * res101 can now also compute on CPU
 * v0.2.3 bugfix
     * path error on linux fixed
 * v0.2.2 new features
@@ -45,7 +48,7 @@ To generate realistic depth maps from a single image, this script uses code and 
 ## Install instructions
 The script is now also available to install from the `Available` subtab under the `Extensions` tab in the WebUI.
 
-### Update instructions
+### Updating
 In the WebUI, in the `Extensions` tab, in the `Installed` subtab, click `Check for Updates` and then `Apply and restart UI`.
 
 ### Automatic installation 
@@ -57,7 +60,7 @@ In the WebUI, in the `Extensions` tab, in the `Installed` subtab, click `Check f
 
 >The [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) repository will be cloned to /repositories/BoostingMonocularDepth and added to sys.path
 
->Model `weights` will be downloaded automatically on first use and saved to /models/midas or /models/leres
+>Model `weights` will be downloaded automatically on first use and saved to /models/midas, /models/leres and /models/pix2pix
 
 ## Usage
 Select the "DepthMap vX.X.X" script from the script selection box in either txt2img or img2img.
@@ -69,6 +72,8 @@ There are five models available from the `Model` dropdown, the first four : dpt_
 For the fifth model, res101, see [AdelaiDepth/LeReS](https://github.com/aim-uofa/AdelaiDepth/tree/main/LeReS) for more info. It can only compute on GPU at this time.
 
 Net size can be set with `net width` and `net height`, or will be the same as the input image when `Match input size` is enabled. There is a trade-off between structural consistency and high-frequency details with respect to net size (see [observations](https://github.com/compphoto/BoostingMonocularDepth#observations)). Large maps will also need lots of VRAM.
+
+`Boost` will enable multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) and will significantly improve the results. Mitigating the observations mentioned above. Net size is ignored when enabled. Best results with res101.
 
 When enabled, `Invert DepthMap` will result in a depthmap with black near and white far.
 
@@ -87,6 +92,7 @@ When `Combine into one image` is enabled, the depthmap will be combined with the
     - Yes, in img2img, set denoising strength to 0. This will effectively skip stable diffusion and use the input image. You will still have to set the correct size, and need to select `Crop and resize` instead of `Just resize` when the input image resolution does not match the set size perfectly.
  * `Can I run this on google colab ?`
     - You can run the MiDaS network on their colab linked here https://pytorch.org/hub/intelisl_midas_v2/
+    - You can run BoostingMonocularDepth on their colab linked here : https://colab.research.google.com/github/compphoto/BoostingMonocularDepth/blob/main/Boostmonoculardepth.ipynb
 
 ## Viewing
 
@@ -113,7 +119,7 @@ This project uses code and information from following papers :
 MiDaS :
 
 ```
-@ARTICLE {Ranftl2022,
+@article {Ranftl2022,
     author  = "Ren\'{e} Ranftl and Katrin Lasinger and David Hafner and Konrad Schindler and Vladlen Koltun",
     title   = "Towards Robust Monocular Depth Estimation: Mixing Datasets for Zero-Shot Cross-Dataset Transfer",
     journal = "IEEE Transactions on Pattern Analysis and Machine Intelligence",
@@ -138,26 +144,26 @@ AdelaiDepth/LeReS :
 
 ```
 @article{yin2022towards,
-  title={Towards Accurate Reconstruction of 3D Scene Shape from A Single Monocular Image},
-  author={Yin, Wei and Zhang, Jianming and Wang, Oliver and Niklaus, Simon and Chen, Simon and Liu, Yifan and Shen, Chunhua},
-  journal={TPAMI},
-  year={2022}
+	title={Towards Accurate Reconstruction of 3D Scene Shape from A Single Monocular Image},
+	author={Yin, Wei and Zhang, Jianming and Wang, Oliver and Niklaus, Simon and Chen, Simon and Liu, Yifan and Shen, Chunhua},
+	journal={TPAMI},
+	year={2022}
 }
 @inproceedings{Wei2021CVPR,
-  title     =  {Learning to Recover 3D Scene Shape from a Single Image},
-  author    =  {Wei Yin and Jianming Zhang and Oliver Wang and Simon Niklaus and Long Mai and Simon Chen and Chunhua Shen},
-  booktitle =  {Proc. IEEE Conf. Comp. Vis. Patt. Recogn. (CVPR)},
-  year      =  {2021}
+	title     =  {Learning to Recover 3D Scene Shape from a Single Image},
+	author    =  {Wei Yin and Jianming Zhang and Oliver Wang and Simon Niklaus and Long Mai and Simon Chen and Chunhua Shen},
+	booktitle =  {Proc. IEEE Conf. Comp. Vis. Patt. Recogn. (CVPR)},
+	year      =  {2021}
 }
 ```
 
 Boosting Monocular Depth Estimation Models to High-Resolution via Content-Adaptive Multi-Resolution Merging :
 
 ```
-@INPROCEEDINGS{Miangoleh2021Boosting,
-author={S. Mahdi H. Miangoleh and Sebastian Dille and Long Mai and Sylvain Paris and Ya\u{g}{\i}z Aksoy},
-title={Boosting Monocular Depth Estimation Models to High-Resolution via Content-Adaptive Multi-Resolution Merging},
-journal={Proc. CVPR},
-year={2021},
+@inproceedings{Miangoleh2021Boosting,
+	title={Boosting Monocular Depth Estimation Models to High-Resolution via Content-Adaptive Multi-Resolution Merging},
+	author={S. Mahdi H. Miangoleh and Sebastian Dille and Long Mai and Sylvain Paris and Ya\u{g}{\i}z Aksoy},
+	journal={Proc. CVPR},
+	year={2021},
 }
 ```

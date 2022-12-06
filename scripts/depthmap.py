@@ -47,7 +47,7 @@ import pix2pix.data
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.2.4"
+scriptname = "DepthMap v0.2.5"
 
 class Script(scripts.Script):
 	def title(self):
@@ -79,15 +79,6 @@ class Script(scripts.Script):
 
 	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis):
 
-		def download_file(filename, url):
-			print("Downloading model weights to %s" % filename)
-			with open(filename, 'wb') as fout:
-				response = requests.get(url, stream=True)
-				response.raise_for_status()
-				# Write response data to file
-				for block in response.iter_content(4096):
-					fout.write(block)
-
 		# sd process 
 		processed = processing.process_images(p)
 
@@ -99,7 +90,7 @@ class Script(scripts.Script):
 		
 		# init torch device
 		global device
-		if compute_device == 0: #or model_type == 4:
+		if compute_device == 0:
 			device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		else:
 			device = torch.device("cpu")
@@ -109,12 +100,12 @@ class Script(scripts.Script):
 		model_dir = "./models/midas"
 		if model_type == 4:
 			model_dir = "./models/leres"
-		# create path to model if not present
+		# create paths to model if not present
 		os.makedirs(model_dir, exist_ok=True)
-
-		print("Loading model weights from ", end=" ")
+		os.makedirs('./models/pix2pix', exist_ok=True)
 
 		try:
+			print("Loading model weights from ", end=" ")
 			#"dpt_large"
 			if model_type == 0: 
 				model_path = f"{model_dir}/dpt_large-midas-2f21e586.pt"
@@ -232,161 +223,7 @@ class Script(scripts.Script):
 					else:
 						prediction = estimatemidas(img, model, net_width, net_height, resize_mode, normalization)
 				else:
-					if model_type == 4:
-						net_receptive_field_size = 448
-						patch_netsize = 2 * net_receptive_field_size
-					else:
-						net_receptive_field_size = 384
-						patch_netsize = 2 * net_receptive_field_size
-
-					gc.collect()
-					devices.torch_gc()
-
-					# Generate mask used to smoothly blend the local pathc estimations to the base estimate.
-					# It is arbitrarily large to avoid artifacts during rescaling for each crop.
-					mask_org = generatemask((3000, 3000))
-					mask = mask_org.copy()
-
-					# Value x of R_x defined in the section 5 of the main paper.
-					r_threshold_value = 0.2
-					#if R0:
-					#	r_threshold_value = 0
-
-					input_resolution = img.shape
-					scale_threshold = 3  # Allows up-scaling with a scale up to 3
-
-					# Find the best input resolution R-x. The resolution search described in section 5-double estimation of the main paper and section B of the
-					# supplementary material.
-					whole_image_optimal_size, patch_scale = calculateprocessingres(img, net_receptive_field_size, r_threshold_value, scale_threshold, whole_size_threshold)
-
-					print('wholeImage being processed in :', whole_image_optimal_size)
-
-					# Generate the base estimate using the double estimation.
-					whole_estimate = doubleestimate(img, net_receptive_field_size, whole_image_optimal_size, pix2pixsize, model, model_type, pix2pixmodel)
-					
-					# Compute the multiplier described in section 6 of the main paper to make sure our initial patch can select
-					# small high-density regions of the image.
-					global factor
-					factor = max(min(1, 4 * patch_scale * whole_image_optimal_size / whole_size_threshold), 0.2)
-					print('Adjust factor is:', 1/factor)
-
-					# Compute the default target resolution.
-					if img.shape[0] > img.shape[1]:
-						a = 2 * whole_image_optimal_size
-						b = round(2 * whole_image_optimal_size * img.shape[1] / img.shape[0])
-					else:
-						a = round(2 * whole_image_optimal_size * img.shape[0] / img.shape[1])
-						b = 2 * whole_image_optimal_size
-					b = int(round(b / factor))
-					a = int(round(a / factor))
-
-					"""
-					# recompute a, b and saturate to max res.
-					if max(a,b) > max_res:
-						print('Default Res is higher than max-res: Reducing final resolution')
-						if img.shape[0] > img.shape[1]:
-							a = max_res
-							b = round(option.max_res * img.shape[1] / img.shape[0])
-						else:
-							a = round(option.max_res * img.shape[0] / img.shape[1])
-							b = max_res
-						b = int(b)
-						a = int(a)
-					"""
-
-					img = cv2.resize(img, (b, a), interpolation=cv2.INTER_CUBIC)
-
-					# Extract selected patches for local refinement
-					base_size = net_receptive_field_size * 2
-					patchset = generatepatchs(img, base_size)
-
-					print('Target resolution: ', img.shape)
-
-					# Computing a scale in case user prompted to generate the results as the same resolution of the input.
-					# Notice that our method output resolution is independent of the input resolution and this parameter will only
-					# enable a scaling operation during the local patch merge implementation to generate results with the same resolution
-					# as the input.
-					"""
-					if output_resolution == 1:
-						mergein_scale = input_resolution[0] / img.shape[0]
-						print('Dynamicly change merged-in resolution; scale:', mergein_scale)
-					else:
-						mergein_scale = 1
-					"""
-					# always rescale to input res for now
-					mergein_scale = input_resolution[0] / img.shape[0]
-
-					imageandpatchs = ImageandPatchs('', '', patchset, img, mergein_scale)
-					whole_estimate_resized = cv2.resize(whole_estimate, (round(img.shape[1]*mergein_scale),
-														round(img.shape[0]*mergein_scale)), interpolation=cv2.INTER_CUBIC)
-					imageandpatchs.set_base_estimate(whole_estimate_resized.copy())
-					imageandpatchs.set_updated_estimate(whole_estimate_resized.copy())
-
-					print('Resulting depthmap resolution will be :', whole_estimate_resized.shape[:2])
-					print('patches to process: '+str(len(imageandpatchs)))
-
-					# Enumerate through all patches, generate their estimations and refining the base estimate.
-					for patch_ind in range(len(imageandpatchs)):
-						
-						# Get patch information
-						patch = imageandpatchs[patch_ind] # patch object
-						patch_rgb = patch['patch_rgb'] # rgb patch
-						patch_whole_estimate_base = patch['patch_whole_estimate_base'] # corresponding patch from base
-						rect = patch['rect'] # patch size and location
-						patch_id = patch['id'] # patch ID
-						org_size = patch_whole_estimate_base.shape # the original size from the unscaled input
-						print('\t processing patch', patch_ind, '/', len(imageandpatchs)-1, '|', rect)
-
-						# We apply double estimation for patches. The high resolution value is fixed to twice the receptive
-						# field size of the network for patches to accelerate the process.
-						patch_estimation = doubleestimate(patch_rgb, net_receptive_field_size, patch_netsize, pix2pixsize, model, model_type, pix2pixmodel)
-						patch_estimation = cv2.resize(patch_estimation, (pix2pixsize, pix2pixsize), interpolation=cv2.INTER_CUBIC)
-						patch_whole_estimate_base = cv2.resize(patch_whole_estimate_base, (pix2pixsize, pix2pixsize), interpolation=cv2.INTER_CUBIC)
-
-						# Merging the patch estimation into the base estimate using our merge network:
-						# We feed the patch estimation and the same region from the updated base estimate to the merge network
-						# to generate the target estimate for the corresponding region.
-						pix2pixmodel.set_input(patch_whole_estimate_base, patch_estimation)
-
-						# Run merging network
-						pix2pixmodel.test()
-						visuals = pix2pixmodel.get_current_visuals()
-
-						prediction_mapped = visuals['fake_B']
-						prediction_mapped = (prediction_mapped+1)/2
-						prediction_mapped = prediction_mapped.squeeze().cpu().numpy()
-
-						mapped = prediction_mapped
-
-						# We use a simple linear polynomial to make sure the result of the merge network would match the values of
-						# base estimate
-						p_coef = np.polyfit(mapped.reshape(-1), patch_whole_estimate_base.reshape(-1), deg=1)
-						merged = np.polyval(p_coef, mapped.reshape(-1)).reshape(mapped.shape)
-
-						merged = cv2.resize(merged, (org_size[1],org_size[0]), interpolation=cv2.INTER_CUBIC)
-
-						# Get patch size and location
-						w1 = rect[0]
-						h1 = rect[1]
-						w2 = w1 + rect[2]
-						h2 = h1 + rect[3]
-
-						# To speed up the implementation, we only generate the Gaussian mask once with a sufficiently large size
-						# and resize it to our needed size while merging the patches.
-						if mask.shape != org_size:
-							mask = cv2.resize(mask_org, (org_size[1],org_size[0]), interpolation=cv2.INTER_LINEAR)
-
-						tobemergedto = imageandpatchs.estimation_updated_image
-
-						# Update the whole estimation:
-						# We use a simple Gaussian mask to blend the merged patch region with the base estimate to ensure seamless
-						# blending at the boundaries of the patch region.
-						tobemergedto[h1:h2, w1:w2] = np.multiply(tobemergedto[h1:h2, w1:w2], 1 - mask) + np.multiply(merged, mask)
-						imageandpatchs.set_updated_estimate(tobemergedto)
-
-					# output
-					prediction = cv2.resize(imageandpatchs.estimation_updated_image, (input_resolution[1], input_resolution[0]), interpolation=cv2.INTER_CUBIC)
-
+					prediction = estimateboost(img, model, model_type, pix2pixmodel)
 
 				# output
 				depth = prediction
@@ -450,9 +287,11 @@ class Script(scripts.Script):
 				print(e)
 
 		finally:
-			del model
-			if boost:
+			if 'model' in locals():
+				del model
+			if boost and 'pix2pixmodel' in locals():
 				del pix2pixmodel
+
 			gc.collect()
 			devices.torch_gc()
 
@@ -461,6 +300,13 @@ class Script(scripts.Script):
 			shared.sd_model.first_stage_model.to(devices.device)
 
 		return processed
+
+def download_file(filename, url):
+	print("Downloading", url, "to", filename)
+	torch.hub.download_url_to_file(url, filename)
+	# check if file exists
+	if not os.path.exists(filename):
+		raise RuntimeError('Download failed. Try again later or manually download the file to that location.')
 
 def scale_torch(img):
 	"""
@@ -1025,3 +871,160 @@ class MyTestOptions(MyBaseOptions):
         parser.set_defaults(load_size=parser.get_default('crop_size'))
         self.isTrain = False
         return parser
+
+def estimateboost(img, model, model_type, pix2pixmodel):
+	if model_type == 4:
+		net_receptive_field_size = 448
+		patch_netsize = 2 * net_receptive_field_size
+	else:
+		net_receptive_field_size = 384
+		patch_netsize = 2 * net_receptive_field_size
+
+	gc.collect()
+	devices.torch_gc()
+
+	# Generate mask used to smoothly blend the local pathc estimations to the base estimate.
+	# It is arbitrarily large to avoid artifacts during rescaling for each crop.
+	mask_org = generatemask((3000, 3000))
+	mask = mask_org.copy()
+
+	# Value x of R_x defined in the section 5 of the main paper.
+	r_threshold_value = 0.2
+	#if R0:
+	#	r_threshold_value = 0
+
+	input_resolution = img.shape
+	scale_threshold = 3  # Allows up-scaling with a scale up to 3
+
+	# Find the best input resolution R-x. The resolution search described in section 5-double estimation of the main paper and section B of the
+	# supplementary material.
+	whole_image_optimal_size, patch_scale = calculateprocessingres(img, net_receptive_field_size, r_threshold_value, scale_threshold, whole_size_threshold)
+
+	print('wholeImage being processed in :', whole_image_optimal_size)
+
+	# Generate the base estimate using the double estimation.
+	whole_estimate = doubleestimate(img, net_receptive_field_size, whole_image_optimal_size, pix2pixsize, model, model_type, pix2pixmodel)
+	
+	# Compute the multiplier described in section 6 of the main paper to make sure our initial patch can select
+	# small high-density regions of the image.
+	global factor
+	factor = max(min(1, 4 * patch_scale * whole_image_optimal_size / whole_size_threshold), 0.2)
+	print('Adjust factor is:', 1/factor)
+
+	# Compute the default target resolution.
+	if img.shape[0] > img.shape[1]:
+		a = 2 * whole_image_optimal_size
+		b = round(2 * whole_image_optimal_size * img.shape[1] / img.shape[0])
+	else:
+		a = round(2 * whole_image_optimal_size * img.shape[0] / img.shape[1])
+		b = 2 * whole_image_optimal_size
+	b = int(round(b / factor))
+	a = int(round(a / factor))
+
+	"""
+	# recompute a, b and saturate to max res.
+	if max(a,b) > max_res:
+		print('Default Res is higher than max-res: Reducing final resolution')
+		if img.shape[0] > img.shape[1]:
+			a = max_res
+			b = round(option.max_res * img.shape[1] / img.shape[0])
+		else:
+			a = round(option.max_res * img.shape[0] / img.shape[1])
+			b = max_res
+		b = int(b)
+		a = int(a)
+	"""
+
+	img = cv2.resize(img, (b, a), interpolation=cv2.INTER_CUBIC)
+
+	# Extract selected patches for local refinement
+	base_size = net_receptive_field_size * 2
+	patchset = generatepatchs(img, base_size)
+
+	print('Target resolution: ', img.shape)
+
+	# Computing a scale in case user prompted to generate the results as the same resolution of the input.
+	# Notice that our method output resolution is independent of the input resolution and this parameter will only
+	# enable a scaling operation during the local patch merge implementation to generate results with the same resolution
+	# as the input.
+	"""
+	if output_resolution == 1:
+		mergein_scale = input_resolution[0] / img.shape[0]
+		print('Dynamicly change merged-in resolution; scale:', mergein_scale)
+	else:
+		mergein_scale = 1
+	"""
+	# always rescale to input res for now
+	mergein_scale = input_resolution[0] / img.shape[0]
+
+	imageandpatchs = ImageandPatchs('', '', patchset, img, mergein_scale)
+	whole_estimate_resized = cv2.resize(whole_estimate, (round(img.shape[1]*mergein_scale),
+										round(img.shape[0]*mergein_scale)), interpolation=cv2.INTER_CUBIC)
+	imageandpatchs.set_base_estimate(whole_estimate_resized.copy())
+	imageandpatchs.set_updated_estimate(whole_estimate_resized.copy())
+
+	print('Resulting depthmap resolution will be :', whole_estimate_resized.shape[:2])
+	print('patches to process: '+str(len(imageandpatchs)))
+
+	# Enumerate through all patches, generate their estimations and refining the base estimate.
+	for patch_ind in range(len(imageandpatchs)):
+		
+		# Get patch information
+		patch = imageandpatchs[patch_ind] # patch object
+		patch_rgb = patch['patch_rgb'] # rgb patch
+		patch_whole_estimate_base = patch['patch_whole_estimate_base'] # corresponding patch from base
+		rect = patch['rect'] # patch size and location
+		patch_id = patch['id'] # patch ID
+		org_size = patch_whole_estimate_base.shape # the original size from the unscaled input
+		print('\t processing patch', patch_ind, '/', len(imageandpatchs)-1, '|', rect)
+
+		# We apply double estimation for patches. The high resolution value is fixed to twice the receptive
+		# field size of the network for patches to accelerate the process.
+		patch_estimation = doubleestimate(patch_rgb, net_receptive_field_size, patch_netsize, pix2pixsize, model, model_type, pix2pixmodel)
+		patch_estimation = cv2.resize(patch_estimation, (pix2pixsize, pix2pixsize), interpolation=cv2.INTER_CUBIC)
+		patch_whole_estimate_base = cv2.resize(patch_whole_estimate_base, (pix2pixsize, pix2pixsize), interpolation=cv2.INTER_CUBIC)
+
+		# Merging the patch estimation into the base estimate using our merge network:
+		# We feed the patch estimation and the same region from the updated base estimate to the merge network
+		# to generate the target estimate for the corresponding region.
+		pix2pixmodel.set_input(patch_whole_estimate_base, patch_estimation)
+
+		# Run merging network
+		pix2pixmodel.test()
+		visuals = pix2pixmodel.get_current_visuals()
+
+		prediction_mapped = visuals['fake_B']
+		prediction_mapped = (prediction_mapped+1)/2
+		prediction_mapped = prediction_mapped.squeeze().cpu().numpy()
+
+		mapped = prediction_mapped
+
+		# We use a simple linear polynomial to make sure the result of the merge network would match the values of
+		# base estimate
+		p_coef = np.polyfit(mapped.reshape(-1), patch_whole_estimate_base.reshape(-1), deg=1)
+		merged = np.polyval(p_coef, mapped.reshape(-1)).reshape(mapped.shape)
+
+		merged = cv2.resize(merged, (org_size[1],org_size[0]), interpolation=cv2.INTER_CUBIC)
+
+		# Get patch size and location
+		w1 = rect[0]
+		h1 = rect[1]
+		w2 = w1 + rect[2]
+		h2 = h1 + rect[3]
+
+		# To speed up the implementation, we only generate the Gaussian mask once with a sufficiently large size
+		# and resize it to our needed size while merging the patches.
+		if mask.shape != org_size:
+			mask = cv2.resize(mask_org, (org_size[1],org_size[0]), interpolation=cv2.INTER_LINEAR)
+
+		tobemergedto = imageandpatchs.estimation_updated_image
+
+		# Update the whole estimation:
+		# We use a simple Gaussian mask to blend the merged patch region with the base estimate to ensure seamless
+		# blending at the boundaries of the patch region.
+		tobemergedto[h1:h2, w1:w2] = np.multiply(tobemergedto[h1:h2, w1:w2], 1 - mask) + np.multiply(merged, mask)
+		imageandpatchs.set_updated_estimate(tobemergedto)
+
+	# output
+	return cv2.resize(imageandpatchs.estimation_updated_image, (input_resolution[1], input_resolution[0]), interpolation=cv2.INTER_CUBIC)
+	

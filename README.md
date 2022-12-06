@@ -7,6 +7,8 @@ To generate realistic depth maps from a single image, this script uses code and 
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.2.5 bugfix
+    * error checking on model download (now with progressbar)
 * v0.2.4 high resolution depthmaps
     * multi-resolution merging is now implemented, significantly improving results!
     * res101 can now also compute on CPU

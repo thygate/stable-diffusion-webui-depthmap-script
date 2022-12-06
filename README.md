@@ -68,7 +68,7 @@ In the WebUI, in the `Extensions` tab, in the `Installed` subtab, click `Check f
 Select the "DepthMap vX.X.X" script from the script selection box in either txt2img or img2img.
 ![screenshot](options.png)
 
-The model can `Compute on` GPU and CPU, use CPU if low on VRAM. 
+The models can `Compute on` GPU and CPU, use CPU if low on VRAM. 
 
 There are five models available from the `Model` dropdown, the first four are the midas models: dpt_large, dpt_hybrid, midas_v21, and midas_v21_small. The first one dpt_large is the most recent midas model. See the [MiDaS](https://github.com/isl-org/MiDaS) repository for more info. The dpt_hybrid model yields good results in my experience, and is much smaller than the dpt_large model, which means shorter loading times when the model is reloaded on every run.
 For the fifth model, res101, see [AdelaiDepth/LeReS](https://github.com/aim-uofa/AdelaiDepth/tree/main/LeReS) for more info.

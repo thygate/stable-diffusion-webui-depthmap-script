@@ -1,5 +1,5 @@
 ﻿# High Resolution Depth Maps for Stable Diffusion WebUI
-This script is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depthmaps` from the generated images. The result can be viewed on 3D or holographic devices like VR headsets or [loogingglass](https://lookingglassfactory.com/) display, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
+This script is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depth maps` from the generated images. The result can be viewed on 3D or holographic devices like VR headsets or [Looking Glass](https://lookingglassfactory.com/) displays, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
 
 To generate realistic depth maps from a single image, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) repository by Intel ISL (see [https://pytorch.org/hub/intelisl_midas_v2/](https://pytorch.org/hub/intelisl_midas_v2/) for more info), or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. Multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) is used to generate high resolution depth maps.
 
@@ -107,9 +107,9 @@ When `Combine into one image` is enabled, the depthmap will be combined with the
 
 ### For viewing on 3D devices
 
-* Simple interactive depthmap viewer for lookingglass using three. LIVE link : [https://thygate.github.io/depthmap-viewer-three-lookingglass](https://thygate.github.io/depthmap-viewer-three-lookingglass) (Instructions: Drag a combined-rgb-and-depth-horizontally image into the window to view it)
+* Simple interactive depthmap viewer for Looking Glass using three. LIVE link : [https://thygate.github.io/depthmap-viewer-three-lookingglass](https://thygate.github.io/depthmap-viewer-three-lookingglass) (Instructions: Drag a combined-rgb-and-depth-horizontally image into the window to view it)
 
-* Unity3D project to view the depthmaps on lookingglass in realtime as images are generated. Leave a message in the discussion section if you want me to publish it too.
+* Unity3D project to view the depthmaps on Looking Glass in realtime as images are generated. Leave a message in the discussion section if you want me to publish it too.
 
 More updates soon ..
 Feel free to comment and share in the discussions. 

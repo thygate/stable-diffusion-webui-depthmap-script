@@ -115,7 +115,7 @@ When `Combine into one image` is enabled, the depthmap will be combined with the
 * Unity3D project to view the depthmaps on Looking Glass in realtime as images are generated. Leave a message in the discussion section if you want me to publish it too.
 
 ### Blender
-* Blender depthmap import addon by [@Ladypoly](https://github.com/LadyPoly) ([comment](https://github.com/AUTOMATIC1111/stable-diffusion-webui/discussions/4252#discussioncomment-4333661)). Demonstration video : https://youtu.be/vfu5yzs_2EU  
+* Blender depthmap import addon by [@Ladypoly](https://github.com/LadyPoly) ([comment](https://github.com/AUTOMATIC1111/stable-diffusion-webui/discussions/4252#discussioncomment-4333661)). Demonstration video : https://www.youtube.com/watch?v=AeDngG9kQNI  
 Download the addon here : [importdepthmap_1.0.3.zip](https://github.com/AUTOMATIC1111/stable-diffusion-webui/files/10194086/importdepthmap_1.0.3.zip)
 
 ## Forks and Related

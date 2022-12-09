@@ -7,6 +7,7 @@ import gradio as gr
 from modules import processing, images, shared, sd_samplers, devices
 from modules.processing import create_infotext, process_images, Processed
 from modules.shared import opts, cmd_opts, state, Options
+from modules import script_callbacks
 from torchvision.transforms import Compose, transforms
 from PIL import Image
 from pathlib import Path
@@ -47,7 +48,7 @@ import pix2pix.data
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.2.5"
+scriptname = "DepthMap v0.2.6"
 
 class Script(scripts.Script):
 	def title(self):
@@ -74,6 +75,8 @@ class Script(scripts.Script):
 			save_depth = gr.Checkbox(label="Save DepthMap",value=True)
 			show_depth = gr.Checkbox(label="Show DepthMap",value=True)
 			show_heat = gr.Checkbox(label="Show HeatMap",value=False)
+		with gr.Box():
+			gr.HTML("Instructions, share and discuss @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
 		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis]
 
@@ -300,6 +303,15 @@ class Script(scripts.Script):
 			shared.sd_model.first_stage_model.to(devices.device)
 
 		return processed
+
+
+def on_ui_settings():
+    section = ('depthmap-script', "Depthmap extension")
+    shared.opts.add_option("depthmap_script_boost_rmax", shared.OptionInfo(1600, "Maximum wholesize for boost.", section=section))
+
+
+script_callbacks.on_ui_settings(on_ui_settings)
+
 
 def download_file(filename, url):
 	print("Downloading", url, "to", filename)
@@ -873,6 +885,10 @@ class MyTestOptions(MyBaseOptions):
         return parser
 
 def estimateboost(img, model, model_type, pix2pixmodel):
+	# get settings
+	if hasattr(opts, 'depthmap_script_boost_rmax'):
+		whole_size_threshold = opts.depthmap_script_boost_rmax
+		
 	if model_type == 4:
 		net_receptive_field_size = 448
 		patch_netsize = 2 * net_receptive_field_size

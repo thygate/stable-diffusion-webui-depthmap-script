@@ -7,6 +7,9 @@ To generate realistic depth maps from a single image, this script uses code and 
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.2.6 ui layout and settings
+    * added link to repo so more people find their way to the instructions.
+    * boost rmax setting
 * v0.2.5 bugfix
     * error checking on model download (now with progressbar)
 * v0.2.4 high resolution depthmaps
@@ -54,7 +57,7 @@ The script is now also available to install from the `Available` subtab under th
 In the WebUI, in the `Extensions` tab, in the `Installed` subtab, click `Check for Updates` and then `Apply and restart UI`.
 
 ### Automatic installation 
-* In the WebUI, in the `Extensions` tab, in the `Install from URL` subtab, enter this repository 
+In the WebUI, in the `Extensions` tab, in the `Install from URL` subtab, enter this repository 
 `https://github.com/thygate/stable-diffusion-webui-depthmap-script`
  and click install.
 
@@ -111,8 +114,16 @@ When `Combine into one image` is enabled, the depthmap will be combined with the
 
 * Unity3D project to view the depthmaps on Looking Glass in realtime as images are generated. Leave a message in the discussion section if you want me to publish it too.
 
-More updates soon ..
-Feel free to comment and share in the discussions. 
+### Blender
+* Blender depthmap import addon by @Ladypoly. Demonstration video : https://youtu.be/vfu5yzs_2EU
+Download the addon here : [importdepthmap_1.0.2.zip](https://github.com/AUTOMATIC1111/stable-diffusion-webui/files/10176918/importdepthmap_1.0.2.zip)
+
+## Forks
+* Generate normal maps from depth maps : [stable-diffusion-webui-normalmap-script](https://github.com/graemeniedermayer/stable-diffusion-webui-normalmap-script) by @graemeniedermayer
+
+* Several scripts by @Extraltodeus using depth maps : https://github.com/Extraltodeus?tab=repositories
+
+### More updates soon .. Feel free to comment and share in the discussions. 
 
 ## Acknowledgements
 

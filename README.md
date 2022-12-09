@@ -116,7 +116,7 @@ When `Combine into one image` is enabled, the depthmap will be combined with the
 
 ### Blender
 * Blender depthmap import addon by [@Ladypoly](https://github.com/LadyPoly) ([comment](https://github.com/AUTOMATIC1111/stable-diffusion-webui/discussions/4252#discussioncomment-4333661)). Demonstration video : https://youtu.be/vfu5yzs_2EU  
-Download the addon here : [importdepthmap_1.0.2.zip](https://github.com/AUTOMATIC1111/stable-diffusion-webui/files/10176918/importdepthmap_1.0.2.zip)
+Download the addon here : [importdepthmap_1.0.3.zip](https://github.com/AUTOMATIC1111/stable-diffusion-webui/files/10194086/importdepthmap_1.0.3.zip)
 
 ## Forks and Related
 * Generate normal maps from depth maps : [stable-diffusion-webui-normalmap-script](https://github.com/graemeniedermayer/stable-diffusion-webui-normalmap-script) by [@graemeniedermayer](https://github.com/graemeniedermayer)

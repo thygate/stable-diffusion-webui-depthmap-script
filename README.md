@@ -106,6 +106,8 @@ When `Combine into one image` is enabled, the depthmap will be combined with the
 * There is the excellent [depthy](https://github.com/panrafal/depthy) by Rafał Lindemann. LIVE link : [https://depthy.stamina.pl/](https://depthy.stamina.pl/)
 (Instructions: Drag the rgb image into the window, then select Load depthmap, and drag the depthmap into the dialog inside the window.) Generates GIF and video.
 
+* The [depth-player](https://github.com/spite/depth-player) by [@spite](https://github.com/spite) can load rgb and depthmap images and export a Wavefront OBJ file of a displaced plane mesh with the rgb image applied as texture. LIVE link : [https://depthplayer.ugocapeto.com/](https://depthplayer.ugocapeto.com/) Thanks to [@AugmentedRealityCat](https://github.com/AugmentedRealityCat) for the tip.
+
 * Simple interactive depthmap viewer using three ([source](https://github.com/thygate/depthmap-viewer-three)). LIVE link : [https://thygate.github.io/depthmap-viewer-three](https://thygate.github.io/depthmap-viewer-three) (Instructions: Drag a combined-rgb-and-depth-horizontally image into the window to view it)
 
 ### For viewing on 3D devices
@@ -116,8 +118,9 @@ When `Combine into one image` is enabled, the depthmap will be combined with the
 
 ### Blender
 * Blender depthmap import addon by [@Ladypoly](https://github.com/LadyPoly) ([comment](https://github.com/AUTOMATIC1111/stable-diffusion-webui/discussions/4252#discussioncomment-4333661)).   
-Demonstration videos : https://www.youtube.com/watch?v=vfu5yzs_2EU , https://www.youtube.com/watch?v=AeDngG9kQNI  
-Download the addon here : [importdepthmap_1.0.3.zip](https://github.com/AUTOMATIC1111/stable-diffusion-webui/files/10194086/importdepthmap_1.0.3.zip)
+Download the addon here : [importdepthmap_1.0.3.zip](https://github.com/AUTOMATIC1111/stable-diffusion-webui/files/10194086/importdepthmap_1.0.3.zip) (Blender 3.3.0 or newer)   
+Demonstration videos : (1) https://www.youtube.com/watch?v=vfu5yzs_2EU , (2) https://www.youtube.com/watch?v=AeDngG9kQNI  
+
 
 ## Forks and Related
 * Generate normal maps from depth maps : [stable-diffusion-webui-normalmap-script](https://github.com/graemeniedermayer/stable-diffusion-webui-normalmap-script) by [@graemeniedermayer](https://github.com/graemeniedermayer)

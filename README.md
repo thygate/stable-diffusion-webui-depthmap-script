@@ -9,6 +9,7 @@ To generate realistic depth maps from a single image, this script uses code and 
 ## Changelog
 * v0.2.8 bugfix
     * boost now also able to run on cpu
+    * res101 able to compute on cpu
 * v0.2.7 separate tab
     * Depth Tab now available for stand-alone (batch) processing
 * v0.2.6 ui layout and settings

@@ -193,7 +193,10 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			print(model_path)
 			if not os.path.exists(model_path):
 				download_file(model_path,"https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download")
-			checkpoint = torch.load(model_path)
+			if compute_device == 0:
+				checkpoint = torch.load(model_path)
+			else:
+				checkpoint = torch.load(model_path,map_location=torch.device('cpu'))
 			model = RelDepthModel(backbone='resnext101')
 			model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)
 			del checkpoint

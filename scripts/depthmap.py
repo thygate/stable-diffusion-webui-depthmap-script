@@ -51,7 +51,7 @@ import pix2pix.data
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.2.7"
+scriptname = "DepthMap v0.2.8"
 
 class Script(scripts.Script):
 	def title(self):
@@ -205,6 +205,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			if not os.path.exists(pix2pixmodel_path):
 				download_file(pix2pixmodel_path,"https://sfu.ca/~yagiz/CVPR21/latest_net_G.pth")
 			opt = MyTestOptions().parse()
+			if compute_device == 1:
+				opt.gpu_ids = [] # cpu mode
 			pix2pixmodel = Pix2Pix4DepthModel(opt)
 			pix2pixmodel.save_dir = './models/pix2pix'
 			pix2pixmodel.load_networks('latest')

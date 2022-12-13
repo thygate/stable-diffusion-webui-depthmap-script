@@ -7,6 +7,8 @@ To generate realistic depth maps from a single image, this script uses code and 
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.2.8 bugfix
+    * boost now also able to run on cpu
 * v0.2.7 separate tab
     * Depth Tab now available for stand-alone (batch) processing
 * v0.2.6 ui layout and settings

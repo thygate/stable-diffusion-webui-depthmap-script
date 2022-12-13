@@ -7,6 +7,8 @@ To generate realistic depth maps from a single image, this script uses code and 
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.2.7 separate tab
+    * Depth Tab now available for stand-alone (batch) processing
 * v0.2.6 ui layout and settings
     * added link to repo so more people find their way to the instructions.
     * boost rmax setting
@@ -68,7 +70,7 @@ In the WebUI, in the `Extensions` tab, in the `Install from URL` subtab, enter t
 >Model `weights` will be downloaded automatically on first use and saved to /models/midas, /models/leres and /models/pix2pix
 
 ## Usage
-Select the "DepthMap vX.X.X" script from the script selection box in either txt2img or img2img.
+Select the "DepthMap vX.X.X" script from the script selection box in either txt2img or img2img, or go to the Depth tab.
 ![screenshot](options.png)
 
 The models can `Compute on` GPU and CPU, use CPU if low on VRAM. 
@@ -82,7 +84,7 @@ Net size can be set with `net width` and `net height`, or will be the same as th
 
 When enabled, `Invert DepthMap` will result in a depthmap with black near and white far.
 
-Regardless of global settings, `Save DepthMap` will always save the depthmap in the default txt2img or img2img directory with the filename suffix '_depth'. Generation parameters are saved with the image if enabled in settings.
+Regardless of global settings, `Save DepthMap` will always save the depthmap in the default txt2img or img2img directory with the filename suffix '_depth'. Generation parameters are saved with the image if enabled in settings. Files generated from the Depth tab are saved in the default extras-images directory.
 
 To see the generated output in the webui `Show DepthMap` should be enabled. When using Batch img2img this option should also be enabled.
 
@@ -120,6 +122,8 @@ When `Combine into one image` is enabled, the depthmap will be combined with the
 * Blender depthmap import addon by [@Ladypoly](https://github.com/LadyPoly) ([comment](https://github.com/AUTOMATIC1111/stable-diffusion-webui/discussions/4252#discussioncomment-4333661)).   
 Download the addon here : [importdepthmap_1.0.3.zip](https://github.com/AUTOMATIC1111/stable-diffusion-webui/files/10194086/importdepthmap_1.0.3.zip) (Blender 3.3.0 or newer)   
 Demonstration videos : (1) https://www.youtube.com/watch?v=vfu5yzs_2EU , (2) https://www.youtube.com/watch?v=AeDngG9kQNI  
+
+    [![video](https://img.youtube.com/vi/vfu5yzs_2EU/1.jpg)](https://www.youtube.com/watch?v=vfu5yzs_2EU) [![video](https://img.youtube.com/vi/AeDngG9kQNI/2.jpg)](https://www.youtube.com/watch?v=AeDngG9kQNI)
 
 
 ## Forks and Related

@@ -11,7 +11,7 @@ To generate realistic depth maps from a single image, this script uses code and 
     * boost (pix2pix) now also able to compute on cpu
     * res101 able to compute on cpu
 * v0.2.7 separate tab
-    * Depth Tab now available for stand-alone (batch) processing
+    * Depth Tab now available for easier stand-alone (batch) processing
 * v0.2.6 ui layout and settings
     * added link to repo so more people find their way to the instructions.
     * boost rmax setting

@@ -128,6 +128,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 	os.makedirs(model_dir, exist_ok=True)
 	os.makedirs('./models/pix2pix', exist_ok=True)
 
+	outimages = []
 	try:
 		print("Loading model weights from ", end=" ")
 		#"dpt_large"
@@ -224,7 +225,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 
 		print("Computing depthmap(s) ..")
 		# iterate over input (generated) images
-		outimages = []
 		numimages = len(inputimages)
 		for count in range(0, numimages):
 

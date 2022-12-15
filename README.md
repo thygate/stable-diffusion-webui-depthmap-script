@@ -1,12 +1,17 @@
 ﻿# High Resolution Depth Maps for Stable Diffusion WebUI
-This script is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depth maps` from the generated images. The result can be viewed on 3D or holographic devices like VR headsets or [Looking Glass](https://lookingglassfactory.com/) displays, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
+This script is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depth maps` from the generated or existing images. The result can be viewed on 3D or holographic devices like VR headsets or [Looking Glass](https://lookingglassfactory.com/) displays, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
 
 To generate realistic depth maps from a single image, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) repository by Intel ISL (see [https://pytorch.org/hub/intelisl_midas_v2/](https://pytorch.org/hub/intelisl_midas_v2/) for more info), or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. Multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) is used to generate high resolution depth maps.
+
+3D stereo, and red/cyan anaglyph images are generated using code from the [stereo-image-generation](https://github.com/m5823779/stereo-image-generation) repository. Thanks to [@sina-masoud-ansari](https://github.com/sina-masoud-ansari) for the tip! Discussion [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/discussions/45).
 
 ## Examples
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.2.9 new feature 
+    * 3D Stereo (side-by-side) and red/cyan anaglyph image generation.   
+    (Thanks to [@sina-masoud-ansari](https://github.com/sina-masoud-ansari) for the tip! Discussion [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/discussions/45))
 * v0.2.8 bugfix
     * boost (pix2pix) now also able to compute on cpu
     * res101 able to compute on cpu
@@ -94,11 +99,15 @@ To see the generated output in the webui `Show DepthMap` should be enabled. When
 To make the depthmap easier to analyze for human eyes, `Show HeatMap` shows an extra image in the WebUI that has a color gradient applied. It is not saved.
 
 When `Combine into one image` is enabled, the depthmap will be combined with the original image, the orientation can be selected with `Combine axis`. When disabled, the depthmap will be saved as a 16 bit single channel PNG as opposed to a three channel (RGB), 8 bit per channel image when the option is enabled.
+
+When either `Generate Stereo` or `Generate anaglyph` is enabled, a stereo image will be generated. The `IPD`, or Pupillary distance is given in centimeter along with the `Screen Width`.
+
 > 💡 Saving as any format other than PNG always produces an 8 bit, 3 channel RGB image. A single channel 16 bit image is only supported when saving as PNG.
 
 ## FAQ
 
  * `Can I use this on existing images ?`
+    - Yes, you can now use the Depth tab to easily process existing images.
     - Yes, in img2img, set denoising strength to 0. This will effectively skip stable diffusion and use the input image. You will still have to set the correct size, and need to select `Crop and resize` instead of `Just resize` when the input image resolution does not match the set size perfectly.
  * `Can I run this on google colab ?`
     - You can run the MiDaS network on their colab linked here https://pytorch.org/hub/intelisl_midas_v2/

@@ -51,7 +51,7 @@ import pix2pix.data
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.2.8"
+scriptname = "DepthMap v0.2.9"
 
 class Script(scripts.Script):
 	def title(self):
@@ -78,13 +78,21 @@ class Script(scripts.Script):
 			save_depth = gr.Checkbox(label="Save DepthMap",value=True)
 			show_depth = gr.Checkbox(label="Show DepthMap",value=True)
 			show_heat = gr.Checkbox(label="Show HeatMap",value=False)
+		with gr.Group():
+			with gr.Row():
+				gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
+				gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
+			with gr.Row():
+				stereo_ipd = gr.Slider(minimum=5, maximum=7.5, step=0.1, label='IPD (cm)', value=6.4)
+				stereo_size = gr.Slider(minimum=20, maximum=100, step=0.5, label='Screen Width (cm)', value=38.5)
+
 		with gr.Box():
 			gr.HTML("Instructions, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
-		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis]
+		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size]
 
 	# run from script in txt2img or img2img
-	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis):
+	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size):
 
 		# sd process 
 		processed = processing.process_images(p)
@@ -98,13 +106,13 @@ class Script(scripts.Script):
 				continue
 			inputimages.append(processed.images[count])
 
-		newmaps = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis)
+		newmaps = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size)
 		for img in newmaps:
 			processed.images.append(img)
 
 		return processed
 
-def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis):
+def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size):
 
 	# unload sd model
 	shared.sd_model.cond_stage_model.to(devices.cpu)
@@ -320,6 +328,30 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 				heatmap = (colormap(img_output2[:,:,0] / 256.0) * 2**16).astype(np.uint16)[:,:,:3]
 				outimages.append(heatmap)
 
+			if gen_stereo or gen_anaglyph:
+				print("Generating Stereo image..")
+				#img_output = cv2.blur(img_output, (3, 3))
+				left_img = np.asarray(inputimages[count])
+				right_img = generate_stereo(left_img, img_output, stereo_ipd, stereo_size)
+				stereo_img = np.hstack([right_img, inputimages[count]])
+				if gen_stereo:
+					outimages.append(stereo_img)
+				if gen_anaglyph:
+					print("Generating Anaglyph image..")
+					anaglyph_img = overlap(right_img, left_img)
+					outimages.append(anaglyph_img)
+				if (processed is not None):
+					if gen_stereo:
+						images.save_image(Image.fromarray(stereo_img), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_stereo")
+					if gen_anaglyph:
+						images.save_image(Image.fromarray(anaglyph_img), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_anaglyph")
+				else:
+					# from tab
+					if gen_stereo:
+						images.save_image(Image.fromarray(stereo_img), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_stereo")
+					if gen_anaglyph:
+						images.save_image(Image.fromarray(anaglyph_img), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_anaglyph")
+
 		print("Done.")
 
 	except RuntimeError as e:
@@ -343,6 +375,74 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 
 	return outimages
 
+
+
+def generate_stereo(left_img, depth, ipd, monitor_w):
+	#MONITOR_W = 38.5 #50 #38.5
+    h, w, c = left_img.shape
+
+    depth_min = depth.min()
+    depth_max = depth.max()
+    depth = (depth - depth_min) / (depth_max - depth_min)
+
+    right = np.zeros_like(left_img)
+
+    deviation_cm = ipd * 0.12
+    deviation = deviation_cm * monitor_w * (w / 1920)
+
+    print("deviation:", deviation)
+
+    for row in range(h):
+        for col in range(w):
+            col_r = col - int((1 - depth[row][col] ** 2) * deviation)
+            # col_r = col - int((1 - depth[row][col]) * deviation)
+            if col_r >= 0:
+                right[row][col_r] = left_img[row][col]
+
+    right_fix = np.array(right)
+    gray = cv2.cvtColor(right_fix, cv2.COLOR_BGR2GRAY)
+    rows, cols = np.where(gray == 0)
+    for row, col in zip(rows, cols):
+        for offset in range(1, int(deviation)):
+            r_offset = col + offset
+            l_offset = col - offset
+            if r_offset < w and not np.all(right_fix[row][r_offset] == 0):
+                right_fix[row][col] = right_fix[row][r_offset]
+                break
+            if l_offset >= 0 and not np.all(right_fix[row][l_offset] == 0):
+                right_fix[row][col] = right_fix[row][l_offset]
+                break
+
+    return right_fix
+
+def overlap(im1, im2):
+    width1 = im1.shape[1]
+    height1 = im1.shape[0]
+    width2 = im2.shape[1]
+    height2 = im2.shape[0]
+
+    # final image
+    composite = np.zeros((height2, width2, 3), np.uint8)
+
+    # iterate through "left" image, filling in red values of final image
+    for i in range(height1):
+        for j in range(width1):
+            try:
+                composite[i, j, 0] = im1[i, j, 0]
+            except IndexError:
+                pass
+
+    # iterate through "right" image, filling in blue/green values of final image
+    for i in range(height2):
+        for j in range(width2):
+            try:
+                composite[i, j, 1] = im2[i, j, 1]
+                composite[i, j, 2] = im2[i, j, 2]
+            except IndexError:
+                pass
+
+    return composite
+
 def run_generate(depthmap_mode, 
 				depthmap_image,
                 image_batch,
@@ -359,7 +459,11 @@ def run_generate(depthmap_mode,
 				show_depth, 
 				show_heat, 
 				combine_output, 
-				combine_output_axis
+				combine_output_axis,
+				gen_stereo, 
+				gen_anaglyph, 
+				stereo_ipd, 
+				stereo_size
 				):
 
 	imageArr = []
@@ -396,7 +500,7 @@ def run_generate(depthmap_mode,
 		outpath = opts.outdir_samples or opts.outdir_extras_samples
 
 
-	outputs = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis)
+	outputs = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size)
 
 	return outputs, plaintext_to_html('info'), ''
 
@@ -441,6 +545,14 @@ def on_ui_tabs():
                         save_depth = gr.Checkbox(label="Save DepthMap",value=True)
                         show_depth = gr.Checkbox(label="Show DepthMap",value=True)
                         show_heat = gr.Checkbox(label="Show HeatMap",value=False)
+                with gr.Group():
+                    with gr.Row():
+                        gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
+                        gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
+                    with gr.Row():
+                        stereo_ipd = gr.Slider(minimum=5, maximum=7.5, step=0.1, label='IPD (cm)', value=6.4)
+                        stereo_size = gr.Slider(minimum=20, maximum=100, step=0.5, label='Screen Width (cm)', value=38.5)	
+
                 with gr.Box():
                     gr.HTML("Instructions, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
@@ -474,7 +586,11 @@ def on_ui_tabs():
 				show_depth, 
 				show_heat, 
 				combine_output, 
-				combine_output_axis
+				combine_output_axis,
+				gen_stereo, 
+				gen_anaglyph, 
+				stereo_ipd, 
+				stereo_size
             ],
             outputs=[
                 result_images,

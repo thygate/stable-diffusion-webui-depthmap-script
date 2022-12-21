@@ -11,6 +11,7 @@ from modules import processing, images, shared, sd_samplers, devices
 from modules.processing import create_infotext, process_images, Processed
 from modules.shared import opts, cmd_opts, state, Options
 from modules import script_callbacks
+from numba import njit
 from torchvision.transforms import Compose, transforms
 from PIL import Image
 from pathlib import Path
@@ -85,14 +86,17 @@ class Script(scripts.Script):
 			with gr.Row():
 				stereo_ipd = gr.Slider(minimum=5, maximum=7.5, step=0.1, label='IPD (cm)', value=6.4)
 				stereo_size = gr.Slider(minimum=20, maximum=100, step=0.5, label='Screen Width (cm)', value=38.5)
+			with gr.Row():
+				stereo_fill = gr.Checkbox(label="Improve accuracy", value=False)
+				stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
 
 		with gr.Box():
 			gr.HTML("Instructions, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
-		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size]
+		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance]
 
 	# run from script in txt2img or img2img
-	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size):
+	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance):
 
 		# sd process 
 		processed = processing.process_images(p)
@@ -106,13 +110,13 @@ class Script(scripts.Script):
 				continue
 			inputimages.append(processed.images[count])
 
-		newmaps = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size)
+		newmaps = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance)
 		for img in newmaps:
 			processed.images.append(img)
 
 		return processed
 
-def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size):
+def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance):
 
 	# unload sd model
 	shared.sd_model.cond_stage_model.to(devices.cpu)
@@ -331,14 +335,20 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			if gen_stereo or gen_anaglyph:
 				print("Generating Stereo image..")
 				#img_output = cv2.blur(img_output, (3, 3))
-				left_img = np.asarray(inputimages[count])
-				right_img = generate_stereo(left_img, img_output, stereo_ipd, stereo_size)
-				stereo_img = np.hstack([right_img, inputimages[count]])
+				deviation = calculate_total_deviation(stereo_ipd, stereo_size, inputimages[count].width)
+				balance = (stereo_balance + 1) / 2
+				original_image = np.asarray(inputimages[count])
+				left_image = original_image if balance < 0.001 else \
+					apply_stereo_deviation(original_image, img_output, - deviation * balance, stereo_fill)
+				right_image = original_image if balance > 0.999 else \
+					apply_stereo_deviation(original_image, img_output, deviation * (1 - balance), stereo_fill)
+				stereo_img = np.hstack([left_image, right_image])
+
 				if gen_stereo:
 					outimages.append(stereo_img)
 				if gen_anaglyph:
 					print("Generating Anaglyph image..")
-					anaglyph_img = overlap(right_img, left_img)
+					anaglyph_img = overlap(left_image, right_image)
 					outimages.append(anaglyph_img)
 				if (processed is not None):
 					if gen_stereo:
@@ -375,45 +385,82 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 
 	return outimages
 
+def calculate_total_deviation(ipd, monitor_w, image_width):
+    deviation_cm = ipd * 0.12
+    deviation = deviation_cm * monitor_w * (image_width / 1920)
+    print("deviation:", deviation)
+    return deviation
 
+def apply_stereo_deviation(original_image, depth, deviation, fill_technique):
+    import time
+    print("TIME:", time.time())
+    ret = apply_stereo_deviation_core(original_image, depth, deviation, fill_technique)
+    print("TIME:", time.time())
+    return ret
 
-def generate_stereo(left_img, depth, ipd, monitor_w):
-	#MONITOR_W = 38.5 #50 #38.5
-    h, w, c = left_img.shape
+@njit
+def apply_stereo_deviation_core(original_image, depth, deviation, fill_technique):
+    #MONITOR_W = 38.5 #50 #38.5
+    h, w, c = original_image.shape
 
     depth_min = depth.min()
     depth_max = depth.max()
     depth = (depth - depth_min) / (depth_max - depth_min)
 
-    right = np.zeros_like(left_img)
-
-    deviation_cm = ipd * 0.12
-    deviation = deviation_cm * monitor_w * (w / 1920)
-
-    print("deviation:", deviation)
+    derived_image = np.zeros_like(original_image)
+    filled = np.zeros(h * w, dtype=np.uint8)
 
     for row in range(h):
-        for col in range(w):
-            col_r = col - int((1 - depth[row][col] ** 2) * deviation)
-            # col_r = col - int((1 - depth[row][col]) * deviation)
-            if col_r >= 0:
-                right[row][col_r] = left_img[row][col]
+        # Swipe order should ensure that pixels that are closer overwrite
+        # (at their destination) pixels that are less close
+        for col in range(w) if deviation < 0 else range(w - 1, -1, -1):
+            col_d = col + int((1 - depth[row][col] ** 2) * deviation)
+            # col_d = col + int((1 - depth[row][col]) * deviation)
+            if 0 <= col_d < w:
+                derived_image[row][col_d] = original_image[row][col]
+                filled[row * w + col_d] = 1
 
-    right_fix = np.array(right)
-    gray = cv2.cvtColor(right_fix, cv2.COLOR_BGR2GRAY)
-    rows, cols = np.where(gray == 0)
-    for row, col in zip(rows, cols):
-        for offset in range(1, int(deviation)):
-            r_offset = col + offset
-            l_offset = col - offset
-            if r_offset < w and not np.all(right_fix[row][r_offset] == 0):
-                right_fix[row][col] = right_fix[row][r_offset]
-                break
-            if l_offset >= 0 and not np.all(right_fix[row][l_offset] == 0):
-                right_fix[row][col] = right_fix[row][l_offset]
-                break
-
-    return right_fix
+    # Fill the gaps
+    if fill_technique == 2:  # soft_horizontal
+        for row in range(h):
+            for l_pointer in range(w):
+                # This if (and the next if) performs two checks that are almost the same - for performance reasons
+                if sum(derived_image[row][l_pointer]) != 0 or filled[row * w + l_pointer]:
+                    continue
+                l_border = derived_image[row][l_pointer - 1] if l_pointer > 0 else np.zeros(3, dtype=np.uint8)
+                r_border = np.zeros(3, dtype=np.uint8)
+                r_pointer = l_pointer + 1
+                while r_pointer != w:
+                    if sum(derived_image[row][r_pointer]) != 0 and filled[row * w + r_pointer]:
+                        r_border = derived_image[row][r_pointer]
+                        break
+                    r_pointer += 1
+                if sum(l_border) == 0:
+                    l_border = r_border
+                elif sum(r_border) == 0:
+                    r_border = l_border
+                total_steps = 1 + r_pointer - l_pointer
+                step = (r_border.astype(np.float_) - l_border) / total_steps
+                for col in range(l_pointer, r_pointer):
+                    derived_image[row][col] = l_border + (step * (col - l_pointer + 1)).astype(np.uint8)
+        return derived_image
+    elif fill_technique == 1:  # hard_horizontal
+        derived_fix = np.copy(derived_image)
+        for pos in np.where(filled == 0)[0]:
+            row = pos // w
+            col = pos % w
+            for offset in range(1, abs(int(deviation)) + 2):
+                r_offset = col + offset
+                l_offset = col - offset
+                if r_offset < w and filled[row * w + r_offset]:
+                    derived_fix[row][col] = derived_image[row][r_offset]
+                    break
+                if 0 <= l_offset and filled[row * w + l_offset]:
+                    derived_fix[row][col] = derived_image[row][l_offset]
+                    break
+        return derived_fix
+    else:  # none
+        return derived_image
 
 def overlap(im1, im2):
     width1 = im1.shape[1]
@@ -463,7 +510,9 @@ def run_generate(depthmap_mode,
 				gen_stereo, 
 				gen_anaglyph, 
 				stereo_ipd, 
-				stereo_size
+				stereo_size,
+				stereo_fill,
+				stereo_balance
 				):
 
 	imageArr = []
@@ -500,7 +549,7 @@ def run_generate(depthmap_mode,
 		outpath = opts.outdir_samples or opts.outdir_extras_samples
 
 
-	outputs = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size)
+	outputs = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance)
 
 	return outputs, plaintext_to_html('info'), ''
 
@@ -551,7 +600,10 @@ def on_ui_tabs():
                         gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
                     with gr.Row():
                         stereo_ipd = gr.Slider(minimum=5, maximum=7.5, step=0.1, label='IPD (cm)', value=6.4)
-                        stereo_size = gr.Slider(minimum=20, maximum=100, step=0.5, label='Screen Width (cm)', value=38.5)	
+                        stereo_size = gr.Slider(minimum=20, maximum=100, step=0.5, label='Screen Width (cm)', value=38.5)
+                    with gr.Row():
+                        stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'hard_horizontal', 'soft_horizontal'], value='soft_horizontal', type="index", elem_id="stereo_fill_type")
+                        stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
 
                 with gr.Box():
                     gr.HTML("Instructions, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
@@ -590,7 +642,9 @@ def on_ui_tabs():
 				gen_stereo, 
 				gen_anaglyph, 
 				stereo_ipd, 
-				stereo_size
+				stereo_size,
+				stereo_fill,
+				stereo_balance
             ],
             outputs=[
                 result_images,
@@ -1212,7 +1266,7 @@ def estimateboost(img, model, model_type, pix2pixmodel):
 
 	# Generate the base estimate using the double estimation.
 	whole_estimate = doubleestimate(img, net_receptive_field_size, whole_image_optimal_size, pix2pixsize, model, model_type, pix2pixmodel)
-	
+
 	# Compute the multiplier described in section 6 of the main paper to make sure our initial patch can select
 	# small high-density regions of the image.
 	global factor

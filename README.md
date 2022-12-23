@@ -66,6 +66,8 @@ To generate realistic depth maps from a single image, this script uses code and 
 ## Install instructions
 The script is now also available to install from the `Available` subtab under the `Extensions` tab in the WebUI.
 
+⚠️ Restart the backend after first install or it won't find the newly cloned repositories !
+
 ### Updating
 In the WebUI, in the `Extensions` tab, in the `Installed` subtab, click `Check for Updates` and then `Apply and restart UI`.
 
@@ -80,7 +82,7 @@ In the WebUI, in the `Extensions` tab, in the `Install from URL` subtab, enter t
 
 >Model `weights` will be downloaded automatically on first use and saved to /models/midas, /models/leres and /models/pix2pix
 
-> :warning: Restart the backend after first install or it won't find the newly cloned repositories !
+
 
 ## Usage
 Select the "DepthMap vX.X.X" script from the script selection box in either txt2img or img2img, or go to the Depth tab.

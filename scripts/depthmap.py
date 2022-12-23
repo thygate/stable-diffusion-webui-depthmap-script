@@ -52,7 +52,7 @@ import pix2pix.data
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.2.9"
+scriptname = "DepthMap v0.3.0"
 
 class Script(scripts.Script):
 	def title(self):
@@ -87,7 +87,7 @@ class Script(scripts.Script):
 				stereo_ipd = gr.Slider(minimum=5, maximum=7.5, step=0.1, label='IPD (cm)', value=6.4)
 				stereo_size = gr.Slider(minimum=20, maximum=100, step=0.5, label='Screen Width (cm)', value=38.5)
 			with gr.Row():
-				stereo_fill = gr.Checkbox(label="Improve accuracy", value=False)
+				stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'hard_horizontal', 'soft_horizontal'], value='soft_horizontal', type="index", elem_id="stereo_fill_type")
 				stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
 
 		with gr.Box():
@@ -391,16 +391,8 @@ def calculate_total_deviation(ipd, monitor_w, image_width):
     print("deviation:", deviation)
     return deviation
 
-def apply_stereo_deviation(original_image, depth, deviation, fill_technique):
-    import time
-    print("TIME:", time.time())
-    ret = apply_stereo_deviation_core(original_image, depth, deviation, fill_technique)
-    print("TIME:", time.time())
-    return ret
-
 @njit
-def apply_stereo_deviation_core(original_image, depth, deviation, fill_technique):
-    #MONITOR_W = 38.5 #50 #38.5
+def apply_stereo_deviation(original_image, depth, deviation, fill_technique):
     h, w, c = original_image.shape
 
     depth_min = depth.min()
@@ -462,6 +454,7 @@ def apply_stereo_deviation_core(original_image, depth, deviation, fill_technique
     else:  # none
         return derived_image
 
+@njit
 def overlap(im1, im2):
     width1 = im1.shape[1]
     height1 = im1.shape[0]
@@ -474,19 +467,19 @@ def overlap(im1, im2):
     # iterate through "left" image, filling in red values of final image
     for i in range(height1):
         for j in range(width1):
-            try:
+            #try:
                 composite[i, j, 0] = im1[i, j, 0]
-            except IndexError:
-                pass
+            #except IndexError:
+            #    pass
 
     # iterate through "right" image, filling in blue/green values of final image
     for i in range(height2):
         for j in range(width2):
-            try:
+            #try:
                 composite[i, j, 1] = im2[i, j, 1]
                 composite[i, j, 2] = im2[i, j, 2]
-            except IndexError:
-                pass
+            #except IndexError:
+            #    pass
 
     return composite
 

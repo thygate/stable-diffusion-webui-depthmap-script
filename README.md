@@ -9,6 +9,9 @@ To generate realistic depth maps from a single image, this script uses code and 
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.3.0 improved stereo image generation
+    * New improved technique for generating stereo images and balancing distortion between eyes by [@Semjon00](https://github.com/semjon00) (See [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/51))
+    * Insane speedup of stereo image generation code using numba JIT
 * v0.2.9 new feature 
     * 3D Stereo (side-by-side) and red/cyan anaglyph image generation.   
     (Thanks to [@sina-masoud-ansari](https://github.com/sina-masoud-ansari) for the tip! Discussion [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/discussions/45))

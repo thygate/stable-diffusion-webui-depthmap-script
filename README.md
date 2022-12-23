@@ -76,9 +76,11 @@ In the WebUI, in the `Extensions` tab, in the `Install from URL` subtab, enter t
 
 >The midas repository will be cloned to /repositories/midas
 
->The BoostingMonocularDepth repository will be cloned to /repositories/BoostingMonocularDepth and added to sys.path
+>The BoostingMonocularDepth repository will be cloned to /repositories/BoostingMonocularDepth
 
 >Model `weights` will be downloaded automatically on first use and saved to /models/midas, /models/leres and /models/pix2pix
+
+> :warning: Restart the backend after first install or it won't find the newly cloned repositories !
 
 ## Usage
 Select the "DepthMap vX.X.X" script from the script selection box in either txt2img or img2img, or go to the Depth tab.

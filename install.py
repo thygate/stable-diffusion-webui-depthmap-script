@@ -1,5 +1,5 @@
 import launch
-launch.git_clone("https://github.com/isl-org/MiDaS.git", "repositories/midas", "b845b7839c89567c123b06dddfff8d5e708834b7")
+launch.git_clone("https://github.com/isl-org/MiDaS.git", "repositories/midas", "66882994a432727317267145dc3c2e47ec78c38a")
 launch.git_clone("https://github.com/compphoto/BoostingMonocularDepth.git", "repositories/BoostingMonocularDepth", "BoostingMonocularDepth")
 if not launch.is_installed("matplotlib"):
     launch.run_pip("install matplotlib", "requirements for depthmap script")

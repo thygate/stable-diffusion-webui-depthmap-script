@@ -11,11 +11,13 @@ from modules import processing, images, shared, sd_samplers, devices
 from modules.processing import create_infotext, process_images, Processed
 from modules.shared import opts, cmd_opts, state, Options
 from modules import script_callbacks
-from numba import njit
+from numba import njit, prange
 from torchvision.transforms import Compose, transforms
 from PIL import Image
 from pathlib import Path
 from operator import getitem
+from tqdm import trange
+from functools import reduce
 
 import sys
 import torch, gc
@@ -52,7 +54,7 @@ import pix2pix.data
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.0"
+scriptname = "DepthMap v0.3.1"
 
 class Script(scripts.Script):
 	def title(self):
@@ -62,36 +64,40 @@ class Script(scripts.Script):
 		return True
 
 	def ui(self, is_img2img):
-		
-		with gr.Row():
-			compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index")
-			model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small','res101'], value='res101', type="index", elem_id="model_type")
-		with gr.Row():
-			net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=384)
-			net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=384)
-		match_size = gr.Checkbox(label="Match input size",value=False)
-		boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
-		invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)",value=False)
-		with gr.Row():
-			combine_output = gr.Checkbox(label="Combine into one image.",value=True)
-			combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index")
-		with gr.Row():
-			save_depth = gr.Checkbox(label="Save DepthMap",value=True)
-			show_depth = gr.Checkbox(label="Show DepthMap",value=True)
-			show_heat = gr.Checkbox(label="Show HeatMap",value=False)
-		with gr.Group():
+		with gr.Column(variant='panel'):
 			with gr.Row():
-				gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
-				gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
-			with gr.Row():
-				stereo_ipd = gr.Slider(minimum=5, maximum=7.5, step=0.1, label='IPD (cm)', value=6.4)
-				stereo_size = gr.Slider(minimum=20, maximum=100, step=0.5, label='Screen Width (cm)', value=38.5)
-			with gr.Row():
-				stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'hard_horizontal', 'soft_horizontal'], value='soft_horizontal', type="index", elem_id="stereo_fill_type")
-				stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
+				compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index")
+				model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small','res101'], value='res101', type="index", elem_id="tabmodel_type")
+			with gr.Group():
+				with gr.Row():
+					net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=384)
+					net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=384)
+				match_size = gr.Checkbox(label="Match input size (size is ignored when using boost)",value=False)
+			with gr.Group():
+				boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
+			with gr.Group():
+				invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)",value=False)
+				with gr.Row():
+					combine_output = gr.Checkbox(label="Combine into one image.",value=True)
+					combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index")
+				with gr.Row():
+					save_depth = gr.Checkbox(label="Save DepthMap",value=True)
+					show_depth = gr.Checkbox(label="Show DepthMap",value=True)
+					show_heat = gr.Checkbox(label="Show HeatMap",value=False)
+			with gr.Group():
+				with gr.Row():
+					gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
+					gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
+				with gr.Row():
+					stereo_ipd = gr.Slider(minimum=5, maximum=7.5, step=0.1, label='IPD (cm)', value=6.4)
+					stereo_size = gr.Slider(minimum=20, maximum=100, step=0.5, label='Screen Width (cm)', value=38.5)
+				with gr.Row():
+					stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'hard_horizontal', 'soft_horizontal'], value='soft_horizontal', type="index", elem_id="stereo_fill_type")
+					stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
 
-		with gr.Box():
-			gr.HTML("Instructions, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
+
+			with gr.Box():
+				gr.HTML("Instructions, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
 		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance]
 
@@ -243,10 +249,11 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 		print("Computing depthmap(s) ..")
 		# iterate over input (generated) images
 		numimages = len(inputimages)
-		for count in range(0, numimages):
-
-			if numimages > 1:
-				print("Depthmap", count+1, '/', numimages)
+		for count in trange(0, numimages):
+			
+			#if numimages > 1:
+			#	print("\nDepthmap", count+1, '/', numimages)
+			print('\n')
 
 			# override net size
 			if (match_size):
@@ -283,6 +290,21 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			# invert depth map
 			if invert_depth ^ model_type == 4:
 				img_output = cv2.bitwise_not(img_output)
+
+			"""
+            # sparse bilateral filtering
+            print("Bilateral filter (TEST) ..")
+			sparse_iter = 5
+			filter_size = [7, 7, 5, 5, 5]
+			depth_threshold = 0.04
+			sigma_s = 4.0
+			sigma_r = 0.5
+			with np.errstate(divide='ignore', invalid='ignore'):
+				vis_photos, vis_depths = sparse_bilateral_filtering(img_output.astype(np.float32).copy(), img.copy(), filter_size, depth_threshold, sigma_s, sigma_r, num_iter=sparse_iter, spdb=False)
+			fimg = Image.fromarray(vis_depths[-1].astype("uint16"))
+			outimages.append(fimg)
+			img_output = vis_depths[-1].astype("uint16")
+            """
 
 			# three channel, 8 bits per channel image
 			img_output2 = np.zeros_like(inputimages[count])
@@ -454,7 +476,7 @@ def apply_stereo_deviation(original_image, depth, deviation, fill_technique):
     else:  # none
         return derived_image
 
-@njit
+@njit(parallel=True) 
 def overlap(im1, im2):
     width1 = im1.shape[1]
     height1 = im1.shape[0]
@@ -465,16 +487,16 @@ def overlap(im1, im2):
     composite = np.zeros((height2, width2, 3), np.uint8)
 
     # iterate through "left" image, filling in red values of final image
-    for i in range(height1):
-        for j in range(width1):
+    for i in prange(height1):
+        for j in prange(width1):
             #try:
                 composite[i, j, 0] = im1[i, j, 0]
             #except IndexError:
             #    pass
 
     # iterate through "right" image, filling in blue/green values of final image
-    for i in range(height2):
-        for j in range(width2):
+    for i in prange(height2):
+        for j in prange(width2):
             #try:
                 composite[i, j, 1] = im2[i, j, 1]
                 composite[i, j, 2] = im2[i, j, 2]
@@ -575,7 +597,7 @@ def on_ui_tabs():
                     with gr.Row():
                         net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=384)
                         net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=384)
-                    match_size = gr.Checkbox(label="Match input size",value=False)
+                    match_size = gr.Checkbox(label="Match input size (size is ignored when using boost)",value=False)
                 with gr.Group():
                     boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
                 with gr.Group():
@@ -1383,3 +1405,201 @@ def estimateboost(img, model, model_type, pix2pixmodel):
 	# output
 	return cv2.resize(imageandpatchs.estimation_updated_image, (input_resolution[1], input_resolution[0]), interpolation=cv2.INTER_CUBIC)
 	
+# taken from 3d-photo-inpainting and modified
+def sparse_bilateral_filtering(
+    depth, image, filter_size, depth_threshold, sigma_s, sigma_r, HR=False, mask=None, gsHR=True, edge_id=None, num_iter=None, num_gs_iter=None, spdb=False
+):
+    save_images = []
+    save_depths = []
+    save_discontinuities = []
+    vis_depth = depth.copy()
+
+    vis_image = image.copy()
+    for i in range(num_iter):
+        if isinstance(filter_size, list):
+            window_size = filter_size[i]
+        else:
+            window_size = filter_size
+        vis_image = image.copy()
+        save_images.append(vis_image)
+        save_depths.append(vis_depth)
+        u_over, b_over, l_over, r_over = vis_depth_discontinuity(vis_depth, depth_threshold, mask=mask) # test label true
+        vis_image[u_over > 0] = np.array([0, 0, 0])
+        vis_image[b_over > 0] = np.array([0, 0, 0])
+        vis_image[l_over > 0] = np.array([0, 0, 0])
+        vis_image[r_over > 0] = np.array([0, 0, 0])
+
+        discontinuity_map = (u_over + b_over + l_over + r_over).clip(0.0, 1.0)
+        discontinuity_map[depth == 0] = 1
+        save_discontinuities.append(discontinuity_map)
+        if mask is not None:
+            discontinuity_map[mask == 0] = 0
+        vis_depth = bilateral_filter(
+            vis_depth, filter_size, sigma_s, sigma_r, discontinuity_map=discontinuity_map, HR=HR, mask=mask, window_size=window_size
+        )
+
+    return save_images, save_depths
+
+def vis_depth_discontinuity(depth, depth_threshold, vis_diff=False, label=False, mask=None):
+    """
+    config:
+    - 
+    """
+    if label == False:
+        disp = 1./depth
+        u_diff = (disp[1:, :] - disp[:-1, :])[:-1, 1:-1]
+        b_diff = (disp[:-1, :] - disp[1:, :])[1:, 1:-1]
+        l_diff = (disp[:, 1:] - disp[:, :-1])[1:-1, :-1]
+        r_diff = (disp[:, :-1] - disp[:, 1:])[1:-1, 1:]
+        if mask is not None:
+            u_mask = (mask[1:, :] * mask[:-1, :])[:-1, 1:-1]
+            b_mask = (mask[:-1, :] * mask[1:, :])[1:, 1:-1]
+            l_mask = (mask[:, 1:] * mask[:, :-1])[1:-1, :-1]
+            r_mask = (mask[:, :-1] * mask[:, 1:])[1:-1, 1:]
+            u_diff = u_diff * u_mask
+            b_diff = b_diff * b_mask
+            l_diff = l_diff * l_mask
+            r_diff = r_diff * r_mask
+        u_over = (np.abs(u_diff) > depth_threshold).astype(np.float32)
+        b_over = (np.abs(b_diff) > depth_threshold).astype(np.float32)
+        l_over = (np.abs(l_diff) > depth_threshold).astype(np.float32)
+        r_over = (np.abs(r_diff) > depth_threshold).astype(np.float32)
+    else:
+        disp = depth
+        u_diff = (disp[1:, :] * disp[:-1, :])[:-1, 1:-1]
+        b_diff = (disp[:-1, :] * disp[1:, :])[1:, 1:-1]
+        l_diff = (disp[:, 1:] * disp[:, :-1])[1:-1, :-1]
+        r_diff = (disp[:, :-1] * disp[:, 1:])[1:-1, 1:]
+        if mask is not None:
+            u_mask = (mask[1:, :] * mask[:-1, :])[:-1, 1:-1]
+            b_mask = (mask[:-1, :] * mask[1:, :])[1:, 1:-1]
+            l_mask = (mask[:, 1:] * mask[:, :-1])[1:-1, :-1]
+            r_mask = (mask[:, :-1] * mask[:, 1:])[1:-1, 1:]
+            u_diff = u_diff * u_mask
+            b_diff = b_diff * b_mask
+            l_diff = l_diff * l_mask
+            r_diff = r_diff * r_mask
+        u_over = (np.abs(u_diff) > 0).astype(np.float32)
+        b_over = (np.abs(b_diff) > 0).astype(np.float32)
+        l_over = (np.abs(l_diff) > 0).astype(np.float32)
+        r_over = (np.abs(r_diff) > 0).astype(np.float32)
+    u_over = np.pad(u_over, 1, mode='constant')
+    b_over = np.pad(b_over, 1, mode='constant')
+    l_over = np.pad(l_over, 1, mode='constant')
+    r_over = np.pad(r_over, 1, mode='constant')
+    u_diff = np.pad(u_diff, 1, mode='constant')
+    b_diff = np.pad(b_diff, 1, mode='constant')
+    l_diff = np.pad(l_diff, 1, mode='constant')
+    r_diff = np.pad(r_diff, 1, mode='constant')
+
+    if vis_diff:
+        return [u_over, b_over, l_over, r_over], [u_diff, b_diff, l_diff, r_diff]
+    else:
+        return [u_over, b_over, l_over, r_over]
+
+def bilateral_filter(depth, filter_size, sigma_s, sigma_r, discontinuity_map=None, HR=False, mask=None, window_size=False):
+    #sigma_s = config['sigma_s']
+    #sigma_r = config['sigma_r']
+    if window_size == False:
+        window_size = filter_size
+    midpt = window_size//2
+    ax = np.arange(-midpt, midpt+1.)
+    xx, yy = np.meshgrid(ax, ax)
+    if discontinuity_map is not None:
+        spatial_term = np.exp(-(xx**2 + yy**2) / (2. * sigma_s**2))
+
+    # padding
+    depth = depth[1:-1, 1:-1]
+    depth = np.pad(depth, ((1,1), (1,1)), 'edge')
+    pad_depth = np.pad(depth, (midpt,midpt), 'edge')
+    if discontinuity_map is not None:
+        discontinuity_map = discontinuity_map[1:-1, 1:-1]
+        discontinuity_map = np.pad(discontinuity_map, ((1,1), (1,1)), 'edge')
+        pad_discontinuity_map = np.pad(discontinuity_map, (midpt,midpt), 'edge')
+        pad_discontinuity_hole = 1 - pad_discontinuity_map
+    # filtering
+    output = depth.copy()
+    pad_depth_patches = rolling_window(pad_depth, [window_size, window_size], [1,1])
+    if discontinuity_map is not None:
+        pad_discontinuity_patches = rolling_window(pad_discontinuity_map, [window_size, window_size], [1,1])
+        pad_discontinuity_hole_patches = rolling_window(pad_discontinuity_hole, [window_size, window_size], [1,1])
+
+    if mask is not None:
+        pad_mask = np.pad(mask, (midpt,midpt), 'constant')
+        pad_mask_patches = rolling_window(pad_mask, [window_size, window_size], [1,1])
+    from itertools import product
+    if discontinuity_map is not None:
+        pH, pW = pad_depth_patches.shape[:2]
+        for pi in range(pH):
+            for pj in range(pW):
+                if mask is not None and mask[pi, pj] == 0:
+                    continue
+                if discontinuity_map is not None:
+                    if bool(pad_discontinuity_patches[pi, pj].any()) is False:
+                        continue
+                    discontinuity_patch = pad_discontinuity_patches[pi, pj]
+                    discontinuity_holes = pad_discontinuity_hole_patches[pi, pj]
+                depth_patch = pad_depth_patches[pi, pj]
+                depth_order = depth_patch.ravel().argsort()
+                patch_midpt = depth_patch[window_size//2, window_size//2]
+                if discontinuity_map is not None:
+                    coef = discontinuity_holes.astype(np.float32)
+                    if mask is not None:
+                        coef = coef * pad_mask_patches[pi, pj]
+                else:
+                    range_term = np.exp(-(depth_patch-patch_midpt)**2 / (2. * sigma_r**2))
+                    coef = spatial_term * range_term
+                if coef.max() == 0:
+                    output[pi, pj] = patch_midpt
+                    continue
+                if discontinuity_map is not None and (coef.max() == 0):
+                    output[pi, pj] = patch_midpt
+                else:
+                    coef = coef/(coef.sum())
+                    coef_order = coef.ravel()[depth_order]
+                    cum_coef = np.cumsum(coef_order)
+                    ind = np.digitize(0.5, cum_coef)
+                    output[pi, pj] = depth_patch.ravel()[depth_order][ind]
+    else:
+        pH, pW = pad_depth_patches.shape[:2]
+        for pi in range(pH):
+            for pj in range(pW):
+                if discontinuity_map is not None:
+                    if pad_discontinuity_patches[pi, pj][window_size//2, window_size//2] == 1:
+                        continue
+                    discontinuity_patch = pad_discontinuity_patches[pi, pj]
+                    discontinuity_holes = (1. - discontinuity_patch)
+                depth_patch = pad_depth_patches[pi, pj]
+                depth_order = depth_patch.ravel().argsort()
+                patch_midpt = depth_patch[window_size//2, window_size//2]
+                range_term = np.exp(-(depth_patch-patch_midpt)**2 / (2. * sigma_r**2))
+                if discontinuity_map is not None:
+                    coef = spatial_term * range_term * discontinuity_holes
+                else:
+                    coef = spatial_term * range_term
+                if coef.sum() == 0:
+                    output[pi, pj] = patch_midpt
+                    continue
+                if discontinuity_map is not None and (coef.sum() == 0):
+                    output[pi, pj] = patch_midpt
+                else:
+                    coef = coef/(coef.sum())
+                    coef_order = coef.ravel()[depth_order]
+                    cum_coef = np.cumsum(coef_order)
+                    ind = np.digitize(0.5, cum_coef)
+                    output[pi, pj] = depth_patch.ravel()[depth_order][ind]
+
+    return output
+
+def rolling_window(a, window, strides):
+    assert len(a.shape)==len(window)==len(strides), "\'a\', \'window\', \'strides\' dimension mismatch"
+    shape_fn = lambda i,w,s: (a.shape[i]-w)//s + 1
+    shape = [shape_fn(i,w,s) for i,(w,s) in enumerate(zip(window, strides))] + list(window)
+    def acc_shape(i):
+        if i+1>=len(a.shape):
+            return 1
+        else:
+            return reduce(lambda x,y:x*y, a.shape[i+1:])
+    _strides = [acc_shape(i)*s*a.itemsize for i,s in enumerate(strides)] + list(a.strides)
+
+    return np.lib.stride_tricks.as_strided(a, shape=shape, strides=_strides)

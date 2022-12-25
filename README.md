@@ -9,6 +9,8 @@ To generate realistic depth maps from a single image, this script uses code and 
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.3.1 bugfix
+    * clone midas repo before midas 3.1 to fix issue (see [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/issues/55#issue-1510266008))
 * v0.3.0 improved stereo image generation
     * New improved technique for generating stereo images and balancing distortion between eyes by [@semjon00](https://github.com/semjon00) (See [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/51))
     * Substantial speedup of stereo image generation code using numba JIT

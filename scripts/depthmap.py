@@ -218,7 +218,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			model = RelDepthModel(backbone='resnext101')
 			model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)
 			del checkpoint
-			torch.cuda.empty_cache()
+			devices.torch_gc()
 
 		# load merge network if boost enabled
 		if boost:

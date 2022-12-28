@@ -89,20 +89,19 @@ class Script(scripts.Script):
 					gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
 					gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
 				with gr.Row():
-					stereo_ipd = gr.Slider(minimum=5, maximum=7.5, step=0.1, label='IPD (cm)', value=6.4)
-					stereo_size = gr.Slider(minimum=20, maximum=100, step=0.5, label='Screen Width (cm)', value=38.5)
+					stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)', value=2.5)
 				with gr.Row():
-					stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'hard_horizontal', 'soft_horizontal'], value='soft_horizontal', type="index", elem_id="stereo_fill_type")
+					stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='naive_interpolating', type="index", elem_id="stereo_fill_type")
 					stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
 
 
 			with gr.Box():
 				gr.HTML("Instructions, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
-		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance]
+		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance]
 
 	# run from script in txt2img or img2img
-	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance):
+	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance):
 
 		# sd process 
 		processed = processing.process_images(p)
@@ -116,13 +115,13 @@ class Script(scripts.Script):
 				continue
 			inputimages.append(processed.images[count])
 
-		newmaps = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance)
+		newmaps = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance)
 		for img in newmaps:
 			processed.images.append(img)
 
 		return processed
 
-def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance):
+def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance):
 
 	# unload sd model
 	shared.sd_model.cond_stage_model.to(devices.cpu)
@@ -250,7 +249,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 		# iterate over input (generated) images
 		numimages = len(inputimages)
 		for count in trange(0, numimages):
-			
+
 			#if numimages > 1:
 			#	print("\nDepthmap", count+1, '/', numimages)
 			print('\n')
@@ -357,13 +356,12 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			if gen_stereo or gen_anaglyph:
 				print("Generating Stereo image..")
 				#img_output = cv2.blur(img_output, (3, 3))
-				deviation = calculate_total_deviation(stereo_ipd, stereo_size, inputimages[count].width)
 				balance = (stereo_balance + 1) / 2
 				original_image = np.asarray(inputimages[count])
 				left_image = original_image if balance < 0.001 else \
-					apply_stereo_deviation(original_image, img_output, - deviation * balance, stereo_fill)
+					apply_stereo_divergence(original_image, img_output, - stereo_divergence * balance, stereo_fill)
 				right_image = original_image if balance > 0.999 else \
-					apply_stereo_deviation(original_image, img_output, deviation * (1 - balance), stereo_fill)
+					apply_stereo_divergence(original_image, img_output, stereo_divergence * (1 - balance), stereo_fill)
 				stereo_img = np.hstack([left_image, right_image])
 
 				if gen_stereo:
@@ -407,35 +405,35 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 
 	return outimages
 
-def calculate_total_deviation(ipd, monitor_w, image_width):
-    deviation_cm = ipd * 0.12
-    deviation = deviation_cm * monitor_w * (image_width / 1920)
-    print("deviation:", deviation)
-    return deviation
-
-@njit
-def apply_stereo_deviation(original_image, depth, deviation, fill_technique):
-    h, w, c = original_image.shape
-
+def apply_stereo_divergence(original_image, depth, divergence, fill_technique):
     depth_min = depth.min()
     depth_max = depth.max()
     depth = (depth - depth_min) / (depth_max - depth_min)
+    divergence_px = (divergence / 100.0) * original_image.shape[1]
+
+    if fill_technique in [0, 1, 2]:
+        return apply_stereo_divergence_naive(original_image, depth, divergence_px, fill_technique)
+    if fill_technique in [3, 4]:
+        return apply_stereo_divergence_polylines(original_image, depth, divergence_px, fill_technique)
+
+@njit
+def apply_stereo_divergence_naive(original_image, normalized_depth, divergence_px: float, fill_technique):
+    h, w, c = original_image.shape
 
     derived_image = np.zeros_like(original_image)
     filled = np.zeros(h * w, dtype=np.uint8)
 
-    for row in range(h):
+    for row in prange(h):
         # Swipe order should ensure that pixels that are closer overwrite
         # (at their destination) pixels that are less close
-        for col in range(w) if deviation < 0 else range(w - 1, -1, -1):
-            col_d = col + int((1 - depth[row][col] ** 2) * deviation)
-            # col_d = col + int((1 - depth[row][col]) * deviation)
+        for col in range(w) if divergence_px < 0 else range(w - 1, -1, -1):
+            col_d = col + int((1 - normalized_depth[row][col] ** 2) * divergence_px)
             if 0 <= col_d < w:
                 derived_image[row][col_d] = original_image[row][col]
                 filled[row * w + col_d] = 1
 
     # Fill the gaps
-    if fill_technique == 2:  # soft_horizontal
+    if fill_technique == 2:  # naive_interpolating
         for row in range(h):
             for l_pointer in range(w):
                 # This if (and the next if) performs two checks that are almost the same - for performance reasons
@@ -444,7 +442,7 @@ def apply_stereo_deviation(original_image, depth, deviation, fill_technique):
                 l_border = derived_image[row][l_pointer - 1] if l_pointer > 0 else np.zeros(3, dtype=np.uint8)
                 r_border = np.zeros(3, dtype=np.uint8)
                 r_pointer = l_pointer + 1
-                while r_pointer != w:
+                while r_pointer < w:
                     if sum(derived_image[row][r_pointer]) != 0 and filled[row * w + r_pointer]:
                         r_border = derived_image[row][r_pointer]
                         break
@@ -453,30 +451,169 @@ def apply_stereo_deviation(original_image, depth, deviation, fill_technique):
                     l_border = r_border
                 elif sum(r_border) == 0:
                     r_border = l_border
+                # Example illustrating positions of pointers at this point in code:
+                # is filled?  : +   -   -   -   -   +
+                # pointers    :     l               r
+                # interpolated: 0   1   2   3   4   5
+                # In total: 5 steps between two filled pixels
                 total_steps = 1 + r_pointer - l_pointer
                 step = (r_border.astype(np.float_) - l_border) / total_steps
                 for col in range(l_pointer, r_pointer):
                     derived_image[row][col] = l_border + (step * (col - l_pointer + 1)).astype(np.uint8)
         return derived_image
-    elif fill_technique == 1:  # hard_horizontal
+    elif fill_technique == 1:  # naive
         derived_fix = np.copy(derived_image)
         for pos in np.where(filled == 0)[0]:
             row = pos // w
             col = pos % w
-            for offset in range(1, abs(int(deviation)) + 2):
+            row_times_w = row * w
+            for offset in range(1, abs(int(divergence_px)) + 2):
                 r_offset = col + offset
                 l_offset = col - offset
-                if r_offset < w and filled[row * w + r_offset]:
+                if r_offset < w and filled[row_times_w + r_offset]:
                     derived_fix[row][col] = derived_image[row][r_offset]
                     break
-                if 0 <= l_offset and filled[row * w + l_offset]:
+                if 0 <= l_offset and filled[row_times_w + l_offset]:
                     derived_fix[row][col] = derived_image[row][l_offset]
                     break
         return derived_fix
     else:  # none
         return derived_image
 
-@njit(parallel=True) 
+@njit(fastmath=True, parallel=True)
+def apply_stereo_divergence_polylines(original_image, normalized_depth, divergence_px: float, fill_technique):
+    # This code treats rows of the image as polylines
+    # It generates polylines, morphs them (applies divergence) to them, and then rasterizes them
+    # Would be great to have some optimizations for it
+
+    # total_segments = 0
+    # visible_segments = np.zeros(abs(int(divergence_px)) + 3, dtype=np.int32)
+    # overlapping_segments = np.zeros(abs(int(divergence_px)) + 3, dtype=np.int32)
+    # insertion_sort_operations = 0
+
+    EPSILON = 1e-7
+    h, w, c = original_image.shape
+    derived_image = np.zeros_like(original_image)
+    SAMPLES = [1/6, 3/6, 5/6] if fill_technique == 3 else [0.1, 0.3, 0.5, 0.7, 0.9]
+
+    for row in prange(h):
+        # generating the polyline
+        # format of each segment: new coordinate of first point, its divergence,
+        #                         new coordinate of second point, its divergence,
+        #                         original column of the first pixel, original column of the second pixel
+        # it is not guaranteed that first pixel is the left pixel
+        sg = np.zeros((0, 6), dtype=np.float_)
+        sg_end = 0
+        if fill_technique == 3:  # polylines_soft
+            sg = np.zeros((w + 3, 6), dtype=np.float_)
+            sg[sg_end] = [-3.0 * abs(divergence_px), -0.1, -1337.0, -0.1, 0.0, 0.0]
+            sg_end += 1
+            for col in range(0, w - 1):
+                ld = (1 - normalized_depth[row][col] ** 2) * divergence_px
+                rd = (1 - normalized_depth[row][col + 1] ** 2) * divergence_px
+                lx, rx = ld + col, rd + (col + 1)
+                sg[sg_end] = [lx, abs(ld), rx, abs(rd), float(col), float(col + 1)]
+                sg_end += 1
+                if col == 0:
+                    sg[0][2] = sg[1][0] + EPSILON
+            sg[sg_end] = [sg[sg_end - 1][2] - EPSILON, -0.1, w + 3.0 * abs(divergence_px), -0.1, w - 1, w - 1]
+            sg_end += 1
+        if fill_technique == 4:  # polylines_sharp
+            PIXEL_HALF_WIDTH = 0.45
+            sg = np.zeros((2 * w + 5, 6), dtype=np.float_)
+            sg[sg_end] = [-3.0 * abs(divergence_px), -0.1, -1337.0, -0.1, 0, 0]
+            sg_end += 1
+            for col in range(0, w):
+                # each pixel gets a segment
+                d = (1 - normalized_depth[row][col] ** 2) * divergence_px
+                center = col + d
+                fx = center - PIXEL_HALF_WIDTH - EPSILON
+                sx = center + PIXEL_HALF_WIDTH + EPSILON
+
+                if col == 0:
+                    sg[0][2] = fx + EPSILON
+                else:
+                    # each space between two adjacent pixels gets a segment
+                    sg[sg_end] = [(sg[sg_end - 1][0] + sg[sg_end-1][2]) / 2, sg[sg_end - 1][3] - EPSILON,
+                                  center, abs(d) - EPSILON,
+                                  col - 1, col]
+                    sg_end += 1
+
+                # each pixel gets a segment
+                sg[sg_end] = [fx, abs(d), sx, abs(d), col, col]
+                sg_end += 1
+
+            sg[sg_end] = [sg[sg_end - 1][2] - EPSILON, -0.1, w + 3.0 * abs(divergence_px), -0.1, w - 1, w - 1]
+            sg_end += 1
+        # total_segments += sg_end
+
+        # sort segments using insertion sort
+        # has a very good performance in practice, since segments are almost sorted to begin with
+        for i in range(1, sg_end):
+            u = i - 1
+            while sg[u][0] > sg[u + 1][0] and 0 <= u:
+                # insertion_sort_operations += 1
+                sg[u], sg[u + 1] = np.copy(sg[u + 1]), np.copy(sg[u])
+                u -= 1
+
+        # Possible improvement: a more accurate logic instead of just sampling a region multiple times
+        # rasterizing
+        # at each point in time we keep track of segments that are "active" (or "current")
+        cs = np.zeros((5 * int(abs(divergence_px)) + 25, 6), dtype=np.float_)
+        cs_end = 0
+        seg_pointer = 0
+        for col in range(w):
+            # removing from current segments
+            cs_i = 0
+            while cs_i < cs_end:
+                if cs[cs_i][2] < col:
+                    cs[cs_i] = cs[cs_end - 1]
+                    cs_end -= 1
+                else:
+                    cs_i += 1
+
+            # adding to current segments
+            while seg_pointer < sg_end and sg[seg_pointer][0] < col + 1.0:
+                cs[cs_end] = sg[seg_pointer]
+                seg_pointer += 1
+                cs_end += 1
+
+            color = np.full(c, 0.5, dtype=np.float_)  # we start with 0.5 because of how floats are converted to ints
+            # visible_segments_col = np.zeros_like(samples)
+            for sample_i in range(len(SAMPLES)):
+                # finding the segment that is the closest at the position
+                sample = SAMPLES[sample_i]
+                pos = col + sample
+                best_i = 0
+                best_closeness = -1.1
+                for cs_i in range(cs_end):
+                    # interpolating, works regardless if first point is left point
+                    ip_k = (pos - cs[cs_i][0]) / (cs[cs_i][2] - cs[cs_i][0])
+                    closeness = (1.0 - ip_k) * cs[cs_i][1] + ip_k * cs[cs_i][3]
+                    if best_closeness < closeness and 0.0 < ip_k < 1.0:
+                        best_closeness = closeness
+                        best_i = cs_i
+                # overlapping_segments[cs_end] += 1
+                # assert best_closeness > 0
+                # visible_segments_col[sample_i] = best_i
+
+                # getting the color
+                pos = col + sample
+                col_l, col_r = int(cs[best_i][4] + 0.001), int(cs[best_i][5] + 0.001)
+                ip_k = (pos - cs[best_i][0]) / (cs[best_i][2] - cs[best_i][0])
+                color += (original_image[row][col_l] * (1.0 - ip_k) + original_image[row][col_r] * ip_k) / len(SAMPLES)
+
+            # visible_segments[len(np.unique(visible_segments_col))] += 1
+            derived_image[row][col] = np.asarray(color, dtype=np.uint8)
+
+    # print(f'image dimensions: h:{h}, w:{w}, total:{h*w}')
+    # print('total segments: ', int(total_segments))
+    # print('overlapping segments: ', list(overlapping_segments))
+    # print('visible segments: ', list(visible_segments))
+    # print('insertion sort operations: ', insertion_sort_operations)
+    return derived_image
+
+@njit(parallel=True)
 def overlap(im1, im2):
     width1 = im1.shape[1]
     height1 = im1.shape[0]
@@ -523,9 +660,8 @@ def run_generate(depthmap_mode,
 				combine_output, 
 				combine_output_axis,
 				gen_stereo, 
-				gen_anaglyph, 
-				stereo_ipd, 
-				stereo_size,
+				gen_anaglyph,
+				stereo_divergence,
 				stereo_fill,
 				stereo_balance
 				):
@@ -564,7 +700,7 @@ def run_generate(depthmap_mode,
 		outpath = opts.outdir_samples or opts.outdir_extras_samples
 
 
-	outputs = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_ipd, stereo_size, stereo_fill, stereo_balance)
+	outputs = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance)
 
 	return outputs, plaintext_to_html('info'), ''
 
@@ -614,10 +750,9 @@ def on_ui_tabs():
                         gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
                         gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
                     with gr.Row():
-                        stereo_ipd = gr.Slider(minimum=5, maximum=7.5, step=0.1, label='IPD (cm)', value=6.4)
-                        stereo_size = gr.Slider(minimum=20, maximum=100, step=0.5, label='Screen Width (cm)', value=38.5)
+                        stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)', value=2.5)
                     with gr.Row():
-                        stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'hard_horizontal', 'soft_horizontal'], value='soft_horizontal', type="index", elem_id="stereo_fill_type")
+                        stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='naive_interpolating', type="index", elem_id="stereo_fill_type")
                         stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
 
                 with gr.Box():
@@ -655,9 +790,8 @@ def on_ui_tabs():
 				combine_output, 
 				combine_output_axis,
 				gen_stereo, 
-				gen_anaglyph, 
-				stereo_ipd, 
-				stereo_size,
+				gen_anaglyph,
+				stereo_divergence,
 				stereo_fill,
 				stereo_balance
             ],
@@ -1404,7 +1538,7 @@ def estimateboost(img, model, model_type, pix2pixmodel):
 
 	# output
 	return cv2.resize(imageandpatchs.estimation_updated_image, (input_resolution[1], input_resolution[0]), interpolation=cv2.INTER_CUBIC)
-	
+
 # taken from 3d-photo-inpainting and modified
 def sparse_bilateral_filtering(
     depth, image, filter_size, depth_threshold, sigma_s, sigma_r, HR=False, mask=None, gsHR=True, edge_id=None, num_iter=None, num_gs_iter=None, spdb=False
@@ -1443,7 +1577,7 @@ def sparse_bilateral_filtering(
 def vis_depth_discontinuity(depth, depth_threshold, vis_diff=False, label=False, mask=None):
     """
     config:
-    - 
+    -
     """
     if label == False:
         disp = 1./depth

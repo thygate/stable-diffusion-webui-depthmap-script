@@ -54,7 +54,7 @@ import pix2pix.data
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.1"
+scriptname = "DepthMap v0.3.2"
 
 class Script(scripts.Script):
 	def title(self):

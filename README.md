@@ -3,12 +3,15 @@ This script is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://git
 
 To generate realistic depth maps from a single image, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) repository by Intel ISL (see [https://pytorch.org/hub/intelisl_midas_v2/](https://pytorch.org/hub/intelisl_midas_v2/) for more info), or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. Multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) is used to generate high resolution depth maps.
 
-3D stereo, and red/cyan anaglyph images are generated using code from the [stereo-image-generation](https://github.com/m5823779/stereo-image-generation) repository. Thanks to [@sina-masoud-ansari](https://github.com/sina-masoud-ansari) for the tip! Discussion [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/discussions/45). Improved technique for generating stereo images and balancing distortion between eyes by [@semjon00](https://github.com/semjon00), see [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/51).
+3D stereo, and red/cyan anaglyph images are generated using code from the [stereo-image-generation](https://github.com/m5823779/stereo-image-generation) repository. Thanks to [@sina-masoud-ansari](https://github.com/sina-masoud-ansari) for the tip! Discussion [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/discussions/45). Improved techniques for generating stereo images and balancing distortion between eyes by [@semjon00](https://github.com/semjon00), see [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/51) and [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/56).
 
 ## Examples
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.3.2 new feature and bugfixes
+    * several bug fixes for apple silicon and other machines without cuda
+    * NEW Stereo Image Generation techniques for gap filling by [@semjon00](https://github.com/semjon00) using polylines. (See [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/56)) Significant improvement in quality.
 * v0.3.1 bugfix
     * small speed increase for anaglyph creation
     * clone midas repo before midas 3.1 to fix issue (see [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/issues/55#issue-1510266008))

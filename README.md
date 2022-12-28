@@ -113,9 +113,15 @@ To make the depthmap easier to analyze for human eyes, `Show HeatMap` shows an e
 
 When `Combine into one image` is enabled, the depthmap will be combined with the original image, the orientation can be selected with `Combine axis`. When disabled, the depthmap will be saved as a 16 bit single channel PNG as opposed to a three channel (RGB), 8 bit per channel image when the option is enabled.
 
-When either `Generate Stereo` or `Generate anaglyph` is enabled, a stereo image will be generated. The `IPD`, or Pupillary distance is given in centimeter along with the `Screen Width`.
+When either `Generate Stereo` or `Generate anaglyph` is enabled, a stereo image will be generated. `Divergence` sets the amount of 3D effect that is desired. `Balance between eyes` determines where the (inevitable) distortion from filling up gaps will end up, -1 Left, +1 Right, and 0 balanced.  
+The different `Gap fill technique` settings are : none (no gaps are filled), 
+naive (the original method), naive_interpolating (the original method with interpolation), polylines_soft and polylines_sharp are the latest technique, the last one being best quality and slowest. Note: All stereo image generation is done on CPU.
 
-> 💡 Saving as any format other than PNG always produces an 8 bit, 3 channel RGB image. A single channel 16 bit image is only supported when saving as PNG.
+Settings on WebUI Settings tab :  
+`Maximum wholesize for boost` sets the r_max value from the BoostingMonocularDepth paper, it relates to the max size that is chosen to render at internally, and directly influences the max amount of VRAM that could be used. The default value for this from the paper is 3000, I have lowered the value to 1600 so it will work more often with 8GB VRAM GPU's.
+If you often get out of memory errors when computing a depthmap on GPU while using Boost, you can try lowering this value. Note the 'wholeImage being processed in : xxxx' output when using boost, this number will never be greater than the r_max, but can be larger with a larger r_max. See the paper for more details.
+
+> 💡 Saving as any format other than PNG always produces an 8 bit, 3 channel RGB image. A single channel 16 bit image is only supported when saving as PNG. 
 
 ## FAQ
 

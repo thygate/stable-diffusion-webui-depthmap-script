@@ -1,7 +1,7 @@
 ﻿# High Resolution Depth Maps for Stable Diffusion WebUI
-This script is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depth maps` and now also `3D stereo image pairs` as side-by-side or anaglyph `from a single image`. The result can be viewed on 3D or holographic devices like VR headsets or [Looking Glass](https://lookingglassfactory.com/) displays, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
+This script is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depth maps`, and now also `3D stereo image pairs` as side-by-side or anaglyph from a single image. The result can be viewed on 3D or holographic devices like VR headsets or [Looking Glass](https://lookingglassfactory.com/) displays, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
 
-To generate realistic depth maps from a single image, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) repository by Intel ISL (see [https://pytorch.org/hub/intelisl_midas_v2/](https://pytorch.org/hub/intelisl_midas_v2/) for more info), or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. Multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) is used to generate high resolution depth maps.
+To generate realistic depth maps `from a single image`, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) repository by Intel ISL, or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. Multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) is used to generate high resolution depth maps.
 
 3D stereo, and red/cyan anaglyph images are generated using code from the [stereo-image-generation](https://github.com/m5823779/stereo-image-generation) repository. Thanks to [@sina-masoud-ansari](https://github.com/sina-masoud-ansari) for the tip! Discussion [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/discussions/45). Improved techniques for generating stereo images and balancing distortion between eyes by [@semjon00](https://github.com/semjon00), see [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/51) and [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/56).
 
@@ -9,6 +9,10 @@ To generate realistic depth maps from a single image, this script uses code and 
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.3.3 bugfix and new midas models
+    * updated to midas 3.1, bringing 2 new depth models (the 512 one eats VRAM for breakfast!)
+    * fix Next-ViT dependency issue for new installs
+    * extension no longer clones repositories, all dependencies are now contained in the extension
 * v0.3.2 new feature and bugfixes
     * several bug fixes for apple silicon and other machines without cuda
     * NEW Stereo Image Generation techniques for gap filling by [@semjon00](https://github.com/semjon00) using polylines. (See [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/56)) Significant improvement in quality.
@@ -72,34 +76,26 @@ To generate realistic depth maps from a single image, this script uses code and 
 ## Install instructions
 The script is now also available to install from the `Available` subtab under the `Extensions` tab in the WebUI.
 
-⚠️ Restart the backend after first install or it won't find the newly cloned repositories !
-
 ### Updating
 In the WebUI, in the `Extensions` tab, in the `Installed` subtab, click `Check for Updates` and then `Apply and restart UI`.
 
 ### Automatic installation 
 In the WebUI, in the `Extensions` tab, in the `Install from URL` subtab, enter this repository 
 `https://github.com/thygate/stable-diffusion-webui-depthmap-script`
- and click install.
-
->The midas repository will be cloned to /repositories/midas
-
->The BoostingMonocularDepth repository will be cloned to /repositories/BoostingMonocularDepth
+ and click install and restart.   
 
 >Model `weights` will be downloaded automatically on first use and saved to /models/midas, /models/leres and /models/pix2pix
 
 
-
 ## Usage
-Select the "DepthMap vX.X.X" script from the script selection box in either txt2img or img2img, or go to the Depth tab.
+Select the "DepthMap vX.X.X" script from the script selection box in either txt2img or img2img, or go to the Depth tab when using existing images.
 ![screenshot](options.png)
 
 The models can `Compute on` GPU and CPU, use CPU if low on VRAM. 
 
-There are five models available from the `Model` dropdown, the first four are the midas models: dpt_large, dpt_hybrid, midas_v21, and midas_v21_small. The first one dpt_large is the most recent midas model. See the [MiDaS](https://github.com/isl-org/MiDaS) repository for more info. The dpt_hybrid model yields good results in my experience, and is much smaller than the dpt_large model, which means shorter loading times when the model is reloaded on every run.
-For the fifth model, res101, see [AdelaiDepth/LeReS](https://github.com/aim-uofa/AdelaiDepth/tree/main/LeReS) for more info.
+There are seven models available from the `Model` dropdown. For the first model, res101, see [AdelaiDepth/LeReS](https://github.com/aim-uofa/AdelaiDepth/tree/main/LeReS) for more info. The others are the midas models: dpt_beit_large_512, dpt_beit_large_384, dpt_large_384, dpt_hybrid_384, midas_v21, and midas_v21_small. See the [MiDaS](https://github.com/isl-org/MiDaS) repository for more info. The newest dpt_beit_large_512 model was trained on a 512x512 dataset but is VERY VRAM hungry.
 
-Net size can be set with `net width` and `net height`, or will be the same as the input image when `Match input size` is enabled. There is a trade-off between structural consistency and high-frequency details with respect to net size (see [observations](https://github.com/compphoto/BoostingMonocularDepth#observations)). Large maps will also need lots of VRAM.
+Net size can be set with `net width` and `net height`, or will be the same as the input image when `Match input size` is enabled. There is a trade-off between structural consistency and high-frequency details with respect to net size (see [observations](https://github.com/compphoto/BoostingMonocularDepth#observations)).
 
 `Boost` will enable multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) and will significantly improve the results. Mitigating the observations mentioned above. Net size is ignored when enabled. Best results with res101.
 
@@ -114,7 +110,7 @@ To make the depthmap easier to analyze for human eyes, `Show HeatMap` shows an e
 When `Combine into one image` is enabled, the depthmap will be combined with the original image, the orientation can be selected with `Combine axis`. When disabled, the depthmap will be saved as a 16 bit single channel PNG as opposed to a three channel (RGB), 8 bit per channel image when the option is enabled.
 
 When either `Generate Stereo` or `Generate anaglyph` is enabled, a stereo image pair will be generated. `Divergence` sets the amount of 3D effect that is desired. `Balance between eyes` determines where the (inevitable) distortion from filling up gaps will end up, -1 Left, +1 Right, and 0 balanced.  
-The different `Gap fill technique` settings are : none (no gaps are filled), 
+The different `Gap fill technique` options are : none (no gaps are filled), 
 naive (the original method), naive_interpolating (the original method with interpolation), polylines_soft and polylines_sharp are the latest technique, the last one being best quality and slowest. Note: All stereo image generation is done on CPU.
 
 Settings on WebUI Settings tab :  

@@ -1,8 +1,8 @@
 import launch
-launch.git_clone("https://github.com/isl-org/MiDaS.git", "repositories/midas", "66882994a432727317267145dc3c2e47ec78c38a")
-launch.git_clone("https://github.com/compphoto/BoostingMonocularDepth.git", "repositories/BoostingMonocularDepth", "BoostingMonocularDepth")
+
 if not launch.is_installed("matplotlib"):
     launch.run_pip("install matplotlib", "requirements for depthmap script")
+    
 if not launch.is_installed("numba"):
     launch.run_pip("install numba", "requirements for depthmap script")
 

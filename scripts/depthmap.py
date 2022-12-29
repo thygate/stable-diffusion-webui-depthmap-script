@@ -23,7 +23,6 @@ import sys
 import torch, gc
 import torch.nn as nn
 import cv2
-import requests
 import os.path
 import contextlib
 import matplotlib.pyplot as plt
@@ -31,14 +30,13 @@ import numpy as np
 import skimage.measure
 import argparse
 
-# midas imports
-from repositories.midas.midas.dpt_depth import DPTDepthModel
-from repositories.midas.midas.midas_net import MidasNet
-from repositories.midas.midas.midas_net_custom import MidasNet_small
-from repositories.midas.midas.transforms import Resize, NormalizeImage, PrepareForNet
+sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
-path_monorepo = Path.joinpath(Path().resolve(), "repositories/BoostingMonocularDepth")
-sys.path.append(str(path_monorepo))
+# midas imports
+from midas.dpt_depth import DPTDepthModel
+from midas.midas_net import MidasNet
+from midas.midas_net_custom import MidasNet_small
+from midas.transforms import Resize, NormalizeImage, PrepareForNet
 
 # AdelaiDepth/LeReS imports
 from lib.multi_depth_model_woauxi import RelDepthModel
@@ -54,7 +52,7 @@ import pix2pix.data
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.2"
+scriptname = "DepthMap v0.3.3"
 
 class Script(scripts.Script):
 	def title(self):
@@ -67,11 +65,11 @@ class Script(scripts.Script):
 		with gr.Column(variant='panel'):
 			with gr.Row():
 				compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index")
-				model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small','res101'], value='res101', type="index", elem_id="tabmodel_type")
+				model_type = gr.Dropdown(label="Model", choices=['res101', 'dpt_beit_large_512 (midas 3.1)', 'dpt_beit_large_384 (midas 3.1)', 'dpt_large_384 (midas 3.0)','dpt_hybrid_384 (midas 3.0)','midas_v21','midas_v21_small'], value='res101', type="index", elem_id="tabmodel_type")
 			with gr.Group():
 				with gr.Row():
-					net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=384)
-					net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=384)
+					net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
+					net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
 				match_size = gr.Checkbox(label="Match input size (size is ignored when using boost)",value=False)
 			with gr.Group():
 				boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
@@ -91,7 +89,7 @@ class Script(scripts.Script):
 				with gr.Row():
 					stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)', value=2.5)
 				with gr.Row():
-					stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='naive_interpolating', type="index", elem_id="stereo_fill_type")
+					stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='polylines_sharp', type="index", elem_id="stereo_fill_type")
 					stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
 
 
@@ -139,7 +137,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 
 	# model path and name
 	model_dir = "./models/midas"
-	if model_type == 4:
+	if model_type == 0:
 		model_dir = "./models/leres"
 	# create paths to model if not present
 	os.makedirs(model_dir, exist_ok=True)
@@ -148,8 +146,71 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 	outimages = []
 	try:
 		print("Loading model weights from ", end=" ")
-		#"dpt_large"
+
+        #"res101"
 		if model_type == 0: 
+			model_path = f"{model_dir}/res101.pth"
+			print(model_path)
+			if not os.path.exists(model_path):
+				download_file(model_path,"https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download")
+			if compute_device == 0:
+				checkpoint = torch.load(model_path)
+			else:
+				checkpoint = torch.load(model_path,map_location=torch.device('cpu'))
+			model = RelDepthModel(backbone='resnext101')
+			model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)
+			del checkpoint
+			devices.torch_gc()
+
+        #"dpt_beit_large_512" midas 3.1
+		if model_type == 1: 
+			model_path = f"{model_dir}/dpt_beit_large_512.pt"
+			print(model_path)
+			if not os.path.exists(model_path):
+				download_file(model_path,"https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_512.pt")
+			model = DPTDepthModel(
+				path=model_path,
+				backbone="beitl16_512",
+				non_negative=True,
+			)
+			net_w, net_h = 512, 512
+			resize_mode = "minimal"
+			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+        #"dpt_beit_large_384" midas 3.1
+		if model_type == 2: 
+			model_path = f"{model_dir}/dpt_beit_large_384.pt"
+			print(model_path)
+			if not os.path.exists(model_path):
+				download_file(model_path,"https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_384.pt")
+			model = DPTDepthModel(
+				path=model_path,
+				backbone="beitl16_384",
+				non_negative=True,
+			)
+			net_w, net_h = 384, 384
+			resize_mode = "minimal"
+			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+		"""
+        #"dpt_swin2_large_384" midas 3.1 / doesn't play nice with input size
+		if model_type == 2: 
+			model_path = f"{model_dir}/dpt_swin2_large_384.pt"
+			print(model_path)
+			if not os.path.exists(model_path):
+				download_file(model_path,"https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin2_large_384.pt")
+			model = DPTDepthModel(
+				path=model_path,
+				backbone="swin2l24_384",
+				non_negative=True,
+			)
+			net_w, net_h = 384, 384
+			resize_mode = "minimal"
+			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        """
+
+		#"dpt_large_384" midas 3.0
+		if model_type == 3: 
 			model_path = f"{model_dir}/dpt_large-midas-2f21e586.pt"
 			print(model_path)
 			if not os.path.exists(model_path):
@@ -163,8 +224,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			resize_mode = "minimal"
 			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
-		#"dpt_hybrid"
-		elif model_type == 1: 
+		#"dpt_hybrid_384" midas 3.0
+		elif model_type == 4: 
 			model_path = f"{model_dir}/dpt_hybrid-midas-501f0c75.pt"
 			print(model_path)
 			if not os.path.exists(model_path):
@@ -179,7 +240,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
 		#"midas_v21"
-		elif model_type == 2: 
+		elif model_type == 5: 
 			model_path = f"{model_dir}/midas_v21-f6b98070.pt"
 			print(model_path)
 			if not os.path.exists(model_path):
@@ -192,7 +253,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			)
 
 		#"midas_v21_small"
-		elif model_type == 3: 
+		elif model_type == 6: 
 			model_path = f"{model_dir}/midas_v21_small-70d6b9c8.pt"
 			print(model_path)
 			if not os.path.exists(model_path):
@@ -204,20 +265,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 				mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
 			)
 
-		#"res101"
-		elif model_type == 4: 
-			model_path = f"{model_dir}/res101.pth"
-			print(model_path)
-			if not os.path.exists(model_path):
-				download_file(model_path,"https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download")
-			if compute_device == 0:
-				checkpoint = torch.load(model_path)
-			else:
-				checkpoint = torch.load(model_path,map_location=torch.device('cpu'))
-			model = RelDepthModel(backbone='resnext101')
-			model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)
-			del checkpoint
-			devices.torch_gc()
 
 		# load merge network if boost enabled
 		if boost:
@@ -240,7 +287,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 		# optimize
 		if device == torch.device("cuda"):
 			model = model.to(memory_format=torch.channels_last)  
-			if not cmd_opts.no_half and model_type != 4 and not boost:
+			if not cmd_opts.no_half and model_type != 0 and not boost:
 				model = model.half()
 
 		model.to(device)
@@ -263,7 +310,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			
 			# compute
 			if not boost:
-				if model_type == 4:
+				if model_type == 0:
 					prediction = estimateleres(img, model, net_width, net_height)
 				else:
 					prediction = estimatemidas(img, model, net_width, net_height, resize_mode, normalization)
@@ -287,7 +334,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			img_output = out.astype("uint16")
 
 			# invert depth map
-			if invert_depth ^ model_type == 4:
+			if invert_depth ^ model_type == 0:
 				img_output = cv2.bitwise_not(img_output)
 
 			"""
@@ -728,11 +775,11 @@ def on_ui_tabs():
 
                 with gr.Row():
                     compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index")
-                    model_type = gr.Dropdown(label="Model", choices=['dpt_large','dpt_hybrid','midas_v21','midas_v21_small','res101'], value='res101', type="index", elem_id="tabmodel_type")
+                    model_type = gr.Dropdown(label="Model", choices=['res101', 'dpt_beit_large_512 (midas 3.1)', 'dpt_beit_large_384 (midas 3.1)', 'dpt_large_384 (midas 3.0)','dpt_hybrid_384 (midas 3.0)','midas_v21','midas_v21_small'], value='res101', type="index", elem_id="tabmodel_type")
                 with gr.Group():
                     with gr.Row():
-                        net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=384)
-                        net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=384)
+                        net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
+                        net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
                     match_size = gr.Checkbox(label="Match input size (size is ignored when using boost)",value=False)
                 with gr.Group():
                     boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
@@ -752,7 +799,7 @@ def on_ui_tabs():
                     with gr.Row():
                         stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)', value=2.5)
                     with gr.Row():
-                        stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='naive_interpolating', type="index", elem_id="stereo_fill_type")
+                        stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='polylines_sharp', type="index", elem_id="stereo_fill_type")
                         stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
 
                 with gr.Box():
@@ -1040,7 +1087,7 @@ def doubleestimate(img, size1, size2, pix2pixsize, model, net_type, pix2pixmodel
 
 # Generate a single-input depth estimation
 def singleestimate(img, msize, model, net_type):
-	if net_type == 4:
+	if net_type == 0:
 		return estimateleres(img, model, msize, msize)
 	else:
 		return estimatemidasBoost(img, model, msize, msize)
@@ -1384,10 +1431,13 @@ def estimateboost(img, model, model_type, pix2pixmodel):
 	if hasattr(opts, 'depthmap_script_boost_rmax'):
 		whole_size_threshold = opts.depthmap_script_boost_rmax
 		
-	if model_type == 4:
+	if model_type == 0: #leres
 		net_receptive_field_size = 448
 		patch_netsize = 2 * net_receptive_field_size
-	else:
+	elif model_type == 1: #dpt_beit_large_512
+		net_receptive_field_size = 512
+		patch_netsize = 2 * net_receptive_field_size
+	else: #other midas
 		net_receptive_field_size = 384
 		patch_netsize = 2 * net_receptive_field_size
 

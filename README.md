@@ -145,6 +145,8 @@ If you often get out of memory errors when computing a depthmap on GPU while usi
 
 ### For viewing on 3D devices
 
+* SBS Stereo images can easily be viewed in 3D on VR devices, even cheap ones that use a smartphone like [Google Cardboard](https://arvr.google.com/cardboard/).
+
 * Simple interactive depthmap viewer for Looking Glass using three. LIVE link : [https://thygate.github.io/depthmap-viewer-three-lookingglass](https://thygate.github.io/depthmap-viewer-three-lookingglass) (Instructions: Drag a combined-rgb-and-depth-horizontally image into the window to view it)
 
 * Unity3D project to view the depthmaps on Looking Glass in realtime as images are generated. Leave a message in the discussion section if you want me to publish it too.

@@ -1,5 +1,5 @@
 ﻿# High Resolution Depth Maps for Stable Diffusion WebUI
-This script is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depth maps` and `stereo image pairs` as side-by-side or anaglyph from a single image. The result can be viewed on 3D or holographic devices like VR headsets or [Looking Glass](https://lookingglassfactory.com/) displays, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
+This script is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates `depth maps` and now also `3D stereo image pairs` as side-by-side or anaglyph from a single image. The result can be viewed on 3D or holographic devices like VR headsets or [Looking Glass](https://lookingglassfactory.com/) displays, used in Render- or Game- Engines on a plane with a displacement modifier, and maybe even 3D printed.
 
 To generate realistic depth maps from a single image, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) repository by Intel ISL (see [https://pytorch.org/hub/intelisl_midas_v2/](https://pytorch.org/hub/intelisl_midas_v2/) for more info), or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. Multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) is used to generate high resolution depth maps.
 
@@ -113,7 +113,7 @@ To make the depthmap easier to analyze for human eyes, `Show HeatMap` shows an e
 
 When `Combine into one image` is enabled, the depthmap will be combined with the original image, the orientation can be selected with `Combine axis`. When disabled, the depthmap will be saved as a 16 bit single channel PNG as opposed to a three channel (RGB), 8 bit per channel image when the option is enabled.
 
-When either `Generate Stereo` or `Generate anaglyph` is enabled, a stereo image will be generated. `Divergence` sets the amount of 3D effect that is desired. `Balance between eyes` determines where the (inevitable) distortion from filling up gaps will end up, -1 Left, +1 Right, and 0 balanced.  
+When either `Generate Stereo` or `Generate anaglyph` is enabled, a stereo image pair will be generated. `Divergence` sets the amount of 3D effect that is desired. `Balance between eyes` determines where the (inevitable) distortion from filling up gaps will end up, -1 Left, +1 Right, and 0 balanced.  
 The different `Gap fill technique` settings are : none (no gaps are filled), 
 naive (the original method), naive_interpolating (the original method with interpolation), polylines_soft and polylines_sharp are the latest technique, the last one being best quality and slowest. Note: All stereo image generation is done on CPU.
 

@@ -527,12 +527,13 @@ def apply_stereo_divergence_naive(original_image, normalized_depth, divergence_p
     else:  # none
         return derived_image
 
-@njit(parallel=True)  # fastmath=True does not reasonable improve performance
+@njit(parallel=True)  # fastmath=True does not reasonably improve performance
 def apply_stereo_divergence_polylines(original_image, normalized_depth, divergence_px: float, fill_technique):
     # This code treats rows of the image as polylines
     # It generates polylines, morphs them (applies divergence) to them, and then rasterizes them
     EPSILON = 1e-7
     PIXEL_HALF_WIDTH = 0.45 if fill_technique == 4 else 0.0
+    # PERF_COUNTERS = [0, 0, 0]
 
     h, w, c = original_image.shape
     derived_image = np.zeros_like(original_image)
@@ -558,11 +559,10 @@ def apply_stereo_divergence_polylines(original_image, normalized_depth, divergen
 
         # generating the segments of the morphed polyline
         # format: coord_x, coord_d, color_i of the first point, then the same for the second point
-        sg = np.zeros((2 * pt_end, 6), dtype=np.float_)
-        sg_end: int = 0
-        for i in range(pt_end - 1):
-            sg[sg_end] += np.concatenate((pt[i], pt[i + 1]))
-            sg_end += 1
+        sg_end: int = pt_end - 1
+        sg = np.zeros((sg_end, 6), dtype=np.float_)
+        for i in range(sg_end):
+            sg[i] += np.concatenate((pt[i], pt[i + 1]))
         # Here is an informal proof that this (morphed) polyline does not self-intersect:
         # Draw a plot with two axes: coord_x and coord_d. Now draw the original line - it will be positioned at the
         # bottom of the graph (that is, for every point coord_d == 0). Now draw the morphed line using the vertices of
@@ -577,14 +577,10 @@ def apply_stereo_divergence_polylines(original_image, normalized_depth, divergen
 
         # sort segments and points using insertion sort
         # has a very good performance in practice, since these are almost sorted to begin with
-        for i in range(1, pt_end):
+        for i in range(1, sg_end):
             u = i - 1
             while pt[u][0] > pt[u + 1][0] and 0 <= u:
                 pt[u], pt[u + 1] = np.copy(pt[u + 1]), np.copy(pt[u])
-                u -= 1
-        for i in range(1, sg_end):
-            u = i - 1
-            while sg[u][0] > sg[u + 1][0] and 0 <= u:
                 sg[u], sg[u + 1] = np.copy(sg[u + 1]), np.copy(sg[u])
                 u -= 1
 
@@ -625,21 +621,30 @@ def apply_stereo_divergence_polylines(original_image, normalized_depth, divergen
                 # note that this segment will be the closest from coord_from right up to coord_to, since there
                 # no new segments "appearing" inbetween these two and _the polyline does not self-intersect_
                 best_csg_i: int = 0
-                best_csg_closeness: float = -EPSILON
-                for csg_i in range(csg_end):
-                    ip_k = (coord_center - csg[csg_i][0]) / (csg[csg_i][3] - csg[csg_i][0])
-                    # assert 0.0 <= ip_k <= 1.0
-                    closeness = (1.0 - ip_k) * csg[csg_i][1] + ip_k * csg[csg_i][4]
-                    if best_csg_closeness < closeness and 0.0 < ip_k < 1.0:
-                        best_csg_closeness = closeness
-                        best_csg_i = csg_i
+                # PERF_COUNTERS[0] += 1
+                if csg_end != 1:
+                    # PERF_COUNTERS[1] += 1
+                    best_csg_closeness: float = -EPSILON
+                    for csg_i in range(csg_end):
+                        ip_k = (coord_center - csg[csg_i][0]) / (csg[csg_i][3] - csg[csg_i][0])
+                        # assert 0.0 <= ip_k <= 1.0
+                        closeness = (1.0 - ip_k) * csg[csg_i][1] + ip_k * csg[csg_i][4]
+                        if best_csg_closeness < closeness and 0.0 < ip_k < 1.0:
+                            best_csg_closeness = closeness
+                            best_csg_i = csg_i
                 # getting the color
-                ip_k = (coord_center - csg[best_csg_i][0]) / (csg[best_csg_i][3] - csg[best_csg_i][0])
                 col_l: int = int(csg[best_csg_i][2] + EPSILON)
                 col_r: int = int(csg[best_csg_i][5] + EPSILON)
-                color += (original_image[row][col_l] * (1.0 - ip_k) + original_image[row][col_r] * ip_k) * significance
+                if col_l == col_r:
+                    color += original_image[row][col_l] * significance
+                else:
+                    # PERF_COUNTERS[2] += 1
+                    ip_k = (coord_center - csg[best_csg_i][0]) / (csg[best_csg_i][3] - csg[best_csg_i][0])
+                    color += (original_image[row][col_l] * (1.0 - ip_k) + original_image[row][col_r] * ip_k) \
+                        * significance
                 pt_i += 1
             derived_image[row][col] = np.asarray(color, dtype=np.uint8)
+    # print(PERF_COUNTERS)
     return derived_image
 
 @njit(parallel=True)

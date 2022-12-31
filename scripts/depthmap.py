@@ -29,6 +29,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import skimage.measure
 import argparse
+#import copy
+#import platform
+#import vispy
 
 sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
@@ -49,10 +52,14 @@ from pix2pix.util import util
 import pix2pix.models
 import pix2pix.data
 
+# 3d-photo-inpainting imports
+#from inpaint.mesh import write_ply, read_ply, output_3d_photo
+#from inpaint.networks import Inpaint_Color_Net, Inpaint_Depth_Net, Inpaint_Edge_Net
+#from inpaint.utils import path_planning
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.3"
+scriptname = "DepthMap v0.3.4"
 
 class Script(scripts.Script):
 	def title(self):
@@ -446,9 +453,147 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 		gc.collect()
 		devices.torch_gc()
 
-		# reload sd model
-		shared.sd_model.cond_stage_model.to(devices.device)
-		shared.sd_model.first_stage_model.to(devices.device)
+	"""
+	try:
+		print("Start Running 3D_Photo ...")
+		edgemodel_path = './models/3dphoto/edge_model.pth'
+		depthmodel_path = './models/3dphoto/depth_model.pth'
+		colormodel_path = './models/3dphoto/color_model.pth'
+		if not os.path.exists(edgemodel_path):
+			download_file(edgemodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/edge-model.pth")
+		if not os.path.exists(depthmodel_path):
+			download_file(depthmodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/depth-model.pth")
+		if not os.path.exists(colormodel_path):
+			download_file(colormodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/color-model.pth")
+        
+		print("Loading edge model ..")
+		depth_edge_model = Inpaint_Edge_Net(init_weights=True)
+		depth_edge_weight = torch.load(edgemodel_path, map_location=torch.device(device))
+		depth_edge_model.load_state_dict(depth_edge_weight)
+		depth_edge_model = depth_edge_model.to(device)
+		depth_edge_model.eval()
+
+		print("Loading depth model ..")
+		depth_feat_model = Inpaint_Depth_Net()
+		depth_feat_weight = torch.load(depthmodel_path, map_location=torch.device(device))
+		depth_feat_model.load_state_dict(depth_feat_weight, strict=True)
+		depth_feat_model = depth_feat_model.to(device)
+		depth_feat_model.eval()
+		depth_feat_model = depth_feat_model.to(device)
+		print("Loading rgb model ..")
+		rgb_model = Inpaint_Color_Net()
+		rgb_feat_weight = torch.load(colormodel_path, map_location=torch.device(device))
+		rgb_model.load_state_dict(rgb_feat_weight)
+		rgb_model.eval()
+		rgb_model = rgb_model.to(device)
+
+		print(f"Writing depth ply (and basically doing everything) ..")
+		config = {}
+		config["gpu_ids"] = 0
+		config['extrapolation_thickness'] = 60
+		config['extrapolate_border'] = True
+		config['depth_threshold'] = 0.04
+		config['redundant_number'] = 12
+		config['ext_edge_threshold'] = 0.002
+		config['background_thickness'] = 70
+		config['context_thickness'] = 140
+		config['background_thickness_2'] = 70
+		config['context_thickness_2'] = 70
+		config['log_depth'] = True
+		config['depth_edge_dilate'] = 10
+		config['depth_edge_dilate_2'] = 5
+		config['largest_size'] = 512
+		config['save_ply'] = True
+
+		mesh_fi = os.path.join(outpath, 'test' +'.ply')
+		W = inputimages[0].width
+		H = inputimages[0].height
+		int_mtx = np.array([[max(H, W), 0, W//2], [0, max(H, W), H//2], [0, 0, 1]]).astype(np.float32)
+		if int_mtx.max() > 1:
+			int_mtx[0, :] = int_mtx[0, :] / float(W)
+			int_mtx[1, :] = int_mtx[1, :] / float(H)
+
+		sample = torch.from_numpy(np.asarray(inputimages[count]))
+
+		disp = out
+		#if model_type == 0:
+		#	disp = np.invert(disp)
+		disp = disp - disp.min()
+		disp = cv2.blur(disp / disp.max(), ksize=(3, 3)) * disp.max()
+		disp = (disp / disp.max()) * 3.0
+		#if h is not None and w is not None:
+		#	disp = resize(disp / disp.max(), (h, w), order=1) * disp.max()
+		depth = 1. / np.maximum(disp, 0.05)
+
+		rt_info = write_ply(sample,
+                              depth,
+                              int_mtx,
+                              mesh_fi,
+                              config,
+                              rgb_model,
+                              depth_edge_model,
+                              depth_edge_model,
+                              depth_feat_model)
+
+		if rt_info is not False:
+			if platform.system() == 'Windows':
+				vispy.use(app='PyQt5')
+			else:
+				vispy.use(app='egl')
+			#verts, colors, faces, Height, Width, hFov, vFov = rt_info # needs function to store lists for both output methods, savePly true or false
+			verts, colors, faces, Height, Width, hFov, vFov = read_ply(mesh_fi)
+			original_h = output_h = H
+			original_w = output_w = W
+
+			config['video_folder'] = outpath
+			config['num_frames'] = 240
+			config['fps'] = 40
+			config['crop_border'] = [0.03, 0.03, 0.05, 0.03]
+			config['traj_types'] = ['double-straight-line', 'double-straight-line', 'circle', 'circle']
+			config['x_shift_range'] = [0.00, 0.00, -0.015, -0.015]
+			config['y_shift_range'] = [0.00, 0.00, -0.015, -0.00]
+			config['z_shift_range'] = [-0.05, -0.05, -0.05, -0.05]
+			config['video_postfix'] = ['dolly-zoom-in', 'zoom-in', 'circle', 'swing']
+
+			generic_pose = np.eye(4)
+			assert len(config['traj_types']) == len(config['x_shift_range']) ==\
+                len(config['y_shift_range']) == len(config['z_shift_range']) == len(config['video_postfix']), \
+                "The number of elements in 'traj_types', 'x_shift_range', 'y_shift_range', 'z_shift_range' and \
+                    'video_postfix' should be equal."
+			tgt_pose = [[generic_pose * 1]]
+			tgts_poses = []
+			for traj_idx in range(len(config['traj_types'])):
+				tgt_poses = []
+				sx, sy, sz = path_planning(config['num_frames'], config['x_shift_range'][traj_idx], config['y_shift_range'][traj_idx],
+                                        config['z_shift_range'][traj_idx], path_type=config['traj_types'][traj_idx])
+				for xx, yy, zz in zip(sx, sy, sz):
+					tgt_poses.append(generic_pose * 1.)
+					tgt_poses[-1][:3, -1] = np.array([xx, yy, zz])
+				tgts_poses += [tgt_poses]    
+			tgt_pose = generic_pose * 1
+
+			print("Making video ..")
+			mean_loc_depth = depth[depth.shape[0]//2, depth.shape[1]//2]
+			normal_canvas, all_canvas = None, None
+			videos_poses, video_basename = copy.deepcopy(tgts_poses), 'vid'
+			top = (original_h // 2 - int_mtx[1, 2] * output_h)
+			left = (original_w // 2 - int_mtx[0, 2] * output_w)
+			down, right = top + output_h, left + output_w
+			border = [int(xx) for xx in [top, down, left, right]]
+			normal_canvas, all_canvas = output_3d_photo(verts.copy(), colors.copy(), faces.copy(), copy.deepcopy(Height), copy.deepcopy(Width), copy.deepcopy(hFov), copy.deepcopy(vFov),
+                                copy.deepcopy(tgt_pose), config['video_postfix'], copy.deepcopy(generic_pose), copy.deepcopy(config['video_folder']),
+                                np.asarray(inputimages[count]).copy(), copy.deepcopy(int_mtx), config, inputimages[count],
+                                videos_poses, video_basename, original_h, original_w, border=border, depth=depth, normal_canvas=normal_canvas, all_canvas=all_canvas,
+                                mean_loc_depth=mean_loc_depth)
+
+
+	finally:
+		print("done")
+	"""
+
+	# reload sd model
+	shared.sd_model.cond_stage_model.to(devices.device)
+	shared.sd_model.first_stage_model.to(devices.device)
 
 	return outimages
 

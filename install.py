@@ -1,5 +1,8 @@
 import launch
 
+if not launch.is_installed("timm"): #0.6.7
+    launch.run_pip("install --force-reinstall timm==0.6.12", "timm requirement for depthmap script")
+
 if not launch.is_installed("matplotlib"):
     launch.run_pip("install matplotlib", "matplotlib requirement for depthmap script")
     

@@ -232,7 +232,7 @@ Boosting Monocular Depth Estimation Models to High-Resolution via Content-Adapti
 }
 ```
 
-3D Photography using Context-aware Layered Depth Inpainting
+3D Photography using Context-aware Layered Depth Inpainting :
 
 ```
 @inproceedings{Shih3DP20,

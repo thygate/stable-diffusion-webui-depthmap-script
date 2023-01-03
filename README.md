@@ -5,10 +5,16 @@ To generate realistic depth maps `from a single image`, this script uses code an
 
 3D stereo, and red/cyan anaglyph images are generated using code from the [stereo-image-generation](https://github.com/m5823779/stereo-image-generation) repository. Thanks to [@sina-masoud-ansari](https://github.com/sina-masoud-ansari) for the tip! Discussion [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/discussions/45). Improved techniques for generating stereo images and balancing distortion between eyes by [@semjon00](https://github.com/semjon00), see [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/51) and [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/56).
 
+3D Photography using Context-aware Layered Depth Inpainting by Virginia Tech Vision and Learning Lab , or [3D-Photo-Inpainting](https://github.com/vt-vl-lab/3d-photo-inpainting) is used to generate a `3D inpainted mesh` and render `videos` from said mesh.
+
 ## Examples
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.3.4 new featues
+    * depth clipping option (original idea by [@Extraltodeus](https://github.com/Extraltodeus))
+    * by popular demand, 3D-Photo-Inpainting is now implemented
+    * generate inpainted 3D mesh (PLY) and videos of said mesh 
 * v0.3.3 bugfix and new midas models
     * updated to midas 3.1, bringing 2 new depth models (the 512 one eats VRAM for breakfast!)
     * fix Next-ViT dependency issue for new installs
@@ -99,6 +105,8 @@ Net size can be set with `net width` and `net height`, or will be the same as th
 
 `Boost` will enable multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) and will significantly improve the results. Mitigating the observations mentioned above. Net size is ignored when enabled. Best results with res101.
 
+`Clip and renormalize` allows for clipping the depthmap on the `near` and `far` side, the values in between will be renormalized to fit the available range. Set both values equal to get a b&w mask of a single depth plane at that value. This option works on the 16-bit depthmap and allows for 1000 steps to select the clip values.
+
 When enabled, `Invert DepthMap` will result in a depthmap with black near and white far.
 
 Regardless of global settings, `Save DepthMap` will always save the depthmap in the default txt2img or img2img directory with the filename suffix '_depth'. Generation parameters are saved with the image if enabled in settings. Files generated from the Depth tab are saved in the default extras-images directory.
@@ -112,6 +120,12 @@ When `Combine into one image` is enabled, the depthmap will be combined with the
 When either `Generate Stereo` or `Generate anaglyph` is enabled, a stereo image pair will be generated. `Divergence` sets the amount of 3D effect that is desired. `Balance between eyes` determines where the (inevitable) distortion from filling up gaps will end up, -1 Left, +1 Right, and 0 balanced.  
 The different `Gap fill technique` options are : none (no gaps are filled), 
 naive (the original method), naive_interpolating (the original method with interpolation), polylines_soft and polylines_sharp are the latest technique, the last one being best quality and slowest. Note: All stereo image generation is done on CPU.
+
+To generate the mesh required to generate videos, enable `Generate 3D inpainted mesh`. This can be a lengthy process, from a few minutes for small images to an hour for very large images. This option is only available on the Depth tab. When enabled, the mesh in ply format and four demo video are generated. All files are saved to the extras directory.
+    
+Videos can be generated from the PLY mesh on the Depth Tab.
+It requires the mesh created by this extension, files created elsewhere might not work corectly, as some extra info is stored in the file (required value for dolly). Most options are self-explanatory, like `Number of frames` and `Framerate`. Two output `formats` are supported: mp4 and webm. Supersampling Anti-Aliasing (SSAA) can be used to get rid of jagged edges and flickering. The render size is scaled by this factor and then downsampled.    
+There are three `trajectories` to choose from : circle, straight-line, double-straight-line, to `translate` in three dimensions. The border can be `cropped` on four sides, and the `Dolly` option adjusts the FOV so the center subject will stay approximately the same size, like the dolly-zoom.
 
 Settings on WebUI Settings tab :  
 `Maximum wholesize for boost` sets the r_max value from the BoostingMonocularDepth paper, it relates to the max size that is chosen to render at internally, and directly influences the max amount of VRAM that could be used. The default value for this from the paper is 3000, I have lowered the value to 1600 so it will work more often with 8GB VRAM GPU's.
@@ -215,5 +229,16 @@ Boosting Monocular Depth Estimation Models to High-Resolution via Content-Adapti
 	author={S. Mahdi H. Miangoleh and Sebastian Dille and Long Mai and Sylvain Paris and Ya\u{g}{\i}z Aksoy},
 	journal={Proc. CVPR},
 	year={2021},
+}
+```
+
+3D Photography using Context-aware Layered Depth Inpainting
+
+```
+@inproceedings{Shih3DP20,
+	author = {Shih, Meng-Li and Su, Shih-Yang and Kopf, Johannes and Huang, Jia-Bin},
+	title = {3D Photography using Context-aware Layered Depth Inpainting},
+	booktitle = {IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+	year = {2020}
 }
 ```

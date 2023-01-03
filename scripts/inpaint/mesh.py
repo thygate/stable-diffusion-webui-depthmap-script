@@ -965,8 +965,10 @@ def context_and_holes(mesh, edge_ccs, config, specific_edge_id, specific_edge_lo
     forbidden_map = np.ones((mesh.graph['H'] - forbidden_len, mesh.graph['W'] - forbidden_len))
     forbidden_map = np.pad(forbidden_map, ((forbidden_len, forbidden_len), (forbidden_len, forbidden_len)), mode='constant').astype(np.bool)
     cur_tmp_mask_map = np.zeros_like(forbidden_map).astype(np.bool)
-    passive_background = 10 if 10 is not None else background_thickness
-    passive_context = 1 if 1 is not None else context_thickness
+    #passive_background = 10 if 10 is not None else background_thickness
+    #passive_context = 1 if 1 is not None else context_thickness
+    passive_background = 10 #if 10 is not None else background_thickness
+    passive_context = 1 #if 1 is not None else context_thickness
 
     for edge_id, edge_cc in enumerate(edge_ccs):
         cur_mask_cc = None; cur_mask_cc = []
@@ -1829,6 +1831,9 @@ def write_ply(image,
               depth_edge_model,
               depth_edge_model_init,
               depth_feat_model):
+
+    mean_loc_depth = depth[depth.shape[0]//2, depth.shape[1]//2]
+
     depth = depth.astype(np.float64)
     input_mesh, xy2depth, image, depth = create_mesh(depth, image, int_mtx, config)
 
@@ -2042,6 +2047,7 @@ def write_ply(image,
             ply_fi.write('comment W ' + str(int(input_mesh.graph['W'])) + '\n')
             ply_fi.write('comment hFov ' + str(float(input_mesh.graph['hFov'])) + '\n')
             ply_fi.write('comment vFov ' + str(float(input_mesh.graph['vFov'])) + '\n')
+            ply_fi.write('comment meanLoc ' + str(float(mean_loc_depth)) + '\n')
             ply_fi.write('element vertex ' + str(len(node_str_list)) + '\n')
             ply_fi.write('property float x\n' + \
                          'property float y\n' + \
@@ -2075,6 +2081,7 @@ def read_ply(mesh_fi):
     Width = None
     hFov = None
     vFov = None
+    mean_loc_depth = None
     while True:
         line = ply_fi.readline().split('\n')[0]
         if line.startswith('element vertex'):
@@ -2090,37 +2097,50 @@ def read_ply(mesh_fi):
                 hFov = float(line.split(' ')[-1].split('\n')[0])
             if line.split(' ')[1] == 'vFov':
                 vFov = float(line.split(' ')[-1].split('\n')[0])
+             #bty: this was the only value for which it needed the depthmap, so it stores it in the ply when generated
+            if line.split(' ')[1] == 'meanLoc':
+                mean_loc_depth = float(line.split(' ')[-1].split('\n')[0])
         elif line.startswith('end_header'):
             break
     contents = ply_fi.readlines()
     vertex_infos = contents[:num_vertex]
     face_infos = contents[num_vertex:]
-    verts = []
-    colors = []
-    faces = []
+    #bty: try to optimize by pre-allocating
+    #verts = []
+    #colors = []
+    #faces = []
+    verts = [None] * num_vertex
+    colors = [None] * num_vertex
+    faces = [None] * num_face
+    i = 0
     for v_info in vertex_infos:
         str_info = [float(v) for v in v_info.split('\n')[0].split(' ')]
         if len(str_info) == 6:
             vx, vy, vz, r, g, b = str_info
         else:
             vx, vy, vz, r, g, b, hi = str_info
-        verts.append([vx, vy, vz])
-        colors.append([r, g, b, hi])
+        #verts.append([vx, vy, vz])
+        #colors.append([r, g, b, hi])
+        verts[i] = [vx, vy, vz]
+        colors[i] = [r, g, b, hi]
+        i = i + 1
     verts = np.array(verts)
-    try:
-        colors = np.array(colors)
-        colors[..., :3] = colors[..., :3]/255.
-    except:
-        import pdb
-        pdb.set_trace()
+    #try:
+    colors = np.array(colors)
+    colors[..., :3] = colors[..., :3]/255.
+    #except:
+    #    import pdb
+    #    pdb.set_trace()
 
+    i = 0
     for f_info in face_infos:
         _, v1, v2, v3 = [int(f) for f in f_info.split('\n')[0].split(' ')]
-        faces.append([v1, v2, v3])
+        #faces.append([v1, v2, v3])
+        faces[i] = [v1, v2, v3]
+        i = i + 1
     faces = np.array(faces)
 
-
-    return verts, colors, faces, Height, Width, hFov, vFov
+    return verts, colors, faces, Height, Width, hFov, vFov, mean_loc_depth
 
 
 class Canvas_view():
@@ -2169,7 +2189,7 @@ class Canvas_view():
 
 def output_3d_photo(verts, colors, faces, Height, Width, hFov, vFov, tgt_poses, video_traj_types, ref_pose,
                     output_dir, ref_image, int_mtx, config, image, videos_poses, video_basename, original_H=None, original_W=None,
-                    border=None, depth=None, normal_canvas=None, all_canvas=None, mean_loc_depth=None):
+                    border=None, depth=None, normal_canvas=None, all_canvas=None, mean_loc_depth=None, dolly=False, fnExt="mp4"):
 
     cam_mesh = netx.Graph()
     cam_mesh.graph['H'] = Height
@@ -2186,8 +2206,10 @@ def output_3d_photo(verts, colors, faces, Height, Width, hFov, vFov, tgt_poses, 
     fov = (fov_in_rad * 180 / np.pi)
     print("fov: " + str(fov))
     init_factor = 1
-    if config.get('anti_flickering') is True:
-        init_factor = 3
+    #if config.get('anti_flickering') is True:
+    #    init_factor = 3
+    #bty: basically Supersample Anti-Aliasing (SSAA)
+    init_factor = config['ssaa']
     if (cam_mesh.graph['original_H'] is not None) and (cam_mesh.graph['original_W'] is not None):
         canvas_w = cam_mesh.graph['original_W']
         canvas_h = cam_mesh.graph['original_H']
@@ -2208,7 +2230,7 @@ def output_3d_photo(verts, colors, faces, Height, Width, hFov, vFov, tgt_poses, 
         normal_canvas.reinit_mesh(verts, faces, colors)
         normal_canvas.reinit_camera(fov)
     img = normal_canvas.render()
-    backup_img, backup_all_img, all_img_wo_bound = img.copy(), img.copy() * 0, img.copy() * 0
+    #backup_img, backup_all_img, all_img_wo_bound = img.copy(), img.copy() * 0, img.copy() * 0
     img = cv2.resize(img, (int(img.shape[1] / init_factor), int(img.shape[0] / init_factor)), interpolation=cv2.INTER_AREA)
     if border is None:
         border = [0, img.shape[0], 0, img.shape[1]]
@@ -2233,16 +2255,18 @@ def output_3d_photo(verts, colors, faces, Height, Width, hFov, vFov, tgt_poses, 
                   img.shape[1]]
     anchor = np.array(anchor)
     plane_width = np.tan(fov_in_rad/2.) * np.abs(mean_loc_depth)
+    fn_saved = []
     for video_pose, video_traj_type in zip(videos_poses, video_traj_types):
         stereos = []
-        tops = []; buttoms = []; lefts = []; rights = []
+        #tops = []; buttoms = []; lefts = []; rights = []
         for tp_id, tp in enumerate(video_pose):
             rel_pose = np.linalg.inv(np.dot(tp, np.linalg.inv(ref_pose)))
             axis, angle = transforms3d.axangles.mat2axangle(rel_pose[0:3, 0:3])
             normal_canvas.rotate(axis=axis, angle=(angle*180)/np.pi)
             normal_canvas.translate(rel_pose[:3,3])
             new_mean_loc_depth = mean_loc_depth - float(rel_pose[2, 3])
-            if 'dolly' in video_traj_type:
+            #if 'dolly' in video_traj_type:
+            if dolly or 'dolly' in video_traj_type:
                 new_fov = float((np.arctan2(plane_width, np.array([np.abs(new_mean_loc_depth)])) * 180. / np.pi) * 2)
                 normal_canvas.reinit_camera(new_fov)
             else:
@@ -2292,8 +2316,8 @@ def output_3d_photo(verts, colors, faces, Height, Width, hFov, vFov, tgt_poses, 
         clip = ImageSequenceClip(stereos, fps=config['fps'])
         if isinstance(video_basename, list):
             video_basename = video_basename[0]
-        clip.write_videofile(os.path.join(output_dir, video_basename + '_' + video_traj_type + '.mp4'), fps=config['fps'])
+        fn = os.path.join(output_dir, video_basename + '_' + video_traj_type + '.' + fnExt)
+        fn_saved.append(fn)
+        clip.write_videofile(fn, fps=config['fps'])
 
-
-
-    return normal_canvas, all_canvas
+    return normal_canvas, all_canvas, fn_saved

@@ -1,7 +1,6 @@
 # Author: thygate
 # https://github.com/thygate/stable-diffusion-webui-depthmap-script
 
-import modules
 import modules.scripts as scripts
 import gradio as gr
 
@@ -11,6 +10,7 @@ from modules import processing, images, shared, sd_samplers, devices
 from modules.processing import create_infotext, process_images, Processed
 from modules.shared import opts, cmd_opts, state, Options
 from modules import script_callbacks
+from modules.images import get_next_sequence_number
 from numba import njit, prange
 from torchvision.transforms import Compose, transforms
 from PIL import Image
@@ -18,6 +18,7 @@ from pathlib import Path
 from operator import getitem
 from tqdm import trange
 from functools import reduce
+from skimage.transform import resize
 
 import sys
 import torch, gc
@@ -28,10 +29,10 @@ import contextlib
 import matplotlib.pyplot as plt
 import numpy as np
 import skimage.measure
-import argparse
-#import copy
-#import platform
-#import vispy
+import copy
+import platform
+import vispy
+import imageio
 
 sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
@@ -48,14 +49,12 @@ from lib.net_tools import strip_prefix_if_present
 # pix2pix/merge net imports
 from pix2pix.options.test_options import TestOptions
 from pix2pix.models.pix2pix4depth_model import Pix2Pix4DepthModel
-from pix2pix.util import util
-import pix2pix.models
-import pix2pix.data
 
 # 3d-photo-inpainting imports
-#from inpaint.mesh import write_ply, read_ply, output_3d_photo
-#from inpaint.networks import Inpaint_Color_Net, Inpaint_Depth_Net, Inpaint_Edge_Net
-#from inpaint.utils import path_planning
+from inpaint.mesh import write_ply, read_ply, output_3d_photo
+from inpaint.networks import Inpaint_Color_Net, Inpaint_Depth_Net, Inpaint_Edge_Net
+from inpaint.utils import path_planning
+from inpaint.bilateral_filtering import sparse_bilateral_filtering
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
@@ -79,9 +78,16 @@ class Script(scripts.Script):
 					net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
 				match_size = gr.Checkbox(label="Match input size (size is ignored when using boost)",value=False)
 			with gr.Group():
-				boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
+				with gr.Row():
+					boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
+					invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)",value=False)
 			with gr.Group():
-				invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)",value=False)
+				with gr.Row():
+					clipdepth = gr.Checkbox(label="Clip and renormalize",value=False)
+				with gr.Row():
+					clipthreshold_far = gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
+					clipthreshold_near = gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
+			with gr.Group():
 				with gr.Row():
 					combine_output = gr.Checkbox(label="Combine into one image.",value=True)
 					combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index")
@@ -98,15 +104,30 @@ class Script(scripts.Script):
 				with gr.Row():
 					stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='polylines_sharp', type="index", elem_id="stereo_fill_type")
 					stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
-
+			with gr.Group():
+				with gr.Row():
+					inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Slooooooooow)",value=False, visible=False)
 
 			with gr.Box():
-				gr.HTML("Instructions, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
+				gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
-		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance]
+
+			clipthreshold_far.change(
+				fn = lambda a, b: a if b < a else b,
+				inputs = [clipthreshold_far, clipthreshold_near],
+				outputs=[clipthreshold_near]
+			)
+
+			clipthreshold_near.change(
+				fn = lambda a, b: a if b > a else b,
+				inputs = [clipthreshold_near, clipthreshold_far],
+				outputs=[clipthreshold_far]
+			)
+
+		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint]
 
 	# run from script in txt2img or img2img
-	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance):
+	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint):
 
 		# sd process 
 		processed = processing.process_images(p)
@@ -120,20 +141,23 @@ class Script(scripts.Script):
 				continue
 			inputimages.append(processed.images[count])
 
-		newmaps = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance)
+		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, "mp4", 0)
 		for img in newmaps:
 			processed.images.append(img)
 
 		return processed
 
-def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance):
+def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, fnExt, vid_ssaa):
+
+	if len(inputimages) == 0 or inputimages[0] == None:
+		return []
+
+	print('\n%s' % scriptname)
 
 	# unload sd model
 	shared.sd_model.cond_stage_model.to(devices.cpu)
 	shared.sd_model.first_stage_model.to(devices.cpu)
 
-	print('\n%s' % scriptname)
-	
 	# init torch device
 	global device
 	if compute_device == 0:
@@ -199,23 +223,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			resize_mode = "minimal"
 			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
-		"""
-        #"dpt_swin2_large_384" midas 3.1 / doesn't play nice with input size
-		if model_type == 2: 
-			model_path = f"{model_dir}/dpt_swin2_large_384.pt"
-			print(model_path)
-			if not os.path.exists(model_path):
-				download_file(model_path,"https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin2_large_384.pt")
-			model = DPTDepthModel(
-				path=model_path,
-				backbone="swin2l24_384",
-				non_negative=True,
-			)
-			net_w, net_h = 384, 384
-			resize_mode = "minimal"
-			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        """
-
 		#"dpt_large_384" midas 3.0
 		if model_type == 3: 
 			model_path = f"{model_dir}/dpt_large-midas-2f21e586.pt"
@@ -278,7 +285,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			pix2pixmodel_path = './models/pix2pix/latest_net_G.pth'
 			if not os.path.exists(pix2pixmodel_path):
 				download_file(pix2pixmodel_path,"https://sfu.ca/~yagiz/CVPR21/latest_net_G.pth")
-			opt = MyTestOptions().parse()
+			opt = TestOptions().parse()
 			if compute_device == 1:
 				opt.gpu_ids = [] # cpu mode
 			pix2pixmodel = Pix2Pix4DepthModel(opt)
@@ -300,12 +307,12 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 		model.to(device)
 
 		print("Computing depthmap(s) ..")
+		inpaint_imgs = []
+		inpaint_depths = []
 		# iterate over input (generated) images
 		numimages = len(inputimages)
 		for count in trange(0, numimages):
 
-			#if numimages > 1:
-			#	print("\nDepthmap", count+1, '/', numimages)
 			print('\n')
 
 			# override net size
@@ -344,26 +351,21 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			if invert_depth ^ model_type == 0:
 				img_output = cv2.bitwise_not(img_output)
 
-			"""
-            # sparse bilateral filtering
-            print("Bilateral filter (TEST) ..")
-			sparse_iter = 5
-			filter_size = [7, 7, 5, 5, 5]
-			depth_threshold = 0.04
-			sigma_s = 4.0
-			sigma_r = 0.5
-			with np.errstate(divide='ignore', invalid='ignore'):
-				vis_photos, vis_depths = sparse_bilateral_filtering(img_output.astype(np.float32).copy(), img.copy(), filter_size, depth_threshold, sigma_s, sigma_r, num_iter=sparse_iter, spdb=False)
-			fimg = Image.fromarray(vis_depths[-1].astype("uint16"))
-			outimages.append(fimg)
-			img_output = vis_depths[-1].astype("uint16")
-            """
+			# apply depth clip and renormalize if enabled
+			if clipdepth:
+				img_output = clipdepthmap(img_output, clipthreshold_far, clipthreshold_near)
+				#img_output = cv2.blur(img_output, (3, 3))
 
 			# three channel, 8 bits per channel image
 			img_output2 = np.zeros_like(inputimages[count])
 			img_output2[:,:,0] = img_output / 256.0
 			img_output2[:,:,1] = img_output / 256.0
 			img_output2[:,:,2] = img_output / 256.0
+
+			# if 3dinpainting, store maps for processing in second pass
+			if inpaint:
+				inpaint_imgs.append(inputimages[count])
+				inpaint_depths.append(img_output)
 
 			# get generation parameters
 			if processed is not None and hasattr(processed, 'all_prompts') and opts.enable_pnginfo:
@@ -452,10 +454,51 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 
 		gc.collect()
 		devices.torch_gc()
+		# reload sd model
+		shared.sd_model.cond_stage_model.to(devices.device)
+		shared.sd_model.first_stage_model.to(devices.device)
 
-	"""
+	mesh_fi = ''
 	try:
-		print("Start Running 3D_Photo ...")
+		if inpaint:
+			# unload sd model
+			shared.sd_model.cond_stage_model.to(devices.cpu)
+			shared.sd_model.first_stage_model.to(devices.cpu)
+
+			mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, fnExt, vid_ssaa)
+	
+	finally:
+		# reload sd model
+		shared.sd_model.cond_stage_model.to(devices.device)
+		shared.sd_model.first_stage_model.to(devices.device)
+		print("All done.")
+
+	return outimages, mesh_fi
+
+@njit(parallel=True)
+def clipdepthmap(img, clipthreshold_far, clipthreshold_near):
+	clipped_img = img #copy.deepcopy(img)
+	w, h = img.shape
+	min = img.min()
+	max = img.max()
+	drange = max - min
+	clipthreshold_far = min + (clipthreshold_far * drange)
+	clipthreshold_near = min + (clipthreshold_near * drange)
+
+	for x in prange(w):
+		for y in range(h):
+			if clipped_img[x,y] < clipthreshold_far:
+				clipped_img[x,y] = 0
+			elif clipped_img[x,y] > clipthreshold_near:
+				clipped_img[x,y] = 65535
+			else:
+				clipped_img[x,y] = ((clipped_img[x,y] + min) / drange * 65535)
+
+	return clipped_img
+
+def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa):
+	try:
+		print("Running 3D Photo Inpainting .. ")
 		edgemodel_path = './models/3dphoto/edge_model.pth'
 		depthmodel_path = './models/3dphoto/depth_model.pth'
 		colormodel_path = './models/3dphoto/color_model.pth'
@@ -465,14 +508,13 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			download_file(depthmodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/depth-model.pth")
 		if not os.path.exists(colormodel_path):
 			download_file(colormodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/color-model.pth")
-        
+		
 		print("Loading edge model ..")
 		depth_edge_model = Inpaint_Edge_Net(init_weights=True)
 		depth_edge_weight = torch.load(edgemodel_path, map_location=torch.device(device))
 		depth_edge_model.load_state_dict(depth_edge_weight)
 		depth_edge_model = depth_edge_model.to(device)
 		depth_edge_model.eval()
-
 		print("Loading depth model ..")
 		depth_feat_model = Inpaint_Depth_Net()
 		depth_feat_weight = torch.load(depthmodel_path, map_location=torch.device(device))
@@ -487,7 +529,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 		rgb_model.eval()
 		rgb_model = rgb_model.to(device)
 
-		print(f"Writing depth ply (and basically doing everything) ..")
 		config = {}
 		config["gpu_ids"] = 0
 		config['extrapolation_thickness'] = 60
@@ -505,97 +546,214 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 		config['largest_size'] = 512
 		config['save_ply'] = True
 
-		mesh_fi = os.path.join(outpath, 'test' +'.ply')
-		W = inputimages[0].width
-		H = inputimages[0].height
-		int_mtx = np.array([[max(H, W), 0, W//2], [0, max(H, W), H//2], [0, 0, 1]]).astype(np.float32)
-		if int_mtx.max() > 1:
-			int_mtx[0, :] = int_mtx[0, :] / float(W)
-			int_mtx[1, :] = int_mtx[1, :] / float(H)
+		if device == torch.device("cpu"):
+			config["gpu_ids"] = -1
 
-		sample = torch.from_numpy(np.asarray(inputimages[count]))
+		# process all inputs
+		numimages = len(img_rgb)
+		for count in trange(0, numimages):
 
-		disp = out
-		#if model_type == 0:
-		#	disp = np.invert(disp)
-		disp = disp - disp.min()
-		disp = cv2.blur(disp / disp.max(), ksize=(3, 3)) * disp.max()
-		disp = (disp / disp.max()) * 3.0
-		#if h is not None and w is not None:
-		#	disp = resize(disp / disp.max(), (h, w), order=1) * disp.max()
-		depth = 1. / np.maximum(disp, 0.05)
+			basename = 'depthmap'
+			if inputnames is not None:
+				if inputnames[count] is not None:
+					p = Path(inputnames[count])
+					basename = p.stem
 
-		rt_info = write_ply(sample,
-                              depth,
-                              int_mtx,
-                              mesh_fi,
-                              config,
-                              rgb_model,
-                              depth_edge_model,
-                              depth_edge_model,
-                              depth_feat_model)
+			# unique filename
+			basecount = get_next_sequence_number(outpath, basename)
+			if basecount > 0: basecount = basecount - 1
+			fullfn = None
+			for i in range(500):
+				fn = f"{basecount + i:05}" if basename == '' else f"{basename}-{basecount + i:04}"
+				fullfn = os.path.join(outpath, f"{fn}.ply")
+				if not os.path.exists(fullfn):
+					break
+			basename = Path(fullfn).stem
+			# mesh filename
+			mesh_fi = os.path.join(outpath, basename +'.ply')
 
-		if rt_info is not False:
-			if platform.system() == 'Windows':
-				vispy.use(app='PyQt5')
-			else:
-				vispy.use(app='egl')
-			#verts, colors, faces, Height, Width, hFov, vFov = rt_info # needs function to store lists for both output methods, savePly true or false
-			verts, colors, faces, Height, Width, hFov, vFov = read_ply(mesh_fi)
-			original_h = output_h = H
-			original_w = output_w = W
+			print(f"\nGenerating inpainted mesh .. (go make some coffee) ..")
 
-			config['video_folder'] = outpath
-			config['num_frames'] = 240
-			config['fps'] = 40
-			config['crop_border'] = [0.03, 0.03, 0.05, 0.03]
-			config['traj_types'] = ['double-straight-line', 'double-straight-line', 'circle', 'circle']
-			config['x_shift_range'] = [0.00, 0.00, -0.015, -0.015]
-			config['y_shift_range'] = [0.00, 0.00, -0.015, -0.00]
-			config['z_shift_range'] = [-0.05, -0.05, -0.05, -0.05]
-			config['video_postfix'] = ['dolly-zoom-in', 'zoom-in', 'circle', 'swing']
+			# from inpaint.utils.get_MiDaS_samples
+			W = img_rgb[count].width
+			H = img_rgb[count].height
+			int_mtx = np.array([[max(H, W), 0, W//2], [0, max(H, W), H//2], [0, 0, 1]]).astype(np.float32)
+			if int_mtx.max() > 1:
+				int_mtx[0, :] = int_mtx[0, :] / float(W)
+				int_mtx[1, :] = int_mtx[1, :] / float(H)
 
-			generic_pose = np.eye(4)
-			assert len(config['traj_types']) == len(config['x_shift_range']) ==\
-                len(config['y_shift_range']) == len(config['z_shift_range']) == len(config['video_postfix']), \
-                "The number of elements in 'traj_types', 'x_shift_range', 'y_shift_range', 'z_shift_range' and \
-                    'video_postfix' should be equal."
-			tgt_pose = [[generic_pose * 1]]
-			tgts_poses = []
-			for traj_idx in range(len(config['traj_types'])):
-				tgt_poses = []
-				sx, sy, sz = path_planning(config['num_frames'], config['x_shift_range'][traj_idx], config['y_shift_range'][traj_idx],
-                                        config['z_shift_range'][traj_idx], path_type=config['traj_types'][traj_idx])
-				for xx, yy, zz in zip(sx, sy, sz):
-					tgt_poses.append(generic_pose * 1.)
-					tgt_poses[-1][:3, -1] = np.array([xx, yy, zz])
-				tgts_poses += [tgt_poses]    
-			tgt_pose = generic_pose * 1
+			# how inpaint.utils.read_MiDaS_depth() imports depthmap
+			disp = img_depth[count].astype(np.float32)
+			disp = disp - disp.min()
+			disp = cv2.blur(disp / disp.max(), ksize=(3, 3)) * disp.max()
+			disp = (disp / disp.max()) * 3.0
+			depth = 1. / np.maximum(disp, 0.05)
 
-			print("Making video ..")
-			mean_loc_depth = depth[depth.shape[0]//2, depth.shape[1]//2]
-			normal_canvas, all_canvas = None, None
-			videos_poses, video_basename = copy.deepcopy(tgts_poses), 'vid'
-			top = (original_h // 2 - int_mtx[1, 2] * output_h)
-			left = (original_w // 2 - int_mtx[0, 2] * output_w)
-			down, right = top + output_h, left + output_w
-			border = [int(xx) for xx in [top, down, left, right]]
-			normal_canvas, all_canvas = output_3d_photo(verts.copy(), colors.copy(), faces.copy(), copy.deepcopy(Height), copy.deepcopy(Width), copy.deepcopy(hFov), copy.deepcopy(vFov),
-                                copy.deepcopy(tgt_pose), config['video_postfix'], copy.deepcopy(generic_pose), copy.deepcopy(config['video_folder']),
-                                np.asarray(inputimages[count]).copy(), copy.deepcopy(int_mtx), config, inputimages[count],
-                                videos_poses, video_basename, original_h, original_w, border=border, depth=depth, normal_canvas=normal_canvas, all_canvas=all_canvas,
-                                mean_loc_depth=mean_loc_depth)
+			# rgb input
+			img = np.asarray(img_rgb[count])
 
+			# run sparse bilateral filter
+			config['sparse_iter'] = 5
+			config['filter_size'] = [7, 7, 5, 5, 5]
+			config['sigma_s'] = 4.0
+			config['sigma_r'] = 0.5
+			vis_photos, vis_depths = sparse_bilateral_filtering(depth.copy(), img.copy(), config, num_iter=config['sparse_iter'], spdb=False)
+			depth = vis_depths[-1]
+
+			#bilat_fn = os.path.join(outpath, basename +'_bilatdepth.png')
+			#cv2.imwrite(bilat_fn, depth)
+
+			rt_info = write_ply(img,
+								depth,
+								int_mtx,
+								mesh_fi,
+								config,
+								rgb_model,
+								depth_edge_model,
+								depth_edge_model,
+								depth_feat_model)
+
+			if rt_info is not False:
+				run_3dphoto_videos(mesh_fi, basename, outpath, 300, 40, 
+					[0.03, 0.03, 0.05, 0.03], 
+					['double-straight-line', 'double-straight-line', 'circle', 'circle'], 
+					[0.00, 0.00, -0.015, -0.015], 
+					[0.00, 0.00, -0.015, -0.00], 
+					[-0.05, -0.05, -0.05, -0.05], 
+					['dolly-zoom-in', 'zoom-in', 'circle', 'swing'], False, fnExt, vid_ssaa)
 
 	finally:
-		print("done")
-	"""
+		del rgb_model
+		rgb_model = None
+		del depth_edge_model
+		depth_edge_model = None
+		del depth_feat_model
+		depth_feat_model = None
+		devices.torch_gc()
 
-	# reload sd model
-	shared.sd_model.cond_stage_model.to(devices.device)
-	shared.sd_model.first_stage_model.to(devices.device)
+	return mesh_fi
 
-	return outimages
+def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border, traj_types, x_shift_range, y_shift_range, z_shift_range, video_postfix, vid_dolly, fnExt, vid_ssaa):
+
+	if platform.system() == 'Windows':
+		vispy.use(app='PyQt5')
+	else:
+		vispy.use(app='egl')
+
+	# read ply
+	verts, colors, faces, Height, Width, hFov, vFov, mean_loc_depth = read_ply(mesh_fi)
+
+	original_w = output_w = W = Width
+	original_h = output_h = H = Height
+	int_mtx = np.array([[max(H, W), 0, W//2], [0, max(H, W), H//2], [0, 0, 1]]).astype(np.float32)
+	if int_mtx.max() > 1:
+		int_mtx[0, :] = int_mtx[0, :] / float(W)
+		int_mtx[1, :] = int_mtx[1, :] / float(H)
+
+	config = {}
+	config['video_folder'] = outpath
+	config['num_frames'] = num_frames
+	config['fps'] = fps
+	config['crop_border'] = crop_border
+	config['traj_types'] = traj_types
+	config['x_shift_range'] = x_shift_range
+	config['y_shift_range'] = y_shift_range
+	config['z_shift_range'] = z_shift_range
+	config['video_postfix'] = video_postfix
+	config['ssaa'] = vid_ssaa
+
+	# from inpaint.utils.get_MiDaS_samples
+	generic_pose = np.eye(4)
+	assert len(config['traj_types']) == len(config['x_shift_range']) ==\
+		len(config['y_shift_range']) == len(config['z_shift_range']) == len(config['video_postfix']), \
+		"The number of elements in 'traj_types', 'x_shift_range', 'y_shift_range', 'z_shift_range' and \
+			'video_postfix' should be equal."
+	tgt_pose = [[generic_pose * 1]]
+	tgts_poses = []
+	for traj_idx in range(len(config['traj_types'])):
+		tgt_poses = []
+		sx, sy, sz = path_planning(config['num_frames'], config['x_shift_range'][traj_idx], config['y_shift_range'][traj_idx],
+								config['z_shift_range'][traj_idx], path_type=config['traj_types'][traj_idx])
+		for xx, yy, zz in zip(sx, sy, sz):
+			tgt_poses.append(generic_pose * 1.)
+			tgt_poses[-1][:3, -1] = np.array([xx, yy, zz])
+		tgts_poses += [tgt_poses]    
+	tgt_pose = generic_pose * 1
+
+	# seems we only need the depthmap to calc mean_loc_depth, which is only used when doing 'dolly'
+	# width and height are already in the ply file in the comments ..
+	# might try to add the mean_loc_depth to it too 
+	# did just that
+	#mean_loc_depth = img_depth[img_depth.shape[0]//2, img_depth.shape[1]//2]
+
+	print("Generating videos ..")
+
+	normal_canvas, all_canvas = None, None
+	videos_poses, video_basename = copy.deepcopy(tgts_poses), basename
+	top = (original_h // 2 - int_mtx[1, 2] * output_h)
+	left = (original_w // 2 - int_mtx[0, 2] * output_w)
+	down, right = top + output_h, left + output_w
+	border = [int(xx) for xx in [top, down, left, right]]
+	normal_canvas, all_canvas, fn_saved = output_3d_photo(verts.copy(), colors.copy(), faces.copy(), copy.deepcopy(Height), copy.deepcopy(Width), copy.deepcopy(hFov), copy.deepcopy(vFov),
+						copy.deepcopy(tgt_pose), config['video_postfix'], copy.deepcopy(generic_pose), copy.deepcopy(config['video_folder']),
+						None, copy.deepcopy(int_mtx), config, None,
+						videos_poses, video_basename, original_h, original_w, border=border, depth=None, normal_canvas=normal_canvas, all_canvas=all_canvas,
+						mean_loc_depth=mean_loc_depth, dolly=vid_dolly, fnExt=fnExt)
+	return fn_saved
+
+# called from gen vid tab button
+def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_border, dolly, vid_format, vid_ssaa):
+	if len(fn_mesh) == 0 or not os.path.exists(fn_mesh):
+		raise Exception("Could not open mesh.")
+
+	# file type
+	fnExt = "mp4" if vid_format == 0 else "webm"
+
+	vid_ssaa = vid_ssaa + 1
+	
+	# traj type
+	if vid_traj == 0:
+		vid_traj = ['straight-line']
+	elif vid_traj == 1:
+		vid_traj = ['double-straight-line']
+	elif vid_traj == 2:
+		vid_traj = ['circle']
+
+	num_fps = int(vid_fps)
+	num_frames = int(vid_numframes)
+	shifts = vid_shift.split(',')
+	if len(shifts) != 3:
+		raise Exception("Translate requires 3 elements.")
+	x_shift_range = [ float(shifts[0]) ]
+	y_shift_range = [ float(shifts[1]) ]
+	z_shift_range = [ float(shifts[2]) ]
+	
+	borders = vid_border.split(',')
+	if len(borders) != 4:
+		raise Exception("Crop Border requires 4 elements.")
+	crop_border = [float(borders[0]), float(borders[1]), float(borders[2]), float(borders[3])]
+
+	# output path and filename mess ..
+	basename = Path(fn_mesh).stem
+	outpath = opts.outdir_samples or opts.outdir_extras_samples
+	# unique filename
+	basecount = get_next_sequence_number(outpath, basename)
+	if basecount > 0: basecount = basecount - 1
+	fullfn = None
+	for i in range(500):
+		fn = f"{basecount + i:05}" if basename == '' else f"{basename}-{basecount + i:04}"
+		fullfn = os.path.join(outpath, f"{fn}_." + fnExt)
+		if not os.path.exists(fullfn):
+			break
+	basename = Path(fullfn).stem
+	basename = basename[:-1]
+	
+	print("Loading mesh ..")
+
+	fn_saved = run_3dphoto_videos(fn_mesh, basename, outpath, num_frames, num_fps, crop_border, vid_traj, x_shift_range, y_shift_range, z_shift_range, [''], dolly, fnExt, vid_ssaa)
+
+	return fn_saved[-1], fn_saved[-1], ''
+
 
 def apply_stereo_divergence(original_image, depth, divergence, fill_technique):
     depth_min = depth.min()
@@ -804,23 +962,18 @@ def overlap(im1, im2):
 
     # iterate through "left" image, filling in red values of final image
     for i in prange(height1):
-        for j in prange(width1):
-            #try:
-                composite[i, j, 0] = im1[i, j, 0]
-            #except IndexError:
-            #    pass
+        for j in range(width1):
+            composite[i, j, 0] = im1[i, j, 0]
 
     # iterate through "right" image, filling in blue/green values of final image
     for i in prange(height2):
-        for j in prange(width2):
-            #try:
-                composite[i, j, 1] = im2[i, j, 1]
-                composite[i, j, 2] = im2[i, j, 2]
-            #except IndexError:
-            #    pass
+        for j in range(width2):
+            composite[i, j, 1] = im2[i, j, 1]
+            composite[i, j, 2] = im2[i, j, 2]
 
     return composite
 
+# called from depth tab
 def run_generate(depthmap_mode, 
 				depthmap_image,
                 image_batch,
@@ -842,8 +995,20 @@ def run_generate(depthmap_mode,
 				gen_anaglyph,
 				stereo_divergence,
 				stereo_fill,
-				stereo_balance
+				stereo_balance,
+				clipdepth,
+				clipthreshold_far,
+				clipthreshold_near,
+				inpaint,
+				vid_format,
+				vid_ssaa
 				):
+
+				
+	# file type
+	fnExt = "mp4" if vid_format == 0 else "webm"
+
+	vid_ssaa = vid_ssaa + 1
 
 	imageArr = []
 	# Also keep track of original file names
@@ -879,9 +1044,9 @@ def run_generate(depthmap_mode,
 		outpath = opts.outdir_samples or opts.outdir_extras_samples
 
 
-	outputs = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance)
+	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, fnExt, vid_ssaa)
 
-	return outputs, plaintext_to_html('info'), ''
+	return outputs, mesh_fi, plaintext_to_html('info'), ''
 
 def on_ui_settings():
     section = ('depthmap-script', "Depthmap extension")
@@ -914,9 +1079,16 @@ def on_ui_tabs():
                         net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
                     match_size = gr.Checkbox(label="Match input size (size is ignored when using boost)",value=False)
                 with gr.Group():
-                    boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
+                    with gr.Row():
+                        boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
+                        invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)",value=False)
                 with gr.Group():
-                    invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)",value=False)
+                    with gr.Row():
+                        clipdepth = gr.Checkbox(label="Clip and renormalize",value=False)
+                    with gr.Row():
+                        clipthreshold_far = gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
+                        clipthreshold_near = gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
+                with gr.Group():
                     with gr.Row():
                         combine_output = gr.Checkbox(label="Combine into one image.",value=True)
                         combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index")
@@ -933,9 +1105,12 @@ def on_ui_tabs():
                     with gr.Row():
                         stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='polylines_sharp', type="index", elem_id="stereo_fill_type")
                         stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
+                with gr.Group():
+                    with gr.Row():
+                        inpaint = gr.Checkbox(label="Generate 3D inpainted mesh and demo videos. (Sloooow)",value=False)
 
                 with gr.Box():
-                    gr.HTML("Instructions, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
+                    gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
 
             #result_images, html_info_x, html_info = modules.ui.create_output_panel("depthmap", opts.outdir_extras_samples)
@@ -945,7 +1120,38 @@ def on_ui_tabs():
                 with gr.Column():
                     html_info_x = gr.HTML()
                     html_info = gr.HTML()
-			
+
+                # generate video
+                with gr.Accordion("Generate video from inpainted mesh.", open=True):
+                    depth_vid = gr.Video(interactive=False)
+                    with gr.Column():
+                        vid_html_info_x = gr.HTML()
+                        vid_html_info = gr.HTML()
+                    fn_mesh = gr.Textbox(label="Input Mesh (.ply)", **shared.hide_dirs, placeholder="A file on the same machine where the server is running.")
+                    with gr.Row():
+                        vid_numframes = gr.Textbox(label="Number of frames", value="300")
+                        vid_fps = gr.Textbox(label="Framerate", value="40")
+                        vid_format = gr.Dropdown(label="Format", choices=['mp4', 'webm'], value='mp4', type="index", elem_id="video_format")
+                        vid_ssaa = gr.Dropdown(label="SSAA", choices=['1', '2', '3', '4'], value='3', type="index", elem_id="video_ssaa")
+                    with gr.Row():
+                        vid_traj = gr.Dropdown(label="Trajectory", choices=['straight-line', 'double-straight-line', 'circle'], value='double-straight-line', type="index", elem_id="video_trajectory")
+                        vid_border = gr.Textbox(label="Crop: top, left, bottom, right", value="0.03, 0.03, 0.05, 0.03")
+                        vid_shift = gr.Textbox(label="Translate: x, y, z", value="-0.015, 0.0, -0.05")
+                        vid_dolly = gr.Checkbox(label="Dolly",value=False)
+                    with gr.Row():
+                        submit_vid = gr.Button('Generate Video', elem_id="depthmap_generatevideo", variant='primary')
+
+        clipthreshold_far.change(
+            fn = lambda a, b: a if b < a else b,
+            inputs = [clipthreshold_far, clipthreshold_near],
+            outputs=[clipthreshold_near]
+        )
+
+        clipthreshold_near.change(
+            fn = lambda a, b: a if b > a else b,
+            inputs = [clipthreshold_near, clipthreshold_far],
+            outputs=[clipthreshold_far]
+        )
 
         submit.click(
             fn=wrap_gradio_gpu_call(run_generate),
@@ -972,12 +1178,39 @@ def on_ui_tabs():
 				gen_anaglyph,
 				stereo_divergence,
 				stereo_fill,
-				stereo_balance
+				stereo_balance,
+				clipdepth,
+				clipthreshold_far,
+				clipthreshold_near,
+				inpaint,
+				vid_format,
+				vid_ssaa
             ],
             outputs=[
                 result_images,
+				fn_mesh,
                 html_info_x,
-                html_info,
+                html_info
+            ]
+        )
+
+        submit_vid.click(
+            fn=wrap_gradio_gpu_call(run_makevideo),
+            inputs=[
+				fn_mesh,
+				vid_numframes,
+				vid_fps,
+				vid_traj,
+				vid_shift,
+				vid_border,
+				vid_dolly,
+				vid_format,
+				vid_ssaa
+            ],
+            outputs=[
+                depth_vid,
+                vid_html_info_x,
+                vid_html_info
             ]
         )
 
@@ -1389,105 +1622,6 @@ class ImageandPatchs:
         else:
             return {'patch_rgb': patch_rgb, 'rect': rect, 'size': msize, 'id': patch_id}
 
-class MyBaseOptions():
-    """This class defines options used during both training and test time.
-
-    It also implements several helper functions such as parsing, printing, and saving the options.
-    It also gathers additional options defined in <modify_commandline_options> functions in both dataset class and model class.
-    """
-
-    def __init__(self):
-        """Reset the class; indicates the class hasn't been initailized"""
-        self.initialized = False
-
-    def initialize(self, parser):
-        """Define the common options that are used in both training and test."""
-        # basic parameters
-        parser.add_argument('--dataroot', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
-        parser.add_argument('--name', type=str, default='void', help='mahdi_unet_new, scaled_unet')
-        parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
-        parser.add_argument('--checkpoints_dir', type=str, default='./pix2pix/checkpoints', help='models are saved here')
-        # model parameters
-        parser.add_argument('--model', type=str, default='cycle_gan', help='chooses which model to use. [cycle_gan | pix2pix | test | colorization]')
-        parser.add_argument('--input_nc', type=int, default=2, help='# of input image channels: 3 for RGB and 1 for grayscale')
-        parser.add_argument('--output_nc', type=int, default=1, help='# of output image channels: 3 for RGB and 1 for grayscale')
-        parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in the last conv layer')
-        parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in the first conv layer')
-        parser.add_argument('--netD', type=str, default='basic', help='specify discriminator architecture [basic | n_layers | pixel]. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator')
-        parser.add_argument('--netG', type=str, default='resnet_9blocks', help='specify generator architecture [resnet_9blocks | resnet_6blocks | unet_256 | unet_128]')
-        parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')
-        parser.add_argument('--norm', type=str, default='instance', help='instance normalization or batch normalization [instance | batch | none]')
-        parser.add_argument('--init_type', type=str, default='normal', help='network initialization [normal | xavier | kaiming | orthogonal]')
-        parser.add_argument('--init_gain', type=float, default=0.02, help='scaling factor for normal, xavier and orthogonal.')
-        parser.add_argument('--no_dropout', action='store_true', help='no dropout for the generator')
-        # dataset parameters
-        parser.add_argument('--dataset_mode', type=str, default='unaligned', help='chooses how datasets are loaded. [unaligned | aligned | single | colorization]')
-        parser.add_argument('--direction', type=str, default='AtoB', help='AtoB or BtoA')
-        parser.add_argument('--serial_batches', action='store_true', help='if true, takes images in order to make batches, otherwise takes them randomly')
-        parser.add_argument('--num_threads', default=4, type=int, help='# threads for loading data')
-        parser.add_argument('--batch_size', type=int, default=1, help='input batch size')
-        parser.add_argument('--load_size', type=int, default=672, help='scale images to this size')
-        parser.add_argument('--crop_size', type=int, default=672, help='then crop to this size')
-        parser.add_argument('--max_dataset_size', type=int, default=10000, help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
-        parser.add_argument('--preprocess', type=str, default='resize_and_crop', help='scaling and cropping of images at load time [resize_and_crop | crop | scale_width | scale_width_and_crop | none]')
-        parser.add_argument('--no_flip', action='store_true', help='if specified, do not flip the images for data augmentation')
-        parser.add_argument('--display_winsize', type=int, default=256, help='display window size for both visdom and HTML')
-        # additional parameters
-        parser.add_argument('--epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
-        parser.add_argument('--load_iter', type=int, default='0', help='which iteration to load? if load_iter > 0, the code will load models by iter_[load_iter]; otherwise, the code will load models by [epoch]')
-        parser.add_argument('--verbose', action='store_true', help='if specified, print more debugging information')
-        parser.add_argument('--suffix', default='', type=str, help='customized suffix: opt.name = opt.name + suffix: e.g., {model}_{netG}_size{load_size}')
-
-        parser.add_argument('--data_dir', type=str, required=False,
-                            help='input files directory images can be .png .jpg .tiff')
-        parser.add_argument('--output_dir', type=str, required=False,
-                            help='result dir. result depth will be png. vides are JMPG as avi')
-        parser.add_argument('--savecrops', type=int, required=False)
-        parser.add_argument('--savewholeest', type=int, required=False)
-        parser.add_argument('--output_resolution', type=int, required=False,
-                            help='0 for no restriction 1 for resize to input size')
-        parser.add_argument('--net_receptive_field_size', type=int, required=False)
-        parser.add_argument('--pix2pixsize', type=int, required=False)
-        parser.add_argument('--generatevideo', type=int, required=False)
-        parser.add_argument('--depthNet', type=int, required=False, help='0: midas 1:strurturedRL')
-        parser.add_argument('--R0', action='store_true')
-        parser.add_argument('--R20', action='store_true')
-        parser.add_argument('--Final', action='store_true')
-        parser.add_argument('--colorize_results', action='store_true')
-        parser.add_argument('--max_res', type=float, default=np.inf)
-
-        self.initialized = True
-        return parser
-
-    def gather_options(self):
-        """Initialize our parser with basic options(only once).
-        Add additional model-specific and dataset-specific options.
-        These options are defined in the <modify_commandline_options> function
-        in model and dataset classes.
-        """
-        if not self.initialized:  # check if it has been initialized
-            parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-            parser = self.initialize(parser)
-
-        # get the basic options
-        opt, _ = parser.parse_known_args()
-
-        # modify model-related parser options
-        model_name = opt.model
-        model_option_setter = pix2pix.models.get_option_setter(model_name)
-        parser = model_option_setter(parser, self.isTrain)
-        opt, _ = parser.parse_known_args()  # parse again with new defaults
-
-        # modify dataset-related parser options
-        dataset_name = opt.dataset_mode
-        dataset_option_setter = pix2pix.data.get_option_setter(dataset_name)
-        parser = dataset_option_setter(parser, self.isTrain)
-
-        # save and return the parser
-        self.parser = parser
-        #return parser.parse_args() #EVIL
-        return opt
-
     def print_options(self, opt):
         """Print and save options
 
@@ -1506,12 +1640,14 @@ class MyBaseOptions():
         print(message)
 
         # save to the disk
+        """
         expr_dir = os.path.join(opt.checkpoints_dir, opt.name)
         util.mkdirs(expr_dir)
         file_name = os.path.join(expr_dir, '{}_opt.txt'.format(opt.phase))
         with open(file_name, 'wt') as opt_file:
             opt_file.write(message)
             opt_file.write('\n')
+        """
 
     def parse(self):
         """Parse our options, create checkpoints directory suffix, and set up gpu device."""
@@ -1538,25 +1674,6 @@ class MyBaseOptions():
         self.opt = opt
         return self.opt
 
-class MyTestOptions(MyBaseOptions):
-    """This class includes test options.
-
-    It also includes shared options defined in BaseOptions.
-    """
-
-    def initialize(self, parser):
-        parser = MyBaseOptions.initialize(self, parser)  # define shared options
-        parser.add_argument('--aspect_ratio', type=float, default=1.0, help='aspect ratio of result images')
-        parser.add_argument('--phase', type=str, default='test', help='train, val, test, etc')
-        # Dropout and Batchnorm has different behavioir during training and test.
-        parser.add_argument('--eval', action='store_true', help='use eval mode during test time.')
-        parser.add_argument('--num_test', type=int, default=50, help='how many test images to run')
-        # rewrite devalue values
-        parser.set_defaults(model='pix2pix4depth')
-        # To avoid cropping, the load_size should be the same as crop_size
-        parser.set_defaults(load_size=parser.get_default('crop_size'))
-        self.isTrain = False
-        return parser
 
 def estimateboost(img, model, model_type, pix2pixmodel):
 	# get settings
@@ -1720,202 +1837,3 @@ def estimateboost(img, model, model_type, pix2pixmodel):
 
 	# output
 	return cv2.resize(imageandpatchs.estimation_updated_image, (input_resolution[1], input_resolution[0]), interpolation=cv2.INTER_CUBIC)
-
-# taken from 3d-photo-inpainting and modified
-def sparse_bilateral_filtering(
-    depth, image, filter_size, depth_threshold, sigma_s, sigma_r, HR=False, mask=None, gsHR=True, edge_id=None, num_iter=None, num_gs_iter=None, spdb=False
-):
-    save_images = []
-    save_depths = []
-    save_discontinuities = []
-    vis_depth = depth.copy()
-
-    vis_image = image.copy()
-    for i in range(num_iter):
-        if isinstance(filter_size, list):
-            window_size = filter_size[i]
-        else:
-            window_size = filter_size
-        vis_image = image.copy()
-        save_images.append(vis_image)
-        save_depths.append(vis_depth)
-        u_over, b_over, l_over, r_over = vis_depth_discontinuity(vis_depth, depth_threshold, mask=mask) # test label true
-        vis_image[u_over > 0] = np.array([0, 0, 0])
-        vis_image[b_over > 0] = np.array([0, 0, 0])
-        vis_image[l_over > 0] = np.array([0, 0, 0])
-        vis_image[r_over > 0] = np.array([0, 0, 0])
-
-        discontinuity_map = (u_over + b_over + l_over + r_over).clip(0.0, 1.0)
-        discontinuity_map[depth == 0] = 1
-        save_discontinuities.append(discontinuity_map)
-        if mask is not None:
-            discontinuity_map[mask == 0] = 0
-        vis_depth = bilateral_filter(
-            vis_depth, filter_size, sigma_s, sigma_r, discontinuity_map=discontinuity_map, HR=HR, mask=mask, window_size=window_size
-        )
-
-    return save_images, save_depths
-
-def vis_depth_discontinuity(depth, depth_threshold, vis_diff=False, label=False, mask=None):
-    """
-    config:
-    -
-    """
-    if label == False:
-        disp = 1./depth
-        u_diff = (disp[1:, :] - disp[:-1, :])[:-1, 1:-1]
-        b_diff = (disp[:-1, :] - disp[1:, :])[1:, 1:-1]
-        l_diff = (disp[:, 1:] - disp[:, :-1])[1:-1, :-1]
-        r_diff = (disp[:, :-1] - disp[:, 1:])[1:-1, 1:]
-        if mask is not None:
-            u_mask = (mask[1:, :] * mask[:-1, :])[:-1, 1:-1]
-            b_mask = (mask[:-1, :] * mask[1:, :])[1:, 1:-1]
-            l_mask = (mask[:, 1:] * mask[:, :-1])[1:-1, :-1]
-            r_mask = (mask[:, :-1] * mask[:, 1:])[1:-1, 1:]
-            u_diff = u_diff * u_mask
-            b_diff = b_diff * b_mask
-            l_diff = l_diff * l_mask
-            r_diff = r_diff * r_mask
-        u_over = (np.abs(u_diff) > depth_threshold).astype(np.float32)
-        b_over = (np.abs(b_diff) > depth_threshold).astype(np.float32)
-        l_over = (np.abs(l_diff) > depth_threshold).astype(np.float32)
-        r_over = (np.abs(r_diff) > depth_threshold).astype(np.float32)
-    else:
-        disp = depth
-        u_diff = (disp[1:, :] * disp[:-1, :])[:-1, 1:-1]
-        b_diff = (disp[:-1, :] * disp[1:, :])[1:, 1:-1]
-        l_diff = (disp[:, 1:] * disp[:, :-1])[1:-1, :-1]
-        r_diff = (disp[:, :-1] * disp[:, 1:])[1:-1, 1:]
-        if mask is not None:
-            u_mask = (mask[1:, :] * mask[:-1, :])[:-1, 1:-1]
-            b_mask = (mask[:-1, :] * mask[1:, :])[1:, 1:-1]
-            l_mask = (mask[:, 1:] * mask[:, :-1])[1:-1, :-1]
-            r_mask = (mask[:, :-1] * mask[:, 1:])[1:-1, 1:]
-            u_diff = u_diff * u_mask
-            b_diff = b_diff * b_mask
-            l_diff = l_diff * l_mask
-            r_diff = r_diff * r_mask
-        u_over = (np.abs(u_diff) > 0).astype(np.float32)
-        b_over = (np.abs(b_diff) > 0).astype(np.float32)
-        l_over = (np.abs(l_diff) > 0).astype(np.float32)
-        r_over = (np.abs(r_diff) > 0).astype(np.float32)
-    u_over = np.pad(u_over, 1, mode='constant')
-    b_over = np.pad(b_over, 1, mode='constant')
-    l_over = np.pad(l_over, 1, mode='constant')
-    r_over = np.pad(r_over, 1, mode='constant')
-    u_diff = np.pad(u_diff, 1, mode='constant')
-    b_diff = np.pad(b_diff, 1, mode='constant')
-    l_diff = np.pad(l_diff, 1, mode='constant')
-    r_diff = np.pad(r_diff, 1, mode='constant')
-
-    if vis_diff:
-        return [u_over, b_over, l_over, r_over], [u_diff, b_diff, l_diff, r_diff]
-    else:
-        return [u_over, b_over, l_over, r_over]
-
-def bilateral_filter(depth, filter_size, sigma_s, sigma_r, discontinuity_map=None, HR=False, mask=None, window_size=False):
-    #sigma_s = config['sigma_s']
-    #sigma_r = config['sigma_r']
-    if window_size == False:
-        window_size = filter_size
-    midpt = window_size//2
-    ax = np.arange(-midpt, midpt+1.)
-    xx, yy = np.meshgrid(ax, ax)
-    if discontinuity_map is not None:
-        spatial_term = np.exp(-(xx**2 + yy**2) / (2. * sigma_s**2))
-
-    # padding
-    depth = depth[1:-1, 1:-1]
-    depth = np.pad(depth, ((1,1), (1,1)), 'edge')
-    pad_depth = np.pad(depth, (midpt,midpt), 'edge')
-    if discontinuity_map is not None:
-        discontinuity_map = discontinuity_map[1:-1, 1:-1]
-        discontinuity_map = np.pad(discontinuity_map, ((1,1), (1,1)), 'edge')
-        pad_discontinuity_map = np.pad(discontinuity_map, (midpt,midpt), 'edge')
-        pad_discontinuity_hole = 1 - pad_discontinuity_map
-    # filtering
-    output = depth.copy()
-    pad_depth_patches = rolling_window(pad_depth, [window_size, window_size], [1,1])
-    if discontinuity_map is not None:
-        pad_discontinuity_patches = rolling_window(pad_discontinuity_map, [window_size, window_size], [1,1])
-        pad_discontinuity_hole_patches = rolling_window(pad_discontinuity_hole, [window_size, window_size], [1,1])
-
-    if mask is not None:
-        pad_mask = np.pad(mask, (midpt,midpt), 'constant')
-        pad_mask_patches = rolling_window(pad_mask, [window_size, window_size], [1,1])
-    from itertools import product
-    if discontinuity_map is not None:
-        pH, pW = pad_depth_patches.shape[:2]
-        for pi in range(pH):
-            for pj in range(pW):
-                if mask is not None and mask[pi, pj] == 0:
-                    continue
-                if discontinuity_map is not None:
-                    if bool(pad_discontinuity_patches[pi, pj].any()) is False:
-                        continue
-                    discontinuity_patch = pad_discontinuity_patches[pi, pj]
-                    discontinuity_holes = pad_discontinuity_hole_patches[pi, pj]
-                depth_patch = pad_depth_patches[pi, pj]
-                depth_order = depth_patch.ravel().argsort()
-                patch_midpt = depth_patch[window_size//2, window_size//2]
-                if discontinuity_map is not None:
-                    coef = discontinuity_holes.astype(np.float32)
-                    if mask is not None:
-                        coef = coef * pad_mask_patches[pi, pj]
-                else:
-                    range_term = np.exp(-(depth_patch-patch_midpt)**2 / (2. * sigma_r**2))
-                    coef = spatial_term * range_term
-                if coef.max() == 0:
-                    output[pi, pj] = patch_midpt
-                    continue
-                if discontinuity_map is not None and (coef.max() == 0):
-                    output[pi, pj] = patch_midpt
-                else:
-                    coef = coef/(coef.sum())
-                    coef_order = coef.ravel()[depth_order]
-                    cum_coef = np.cumsum(coef_order)
-                    ind = np.digitize(0.5, cum_coef)
-                    output[pi, pj] = depth_patch.ravel()[depth_order][ind]
-    else:
-        pH, pW = pad_depth_patches.shape[:2]
-        for pi in range(pH):
-            for pj in range(pW):
-                if discontinuity_map is not None:
-                    if pad_discontinuity_patches[pi, pj][window_size//2, window_size//2] == 1:
-                        continue
-                    discontinuity_patch = pad_discontinuity_patches[pi, pj]
-                    discontinuity_holes = (1. - discontinuity_patch)
-                depth_patch = pad_depth_patches[pi, pj]
-                depth_order = depth_patch.ravel().argsort()
-                patch_midpt = depth_patch[window_size//2, window_size//2]
-                range_term = np.exp(-(depth_patch-patch_midpt)**2 / (2. * sigma_r**2))
-                if discontinuity_map is not None:
-                    coef = spatial_term * range_term * discontinuity_holes
-                else:
-                    coef = spatial_term * range_term
-                if coef.sum() == 0:
-                    output[pi, pj] = patch_midpt
-                    continue
-                if discontinuity_map is not None and (coef.sum() == 0):
-                    output[pi, pj] = patch_midpt
-                else:
-                    coef = coef/(coef.sum())
-                    coef_order = coef.ravel()[depth_order]
-                    cum_coef = np.cumsum(coef_order)
-                    ind = np.digitize(0.5, cum_coef)
-                    output[pi, pj] = depth_patch.ravel()[depth_order][ind]
-
-    return output
-
-def rolling_window(a, window, strides):
-    assert len(a.shape)==len(window)==len(strides), "\'a\', \'window\', \'strides\' dimension mismatch"
-    shape_fn = lambda i,w,s: (a.shape[i]-w)//s + 1
-    shape = [shape_fn(i,w,s) for i,(w,s) in enumerate(zip(window, strides))] + list(window)
-    def acc_shape(i):
-        if i+1>=len(a.shape):
-            return 1
-        else:
-            return reduce(lambda x,y:x*y, a.shape[i+1:])
-    _strides = [acc_shape(i)*s*a.itemsize for i,s in enumerate(strides)] + list(a.strides)
-
-    return np.lib.stride_tricks.as_strided(a, shape=shape, strides=_strides)

@@ -5,10 +5,10 @@ if not launch.is_installed("matplotlib"):
     
 if not launch.is_installed("numba"):
     launch.run_pip("install numba", "numba requirement for depthmap script")
-
-"""
 if not launch.is_installed("vispy"):
     launch.run_pip("install vispy", "vispy requirement for depthmap script")
+
+
 if not launch.is_installed("moviepy"):
     launch.run_pip("install moviepy==1.0.2", "moviepy requirement for depthmap script")
 if not launch.is_installed("transforms3d"):
@@ -20,4 +20,3 @@ if not launch.is_installed("networkx"):
 if not launch.is_installed("pyqt5"):
     launch.run_pip("install pyqt5", "pyqt5 requirement for depthmap script")
 
-"""

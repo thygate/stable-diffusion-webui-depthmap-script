@@ -1181,7 +1181,7 @@ def refine_color_around_edge(mesh, info_on_pix, edge_ccs, config, spdb=False):
                             re_color += mesh.nodes[ne_node]['backup_color'].astype(np.float32)
                             re_count += 1.
                         except:
-                            import pdb; pdb.set_trace()
+                            raise #import pdb; pdb.set_trace() #bty
                 if re_count > 0:
                     re_depth = re_depth / re_count
                     re_color = re_color / re_count

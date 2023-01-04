@@ -58,7 +58,7 @@ from inpaint.bilateral_filtering import sparse_bilateral_filtering
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.4"
+scriptname = "DepthMap v0.3.5"
 
 class Script(scripts.Script):
 	def title(self):
@@ -502,6 +502,9 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 		edgemodel_path = './models/3dphoto/edge_model.pth'
 		depthmodel_path = './models/3dphoto/depth_model.pth'
 		colormodel_path = './models/3dphoto/color_model.pth'
+		# create paths to model if not present
+		os.makedirs('./models/3dphoto/', exist_ok=True)
+
 		if not os.path.exists(edgemodel_path):
 			download_file(edgemodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/edge-model.pth")
 		if not os.path.exists(depthmodel_path):

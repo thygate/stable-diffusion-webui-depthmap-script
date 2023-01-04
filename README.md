@@ -11,6 +11,8 @@ To generate realistic depth maps `from a single image`, this script uses code an
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.3.5 bugfix
+    * create path to 3dphoto models before download (see [issue](https://github.com/thygate/stable-diffusion-webui-depthmap-script/issues/76))
 * v0.3.4 new featues
     * depth clipping option (original idea by [@Extraltodeus](https://github.com/Extraltodeus))
     * by popular demand, 3D-Photo-Inpainting is now implemented

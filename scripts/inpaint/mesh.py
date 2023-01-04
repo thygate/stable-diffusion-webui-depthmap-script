@@ -27,6 +27,9 @@ from inpaint.mesh_tools import refresh_bord_depth, enlarge_border, fill_dummy_bo
 import transforms3d
 import random
 from functools import reduce
+import struct
+import tqdm
+import sys
 
 def create_mesh(depth, image, int_mtx, config):
     H, W, C = image.shape
@@ -1834,6 +1837,9 @@ def write_ply(image,
 
     mean_loc_depth = depth[depth.shape[0]//2, depth.shape[1]//2]
 
+    pbar = tqdm.tqdm(total = 7 if config['extrapolate_border'] is True else 6)
+    pbar.set_description("Creating mesh")
+    
     depth = depth.astype(np.float64)
     input_mesh, xy2depth, image, depth = create_mesh(depth, image, int_mtx, config)
 
@@ -1856,6 +1862,9 @@ def write_ply(image,
 
     mesh, info_on_pix, depth = fill_missing_node(input_mesh, info_on_pix, image, depth)
     if config['extrapolate_border'] is True:
+        pbar.update(1)
+        pbar.set_description("Extrapolating border")
+
         pre_depth = depth.copy()
         input_mesh, info_on_pix, depth = refresh_bord_depth(input_mesh, info_on_pix, image, depth)
         input_mesh = remove_node_feat(input_mesh, 'edge_id')
@@ -1899,6 +1908,10 @@ def write_ply(image,
                                                 depth_edge_model, depth_feat_model, rgb_model, config, direc="left-up")
         info_on_pix, input_mesh, image, depth, edge_ccs = extrapolate(input_mesh, info_on_pix, image, depth, other_edge_with_id, edge_map, edge_ccs,
                                                 depth_edge_model, depth_feat_model, rgb_model, config, direc="left-down")
+
+    pbar.update(1)
+    pbar.set_description("Context and holes")
+
     specific_edge_loc = None
     specific_edge_id = []
     vis_edge_id = None
@@ -1912,6 +1925,10 @@ def write_ply(image,
                                                                                             depth_feat_model,
                                                                                             inpaint_iter=0,
                                                                                             vis_edge_id=vis_edge_id)
+
+    pbar.update(1)
+    pbar.set_description("Inpaint 1")
+
     edge_canvas = np.zeros((H, W))
     mask = np.zeros((H, W))
     context = np.zeros((H, W))
@@ -1946,6 +1963,10 @@ def write_ply(image,
                                                                                                             specific_edge_id,
                                                                                                             specific_edge_loc,
                                                                                                             inpaint_iter=0)
+                                                                                                            
+    pbar.update(1)
+    pbar.set_description("Inpaint 2")
+
     specific_edge_id = []
     edge_canvas = np.zeros((input_mesh.graph['H'], input_mesh.graph['W']))
     connect_points_ccs = [set() for _ in connect_points_ccs]
@@ -1983,6 +2004,10 @@ def write_ply(image,
                                                                                     specific_edge_id,
                                                                                     specific_edge_loc,
                                                                                     inpaint_iter=1)
+
+    pbar.update(1)
+    pbar.set_description("Reproject mesh")
+
     vertex_id = 0
     input_mesh.graph['H'], input_mesh.graph['W'] = input_mesh.graph['noext_H'], input_mesh.graph['noext_W']
     background_canvas = np.zeros((input_mesh.graph['H'],
@@ -2038,30 +2063,79 @@ def write_ply(image,
             else:
                 node_str_color.append(str_color)
                 node_str_point.append(str_pt)
+
+    
+    pbar.update(1)
+    pbar.set_description("Generating faces")
     str_faces = generate_face(input_mesh, info_on_pix, config)
+    pbar.update(1)
+    pbar.close()
+
     if config['save_ply'] is True:
         print("Writing mesh file %s ..." % ply_name)
-        with open(ply_name, 'w') as ply_fi:
-            ply_fi.write('ply\n' + 'format ascii 1.0\n')
-            ply_fi.write('comment H ' + str(int(input_mesh.graph['H'])) + '\n')
-            ply_fi.write('comment W ' + str(int(input_mesh.graph['W'])) + '\n')
-            ply_fi.write('comment hFov ' + str(float(input_mesh.graph['hFov'])) + '\n')
-            ply_fi.write('comment vFov ' + str(float(input_mesh.graph['vFov'])) + '\n')
-            ply_fi.write('comment meanLoc ' + str(float(mean_loc_depth)) + '\n')
-            ply_fi.write('element vertex ' + str(len(node_str_list)) + '\n')
-            ply_fi.write('property float x\n' + \
-                         'property float y\n' + \
-                         'property float z\n' + \
-                         'property uchar red\n' + \
-                         'property uchar green\n' + \
-                         'property uchar blue\n' + \
-                         'property uchar alpha\n')
-            ply_fi.write('element face ' + str(len(str_faces)) + '\n')
-            ply_fi.write('property list uchar int vertex_index\n')
-            ply_fi.write('end_header\n')
-            ply_fi.writelines(node_str_list)
-            ply_fi.writelines(str_faces)
-        ply_fi.close()
+        #bty: implement binary ply 
+        if config['ply_fmt'] == "bin":
+            with open(ply_name, 'wb') as ply_fi:
+                if 'little' == sys.byteorder:
+                    ply_fi.write(('ply\n' + 'format binary_little_endian 1.0\n').encode('ascii'))
+                else:
+                    ply_fi.write(('ply\n' + 'format binary_big_endian 1.0\n').encode('ascii'))
+                ply_fi.write(('comment H ' + str(int(input_mesh.graph['H'])) + '\n').encode('ascii'))
+                ply_fi.write(('comment W ' + str(int(input_mesh.graph['W'])) + '\n').encode('ascii'))
+                ply_fi.write(('comment hFov ' + str(float(input_mesh.graph['hFov'])) + '\n').encode('ascii'))
+                ply_fi.write(('comment vFov ' + str(float(input_mesh.graph['vFov'])) + '\n').encode('ascii'))
+                ply_fi.write(('comment meanLoc ' + str(float(mean_loc_depth)) + '\n').encode('ascii'))
+                ply_fi.write(('element vertex ' + str(len(node_str_list)) + '\n').encode('ascii'))
+                ply_fi.write(('property float x\n' + \
+                            'property float y\n' + \
+                            'property float z\n' + \
+                            'property uchar red\n' + \
+                            'property uchar green\n' + \
+                            'property uchar blue\n' + \
+                            'property uchar alpha\n').encode('ascii'))
+                ply_fi.write(('element face ' + str(len(str_faces)) + '\n').encode('ascii'))
+                ply_fi.write(('property list uchar int vertex_index\n').encode('ascii'))
+                ply_fi.write(('end_header\n').encode('ascii'))
+
+                pbar = tqdm.tqdm(total = len(node_str_list)+len(str_faces))
+                pbar.set_description("Saving vertices")
+
+                for v in node_str_list:
+                    x, y, z, r, g, b, a = v.split(' ')
+                    ply_fi.write(struct.pack('fffBBBB', float(x), float(y), float(z), int(r), int(g), int(b), int(a)))
+                    pbar.update(1)
+
+                pbar.set_description("Saving faces")
+                for f in str_faces:
+                    n, a, b, c = f.split(' ')
+                    ply_fi.write(bytearray([int(n)]))
+                    ply_fi.write(struct.pack('III', int(a), int(b), int(c)))
+                    pbar.update(1)
+                pbar.close()
+            ply_fi.close()
+
+        else:
+            with open(ply_name, 'w') as ply_fi:
+                ply_fi.write('ply\n' + 'format ascii 1.0\n')
+                ply_fi.write('comment H ' + str(int(input_mesh.graph['H'])) + '\n')
+                ply_fi.write('comment W ' + str(int(input_mesh.graph['W'])) + '\n')
+                ply_fi.write('comment hFov ' + str(float(input_mesh.graph['hFov'])) + '\n')
+                ply_fi.write('comment vFov ' + str(float(input_mesh.graph['vFov'])) + '\n')
+                ply_fi.write('comment meanLoc ' + str(float(mean_loc_depth)) + '\n')
+                ply_fi.write('element vertex ' + str(len(node_str_list)) + '\n')
+                ply_fi.write('property float x\n' + \
+                            'property float y\n' + \
+                            'property float z\n' + \
+                            'property uchar red\n' + \
+                            'property uchar green\n' + \
+                            'property uchar blue\n' + \
+                            'property uchar alpha\n')
+                ply_fi.write('element face ' + str(len(str_faces)) + '\n')
+                ply_fi.write('property list uchar int vertex_index\n')
+                ply_fi.write('end_header\n')
+                ply_fi.writelines(node_str_list)
+                ply_fi.writelines(str_faces)
+            ply_fi.close()
         return input_mesh
     else:
         H = int(input_mesh.graph['H'])
@@ -2076,12 +2150,16 @@ def write_ply(image,
         return node_str_point, node_str_color, str_faces, H, W, hFov, vFov
 
 def read_ply(mesh_fi):
-    ply_fi = open(mesh_fi, 'r')
+    #bty: implement binary support (assume same endianness for now)
+    # read header in text mode
+    ply_fi = open(mesh_fi, 'r', encoding="utf8", errors='ignore') # required to readline in bin file
     Height = None
     Width = None
     hFov = None
     vFov = None
     mean_loc_depth = None
+    isBinary = True
+    # read ascii header
     while True:
         line = ply_fi.readline().split('\n')[0]
         if line.startswith('element vertex'):
@@ -2097,48 +2175,78 @@ def read_ply(mesh_fi):
                 hFov = float(line.split(' ')[-1].split('\n')[0])
             if line.split(' ')[1] == 'vFov':
                 vFov = float(line.split(' ')[-1].split('\n')[0])
-             #bty: this was the only value for which it needed the depthmap, so it stores it in the ply when generated
+            #bty: this was the only value for which it needed the depthmap, so store it in the ply too
             if line.split(' ')[1] == 'meanLoc':
                 mean_loc_depth = float(line.split(' ')[-1].split('\n')[0])
+        # check format
+        elif line.startswith('format ascii'):
+            isBinary = False
         elif line.startswith('end_header'):
             break
-    contents = ply_fi.readlines()
-    vertex_infos = contents[:num_vertex]
-    face_infos = contents[num_vertex:]
-    #bty: try to optimize by pre-allocating
-    #verts = []
-    #colors = []
-    #faces = []
-    verts = [None] * num_vertex
-    colors = [None] * num_vertex
-    faces = [None] * num_face
-    i = 0
-    for v_info in vertex_infos:
-        str_info = [float(v) for v in v_info.split('\n')[0].split(' ')]
-        if len(str_info) == 6:
-            vx, vy, vz, r, g, b = str_info
-        else:
-            vx, vy, vz, r, g, b, hi = str_info
-        #verts.append([vx, vy, vz])
-        #colors.append([r, g, b, hi])
-        verts[i] = [vx, vy, vz]
-        colors[i] = [r, g, b, hi]
-        i = i + 1
-    verts = np.array(verts)
-    #try:
-    colors = np.array(colors)
-    colors[..., :3] = colors[..., :3]/255.
-    #except:
-    #    import pdb
-    #    pdb.set_trace()
 
-    i = 0
-    for f_info in face_infos:
-        _, v1, v2, v3 = [int(f) for f in f_info.split('\n')[0].split(' ')]
-        #faces.append([v1, v2, v3])
-        faces[i] = [v1, v2, v3]
-        i = i + 1
-    faces = np.array(faces)
+    if isBinary:
+        # grab current file offset and re-open in binary mode
+        endheader = ply_fi.tell()
+        ply_fi.close()
+        ply_fi = open(mesh_fi, 'rb')
+        ply_fi.seek(endheader)
+        verts = [None] * num_vertex
+        colors = [None] * num_vertex
+        faces = [None] * num_face
+
+        pbar = tqdm.tqdm(total = num_vertex+num_face)
+        pbar.set_description("Loading vertices")
+        for i in range(num_vertex):
+            x, y, z, r, g, b, a = struct.unpack('fffBBBB', ply_fi.read(16))
+            verts[i] = [x, y, z]
+            colors[i] = [float(r), float(g), float(b), float(a)]
+            pbar.update(1)
+        verts = np.array(verts)
+        colors = np.array(colors)
+        colors[..., :3] = colors[..., :3] / 255.
+
+        pbar.set_description("Loading faces")
+        for i in range(num_face):
+            c = int.from_bytes(ply_fi.read(1), "little")
+            if c == 3:
+                v1, v2, v3 = struct.unpack('III', ply_fi.read(12))
+                faces[i] = [v1, v2, v3]
+            pbar.update(1)
+        faces = np.array(faces)
+        ply_fi.close()
+        pbar.close()
+
+    else:
+        # read ascii mode file
+        contents = ply_fi.readlines()
+        ply_fi.close()
+        vertex_infos = contents[:num_vertex]
+        face_infos = contents[num_vertex:]
+        #bty: optimize by pre-allocating
+        verts = [None] * num_vertex
+        colors = [None] * num_vertex
+        faces = [None] * num_face
+        i = 0
+        for v_info in vertex_infos:
+            str_info = [float(v) for v in v_info.split('\n')[0].split(' ')]
+            if len(str_info) == 6:
+                vx, vy, vz, r, g, b = str_info
+            else:
+                vx, vy, vz, r, g, b, hi = str_info
+
+            verts[i] = [vx, vy, vz]
+            colors[i] = [r, g, b, hi]
+            i = i + 1
+        verts = np.array(verts)
+        colors = np.array(colors)
+        colors[..., :3] = colors[..., :3]/255.
+
+        i = 0
+        for f_info in face_infos:
+            _, v1, v2, v3 = [int(f) for f in f_info.split('\n')[0].split(' ')]
+            faces[i] = [v1, v2, v3]
+            i = i + 1
+        faces = np.array(faces)
 
     return verts, colors, faces, Height, Width, hFov, vFov, mean_loc_depth
 
@@ -2257,6 +2365,7 @@ def output_3d_photo(verts, colors, faces, Height, Width, hFov, vFov, tgt_poses, 
     plane_width = np.tan(fov_in_rad/2.) * np.abs(mean_loc_depth)
     fn_saved = []
     for video_pose, video_traj_type in zip(videos_poses, video_traj_types):
+        print("Rendering frames ..")
         stereos = []
         #tops = []; buttoms = []; lefts = []; rights = []
         for tp_id, tp in enumerate(video_pose):

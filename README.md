@@ -11,6 +11,9 @@ To generate realistic depth maps `from a single image`, this script uses code an
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.3.6 new feature
+    * implemented binary ply file format for the inpainted 3D mesh, big reduction in filesize and save/load times. 
+    * added progress indicators to the inpainting process 
 * v0.3.5 bugfix
     * create path to 3dphoto models before download (see [issue](https://github.com/thygate/stable-diffusion-webui-depthmap-script/issues/76))
 * v0.3.4 new featues

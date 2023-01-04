@@ -58,7 +58,7 @@ from inpaint.bilateral_filtering import sparse_bilateral_filtering
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.5"
+scriptname = "DepthMap v0.3.6"
 
 class Script(scripts.Script):
 	def title(self):
@@ -548,6 +548,8 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 		config['depth_edge_dilate_2'] = 5
 		config['largest_size'] = 512
 		config['save_ply'] = True
+
+		config['ply_fmt'] = "bin"
 
 		if device == torch.device("cpu"):
 			config["gpu_ids"] = -1
@@ -1138,8 +1140,8 @@ def on_ui_tabs():
                         vid_ssaa = gr.Dropdown(label="SSAA", choices=['1', '2', '3', '4'], value='3', type="index", elem_id="video_ssaa")
                     with gr.Row():
                         vid_traj = gr.Dropdown(label="Trajectory", choices=['straight-line', 'double-straight-line', 'circle'], value='double-straight-line', type="index", elem_id="video_trajectory")
-                        vid_border = gr.Textbox(label="Crop: top, left, bottom, right", value="0.03, 0.03, 0.05, 0.03")
                         vid_shift = gr.Textbox(label="Translate: x, y, z", value="-0.015, 0.0, -0.05")
+                        vid_border = gr.Textbox(label="Crop: top, left, bottom, right", value="0.03, 0.03, 0.05, 0.03")
                         vid_dolly = gr.Checkbox(label="Dolly",value=False)
                     with gr.Row():
                         submit_vid = gr.Button('Generate Video', elem_id="depthmap_generatevideo", variant='primary')

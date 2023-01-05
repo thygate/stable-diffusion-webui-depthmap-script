@@ -11,6 +11,8 @@ if not launch.is_installed("numba"):
 if not launch.is_installed("vispy"):
     launch.run_pip("install vispy", "vispy requirement for depthmap script")
 
+if not launch.is_installed("rembg"):
+    launch.run_pip("install rembg", "rembg requirement for depthmap script")
 
 if not launch.is_installed("moviepy"):
     launch.run_pip("install moviepy==1.0.2", "moviepy requirement for depthmap script")

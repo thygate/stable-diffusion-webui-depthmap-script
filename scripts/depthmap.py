@@ -152,6 +152,7 @@ class Script(scripts.Script):
 			inputimages.append(processed.images[count])
 		
 		#remove on base image before depth calculation
+		background_removed_images = []
 		if background_removal:
 			if pre_depth_background_removal:
 				inputimages = batched_background_removal(inputimages, background_removal_model)

@@ -111,9 +111,6 @@ class Script(scripts.Script):
 				with gr.Row():
 					inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Slooooooooow)",value=False, visible=False)
 
-			with gr.Box():
-				gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
-			
 			with gr.Group():
 				with gr.Row():
 					background_removal_model = gr.Dropdown(label="Model", choices=['u2net','u2netp','u2net_human_seg', 'silueta'], value='u2net', type="value", elem_id="model_type")
@@ -121,6 +118,9 @@ class Script(scripts.Script):
 					background_removal = gr.Checkbox(label="remove background",value=False)
 					save_background_removal_masks = gr.Checkbox(label="save the foreground masks",value=False)
 					pre_depth_background_removal = gr.Checkbox(label="pre-depth background removal",value=False)
+
+			with gr.Box():
+				gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
 			clipthreshold_far.change(
 				fn = lambda a, b: a if b < a else b,

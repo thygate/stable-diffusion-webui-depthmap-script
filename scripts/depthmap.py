@@ -1048,6 +1048,10 @@ def run_generate(depthmap_mode,
 				clipthreshold_far,
 				clipthreshold_near,
 				inpaint,
+                background_removal_model, 
+                background_removal, 
+                pre_depth_background_removal, 
+                save_background_removal_masks,
 				vid_format,
 				vid_ssaa
 				):
@@ -1091,8 +1095,15 @@ def run_generate(depthmap_mode,
 	else:
 		outpath = opts.outdir_samples or opts.outdir_extras_samples
 
+	background_removed_images = []
+	if background_removal:
+		if pre_depth_background_removal:
+			imageArr = batched_background_removal(imageArr, background_removal_model)
+			background_removed_images = imageArr
+		else:
+			background_removed_images = batched_background_removal(imageArr, background_removal_model)	
 
-	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, fnExt, vid_ssaa)
+	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks)
 
 	return outputs, mesh_fi, plaintext_to_html('info'), ''
 
@@ -1156,6 +1167,14 @@ def on_ui_tabs():
                 with gr.Group():
                     with gr.Row():
                         inpaint = gr.Checkbox(label="Generate 3D inpainted mesh and demo videos. (Sloooow)",value=False)
+
+                with gr.Group():
+                    with gr.Row():
+                        background_removal_model = gr.Dropdown(label="Model", choices=['u2net','u2netp','u2net_human_seg', 'silueta'], value='u2net', type="value", elem_id="model_type")
+                    with gr.Row():	
+                        background_removal = gr.Checkbox(label="remove background",value=False)
+                        save_background_removal_masks = gr.Checkbox(label="save the foreground masks",value=False)
+                        pre_depth_background_removal = gr.Checkbox(label="pre-depth background removal",value=False)
 
                 with gr.Box():
                     gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
@@ -1231,6 +1250,10 @@ def on_ui_tabs():
 				clipthreshold_far,
 				clipthreshold_near,
 				inpaint,
+				background_removal_model, 
+				background_removal, 
+				pre_depth_background_removal, 
+				save_background_removal_masks,
 				vid_format,
 				vid_ssaa
             ],

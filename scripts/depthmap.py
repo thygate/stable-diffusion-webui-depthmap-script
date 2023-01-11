@@ -89,7 +89,7 @@ class Script(scripts.Script):
 					clipthreshold_near = gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
 			with gr.Group():
 				with gr.Row():
-					combine_output = gr.Checkbox(label="Combine into one image.",value=True)
+					combine_output = gr.Checkbox(label="Combine into one image.",value=False)
 					combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index")
 				with gr.Row():
 					save_depth = gr.Checkbox(label="Save DepthMap",value=True)
@@ -548,6 +548,8 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 		config['depth_edge_dilate_2'] = 5
 		config['largest_size'] = 512
 		config['save_ply'] = True
+
+		config['repeat_inpaint_edge'] = True	
 
 		config['ply_fmt'] = "bin"
 
@@ -1095,7 +1097,7 @@ def on_ui_tabs():
                         clipthreshold_near = gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
                 with gr.Group():
                     with gr.Row():
-                        combine_output = gr.Checkbox(label="Combine into one image.",value=True)
+                        combine_output = gr.Checkbox(label="Combine into one image.",value=False)
                         combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index")
                     with gr.Row():
                         save_depth = gr.Checkbox(label="Save DepthMap",value=True)

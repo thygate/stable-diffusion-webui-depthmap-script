@@ -2190,6 +2190,7 @@ def read_ply(mesh_fi):
         ply_fi.close()
         ply_fi = open(mesh_fi, 'rb')
         ply_fi.seek(endheader)
+        
         verts = [None] * num_vertex
         colors = [None] * num_vertex
         faces = [None] * num_face
@@ -2365,7 +2366,7 @@ def output_3d_photo(verts, colors, faces, Height, Width, hFov, vFov, tgt_poses, 
     plane_width = np.tan(fov_in_rad/2.) * np.abs(mean_loc_depth)
     fn_saved = []
     for video_pose, video_traj_type in zip(videos_poses, video_traj_types):
-        print("Rendering frames ..")
+        print("\nRendering frames ..")
         stereos = []
         #tops = []; buttoms = []; lefts = []; rights = []
         for tp_id, tp in enumerate(video_pose):

@@ -16,6 +16,8 @@ if not launch.is_installed("moviepy"):
     launch.run_pip("install moviepy==1.0.2", "moviepy requirement for depthmap script")
 if not launch.is_installed("transforms3d"):
     launch.run_pip("install transforms3d", "transforms3d requirement for depthmap script")
+if not launch.is_installed("imageio"): #2.4.1
+    launch.run_pip("install imageio", "imageio-ffmpeg requirement for depthmap script")
 if not launch.is_installed("imageio-ffmpeg"):
     launch.run_pip("install imageio-ffmpeg", "imageio-ffmpeg requirement for depthmap script")
 if not launch.is_installed("networkx"):

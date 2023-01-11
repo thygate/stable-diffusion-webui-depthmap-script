@@ -7,10 +7,16 @@ To generate realistic depth maps `from a single image`, this script uses code an
 
 3D Photography using Context-aware Layered Depth Inpainting by Virginia Tech Vision and Learning Lab , or [3D-Photo-Inpainting](https://github.com/vt-vl-lab/3d-photo-inpainting) is used to generate a `3D inpainted mesh` and render `videos` from said mesh.
 
+[Rembg](https://github.com/danielgatis/rembg) by [@DanielGatis](https://github.com/danielgatis) support added by [@graemeniedermayer](https://github.com/graemeniedermayer), to create masks and clean cut subjects with transparent background.
+
 ## Examples
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)
 
 ## Changelog
+* v0.3.7 new features
+    * [rembg](https://github.com/danielgatis/rembg) [PR](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/78) by [@graemeniedermayer](https://github.com/graemeniedermayer) merged
+    * setting to flip Left/Right SBS images
+    * added missing parameter for 3d inpainting (repeat_inpaint_edge)
 * v0.3.6 new feature
     * implemented binary ply file format for the inpainted 3D mesh, big reduction in filesize and save/load times. 
     * added progress indicators to the inpainting process 

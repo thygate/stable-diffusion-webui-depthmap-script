@@ -61,7 +61,7 @@ from rembg import new_session, remove
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.6"
+scriptname = "DepthMap v0.3.7"
 
 class Script(scripts.Script):
 	def title(self):
@@ -109,15 +109,16 @@ class Script(scripts.Script):
 					stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
 			with gr.Group():
 				with gr.Row():
-					inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Slooooooooow)",value=False, visible=False)
+					inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow)",value=False, visible=False)
+					inpaint_vids = gr.Checkbox(label="Generate 4 demo videos with 3D inpainted mesh.",value=False)
 
 			with gr.Group():
-				with gr.Row():
-					background_removal_model = gr.Dropdown(label="Model", choices=['u2net','u2netp','u2net_human_seg', 'silueta'], value='u2net', type="value", elem_id="model_type")
 				with gr.Row():	
-					background_removal = gr.Checkbox(label="remove background",value=False)
-					save_background_removal_masks = gr.Checkbox(label="save the foreground masks",value=False)
+					background_removal = gr.Checkbox(label="Remove background",value=False)
+					save_background_removal_masks = gr.Checkbox(label="Save the foreground masks",value=False)
 					pre_depth_background_removal = gr.Checkbox(label="pre-depth background removal",value=False)
+				with gr.Row():
+					background_removal_model = gr.Dropdown(label="Rembg Model", choices=['u2net','u2netp','u2net_human_seg', 'silueta'], value='u2net', type="value", elem_id="backgroundmodel_type")
 
 			with gr.Box():
 				gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
@@ -134,10 +135,10 @@ class Script(scripts.Script):
 				outputs=[clipthreshold_far]
 			)
 
-		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks]
+		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks]
 
 	# run from script in txt2img or img2img
-	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks):
+	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks):
 
 		# sd process 
 		processed = processing.process_images(p)
@@ -160,14 +161,14 @@ class Script(scripts.Script):
 			else:
 				background_removed_images = batched_background_removal(inputimages, background_removal_model)			
 
-		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, "mp4", 0, background_removal, background_removed_images, save_background_removal_masks)
+		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, "mp4", 0, background_removal, background_removed_images, save_background_removal_masks)
 		
 		for img in newmaps:
 			processed.images.append(img)
 
 		return processed
 
-def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks):
+def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return []
@@ -463,6 +464,11 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 					apply_stereo_divergence(original_image, img_output, stereo_divergence * (1 - balance), stereo_fill)
 				stereo_img = np.hstack([left_image, right_image])
 
+				# flip sbs left/right if enabled in settings
+				if hasattr(opts, 'depthmap_script_sbsflip'):
+					if opts.depthmap_script_sbsflip:
+						stereo_img = np.hstack([right_image, left_image])
+
 				if gen_stereo:
 					outimages.append(stereo_img)
 				if gen_anaglyph:
@@ -508,7 +514,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			shared.sd_model.cond_stage_model.to(devices.cpu)
 			shared.sd_model.first_stage_model.to(devices.cpu)
 
-			mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, fnExt, vid_ssaa)
+			mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, fnExt, vid_ssaa, inpaint_vids)
 	
 	finally:
 		# reload sd model
@@ -539,7 +545,7 @@ def clipdepthmap(img, clipthreshold_far, clipthreshold_near):
 
 	return clipped_img
 
-def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa):
+def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa, inpaint_vids):
 	try:
 		print("Running 3D Photo Inpainting .. ")
 		edgemodel_path = './models/3dphoto/edge_model.pth'
@@ -590,10 +596,8 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 		config['depth_edge_dilate'] = 10
 		config['depth_edge_dilate_2'] = 5
 		config['largest_size'] = 512
-		config['save_ply'] = True
-
 		config['repeat_inpaint_edge'] = True	
-
+		config['save_ply'] = True
 		config['ply_fmt'] = "bin"
 
 		if device == torch.device("cpu"):
@@ -663,7 +667,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 								depth_edge_model,
 								depth_feat_model)
 
-			if rt_info is not False:
+			if rt_info is not False and inpaint_vids:
 				run_3dphoto_videos(mesh_fi, basename, outpath, 300, 40, 
 					[0.03, 0.03, 0.05, 0.03], 
 					['double-straight-line', 'double-straight-line', 'circle', 'circle'], 
@@ -1050,6 +1054,7 @@ def run_generate(depthmap_mode,
 				clipthreshold_far,
 				clipthreshold_near,
 				inpaint,
+				inpaint_vids,
                 background_removal_model, 
                 background_removal, 
                 pre_depth_background_removal, 
@@ -1105,13 +1110,14 @@ def run_generate(depthmap_mode,
 		else:
 			background_removed_images = batched_background_removal(imageArr, background_removal_model)	
 
-	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks)
+	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks)
 
 	return outputs, mesh_fi, plaintext_to_html('info'), ''
 
 def on_ui_settings():
     section = ('depthmap-script', "Depthmap extension")
-    shared.opts.add_option("depthmap_script_boost_rmax", shared.OptionInfo(1600, "Maximum wholesize for boost.", section=section))
+    shared.opts.add_option("depthmap_script_boost_rmax", shared.OptionInfo(1600, "Maximum wholesize for boost", section=section))
+    shared.opts.add_option("depthmap_script_sbsflip", shared.OptionInfo(False, "Flip Left/Right in SBS stereo images (requested for cross-eyed viewing)", section=section))
 
 def on_ui_tabs():
     with gr.Blocks(analytics_enabled=False) as depthmap_interface:
@@ -1168,15 +1174,16 @@ def on_ui_tabs():
                         stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
                 with gr.Group():
                     with gr.Row():
-                        inpaint = gr.Checkbox(label="Generate 3D inpainted mesh and demo videos. (Sloooow)",value=False)
+                        inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow)",value=False)
+                        inpaint_vids = gr.Checkbox(label="Generate 4 demo videos with 3D inpainted mesh.",value=False)
 
                 with gr.Group():
-                    with gr.Row():
-                        background_removal_model = gr.Dropdown(label="Model", choices=['u2net','u2netp','u2net_human_seg', 'silueta'], value='u2net', type="value", elem_id="model_type")
                     with gr.Row():	
-                        background_removal = gr.Checkbox(label="remove background",value=False)
-                        save_background_removal_masks = gr.Checkbox(label="save the foreground masks",value=False)
+                        background_removal = gr.Checkbox(label="Remove background",value=False)
+                        save_background_removal_masks = gr.Checkbox(label="Save the foreground masks",value=False)
                         pre_depth_background_removal = gr.Checkbox(label="pre-depth background removal",value=False)
+                    with gr.Row():
+                        background_removal_model = gr.Dropdown(label="Rembg Model", choices=['u2net','u2netp','u2net_human_seg', 'silueta'], value='u2net', type="value", elem_id="backgroundmodel_type")
 
                 with gr.Box():
                     gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
@@ -1252,6 +1259,7 @@ def on_ui_tabs():
 				clipthreshold_far,
 				clipthreshold_near,
 				inpaint,
+				inpaint_vids,
 				background_removal_model, 
 				background_removal, 
 				pre_depth_background_removal, 

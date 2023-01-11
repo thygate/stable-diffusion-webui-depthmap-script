@@ -14,9 +14,10 @@ To generate realistic depth maps `from a single image`, this script uses code an
 
 ## Changelog
 * v0.3.7 new features
-    * [rembg](https://github.com/danielgatis/rembg) [PR](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/78) by [@graemeniedermayer](https://github.com/graemeniedermayer) merged
+    * [rembg](https://github.com/danielgatis/rembg) Remove Background [PR](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/78) by [@graemeniedermayer](https://github.com/graemeniedermayer) merged
     * setting to flip Left/Right SBS images
     * added missing parameter for 3d inpainting (repeat_inpaint_edge)
+    * option to generate demo videos with mesh
 * v0.3.6 new feature
     * implemented binary ply file format for the inpainted 3D mesh, big reduction in filesize and save/load times. 
     * added progress indicators to the inpainting process 
@@ -255,6 +256,7 @@ Boosting Monocular Depth Estimation Models to High-Resolution via Content-Adapti
 ```
 
 U2-Net:
+
 ```
 @InProceedings{Qin_2020_PR,
 title = {U2-Net: Going Deeper with Nested U-Structure for Salient Object Detection},

@@ -56,6 +56,9 @@ from inpaint.networks import Inpaint_Color_Net, Inpaint_Depth_Net, Inpaint_Edge_
 from inpaint.utils import path_planning
 from inpaint.bilateral_filtering import sparse_bilateral_filtering
 
+# background removal
+from rembg import new_session, remove
+
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
 scriptname = "DepthMap v0.3.6"
@@ -108,9 +111,16 @@ class Script(scripts.Script):
 				with gr.Row():
 					inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Slooooooooow)",value=False, visible=False)
 
+			with gr.Group():
+				with gr.Row():
+					background_removal_model = gr.Dropdown(label="Model", choices=['u2net','u2netp','u2net_human_seg', 'silueta'], value='u2net', type="value", elem_id="model_type")
+				with gr.Row():	
+					background_removal = gr.Checkbox(label="remove background",value=False)
+					save_background_removal_masks = gr.Checkbox(label="save the foreground masks",value=False)
+					pre_depth_background_removal = gr.Checkbox(label="pre-depth background removal",value=False)
+
 			with gr.Box():
 				gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
-
 
 			clipthreshold_far.change(
 				fn = lambda a, b: a if b < a else b,
@@ -124,10 +134,10 @@ class Script(scripts.Script):
 				outputs=[clipthreshold_far]
 			)
 
-		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint]
+		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks]
 
 	# run from script in txt2img or img2img
-	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint):
+	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks):
 
 		# sd process 
 		processed = processing.process_images(p)
@@ -140,14 +150,24 @@ class Script(scripts.Script):
 			if count == 0 and len(processed.images) > 1:
 				continue
 			inputimages.append(processed.images[count])
+		
+		#remove on base image before depth calculation
+		background_removed_images = []
+		if background_removal:
+			if pre_depth_background_removal:
+				inputimages = batched_background_removal(inputimages, background_removal_model)
+				background_removed_images = inputimages
+			else:
+				background_removed_images = batched_background_removal(inputimages, background_removal_model)			
 
-		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, "mp4", 0)
+		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, "mp4", 0, background_removal, background_removed_images, save_background_removal_masks)
+		
 		for img in newmaps:
 			processed.images.append(img)
 
 		return processed
 
-def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, fnExt, vid_ssaa):
+def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return []
@@ -379,6 +399,29 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 					p = Path(inputnames[count])
 					basename = p.stem
 
+			rgb_image = inputimages[count]
+
+			#applying background masks after depth
+			if background_removal:
+				print('applying background masks')
+				background_removed_image = background_removed_images[count-1]
+				#maybe a threshold cut would be better on the line below.
+				background_removed_array = np.array(background_removed_image)
+				bg_mask = (background_removed_array[:,:,0]==0)|(background_removed_array[:,:,1]==0)|(background_removed_array[:,:,2]==0)
+				far_value = 255 if invert_depth else 0
+
+				img_output[bg_mask] = far_value * far_value #255*255 or 0*0
+				
+				#should this be optional
+				images.save_image(background_removed_image, path=outpath, basename='depthmap', seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_background_removed")
+				outimages.append(background_removed_image )
+				if save_background_removal_masks:
+					bg_array = (1 - bg_mask.astype('int8'))*255
+					mask_array = np.stack( (bg_array, bg_array, bg_array, bg_array), axis=2)
+					mask_image = Image.fromarray( mask_array.astype(np.uint8))
+					images.save_image(mask_image, path=outpath, basename='depthmap', seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_foreground_mask")
+					outimages.append(mask_image)
+
 			if not combine_output:
 				if show_depth:
 					outimages.append(Image.fromarray(img_output))
@@ -396,7 +439,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 					else:
 						images.save_image(Image.fromarray(img_output2), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
 			else:
-				img_concat = np.concatenate((inputimages[count], img_output2), axis=combine_output_axis)
+				img_concat = np.concatenate((rgb_image, img_output2), axis=combine_output_axis)
 				if show_depth:
 					outimages.append(Image.fromarray(img_concat))
 				if save_depth and processed is not None:
@@ -1005,6 +1048,10 @@ def run_generate(depthmap_mode,
 				clipthreshold_far,
 				clipthreshold_near,
 				inpaint,
+                background_removal_model, 
+                background_removal, 
+                pre_depth_background_removal, 
+                save_background_removal_masks,
 				vid_format,
 				vid_ssaa
 				):
@@ -1048,8 +1095,15 @@ def run_generate(depthmap_mode,
 	else:
 		outpath = opts.outdir_samples or opts.outdir_extras_samples
 
+	background_removed_images = []
+	if background_removal:
+		if pre_depth_background_removal:
+			imageArr = batched_background_removal(imageArr, background_removal_model)
+			background_removed_images = imageArr
+		else:
+			background_removed_images = batched_background_removal(imageArr, background_removal_model)	
 
-	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, fnExt, vid_ssaa)
+	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks)
 
 	return outputs, mesh_fi, plaintext_to_html('info'), ''
 
@@ -1113,6 +1167,14 @@ def on_ui_tabs():
                 with gr.Group():
                     with gr.Row():
                         inpaint = gr.Checkbox(label="Generate 3D inpainted mesh and demo videos. (Sloooow)",value=False)
+
+                with gr.Group():
+                    with gr.Row():
+                        background_removal_model = gr.Dropdown(label="Model", choices=['u2net','u2netp','u2net_human_seg', 'silueta'], value='u2net', type="value", elem_id="model_type")
+                    with gr.Row():	
+                        background_removal = gr.Checkbox(label="remove background",value=False)
+                        save_background_removal_masks = gr.Checkbox(label="save the foreground masks",value=False)
+                        pre_depth_background_removal = gr.Checkbox(label="pre-depth background removal",value=False)
 
                 with gr.Box():
                     gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
@@ -1188,6 +1250,10 @@ def on_ui_tabs():
 				clipthreshold_far,
 				clipthreshold_near,
 				inpaint,
+				background_removal_model, 
+				background_removal, 
+				pre_depth_background_removal, 
+				save_background_removal_masks,
 				vid_format,
 				vid_ssaa
             ],
@@ -1224,6 +1290,26 @@ def on_ui_tabs():
 script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_ui_tabs(on_ui_tabs)
 
+def batched_background_removal(inimages, model_name):
+	print('creating background masks')
+	outimages = []
+
+	# model path and name
+	bg_model_dir = Path.joinpath(Path().resolve(), "models/rem_bg")
+	os.makedirs(bg_model_dir, exist_ok=True)
+	os.environ["U2NET_HOME"] = str(bg_model_dir)
+	
+	#starting a session
+	background_removal_session = new_session(model_name)
+	for count in range(0, len(inimages)):
+		# skip first grid image
+		if count == 0 and len(inimages) > 1:
+			continue
+		bg_remove_img = np.array(remove(inimages[count], session=background_removal_session))
+		outimages.append(Image.fromarray(bg_remove_img))
+	#The line below might be redundant
+	del background_removal_session
+	return outimages
 
 def download_file(filename, url):
 	print("Downloading", url, "to", filename)

@@ -14,7 +14,7 @@ To generate realistic depth maps `from a single image`, this script uses code an
 
 ## 3D Photo Inpainting Examples
 [![video](https://img.youtube.com/vi/jRmVkIMS-SY/0.jpg)](https://www.youtube.com/watch?v=jRmVkIMS-SY)   
-video by [@graemeniedermayer](https://github.com/graemeniedermayer)
+video by [@graemeniedermayer](https://github.com/graemeniedermayer), more examples [here](https://github.com/thygate/stable-diffusion-webui-depthmap-script/discussions/50)
 
 ## Stereo Image SBS and Anaglyph Examples
 ![](https://user-images.githubusercontent.com/54073010/210012661-ef07986c-2320-4700-bc54-fad3899f0186.png)    

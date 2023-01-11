@@ -195,7 +195,7 @@ Demonstration videos : (1) https://www.youtube.com/watch?v=vfu5yzs_2EU , (2) htt
     * Add a 'Color Attribute' Node and connect it to the shader color input
 
 ## Forks and Related
-* Generate normal maps from depth maps : [stable-diffusion-webui-normalmap-script](https://github.com/graemeniedermayer/stable-diffusion-webui-normalmap-script) by [@graemeniedermayer](https://github.com/graemeniedermayer)
+* Generate normal maps from depth maps : [stable-diffusion-webui-normalmap-script](https://github.com/graemeniedermayer/stable-diffusion-webui-normalmap-script) by [@graemeniedermayer](https://github.com/graemeniedermayer), also check his [clothseg](https://github.com/graemeniedermayer/clothseg) extension.
 
 * Several scripts by [@Extraltodeus](https://github.com/Extraltodeus) using depth maps : https://github.com/Extraltodeus?tab=repositories
 

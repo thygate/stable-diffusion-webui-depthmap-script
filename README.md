@@ -7,7 +7,7 @@ To generate realistic depth maps `from a single image`, this script uses code an
 
 3D Photography using Context-aware Layered Depth Inpainting by Virginia Tech Vision and Learning Lab , or [3D-Photo-Inpainting](https://github.com/vt-vl-lab/3d-photo-inpainting) is used to generate a `3D inpainted mesh` and render `videos` from said mesh.
 
-[Rembg](https://github.com/danielgatis/rembg) by [@DanielGatis](https://github.com/danielgatis) support added by [@graemeniedermayer](https://github.com/graemeniedermayer), to remove backgrounds.
+[Rembg](https://github.com/danielgatis/rembg) by [@DanielGatis](https://github.com/danielgatis) support added by [@graemeniedermayer](https://github.com/graemeniedermayer), using [U-2-Net](https://github.com/xuebinqin/U-2-Net) by [@xuebinqin](https://github.com/xuebinqin) to remove backgrounds.
 
 ## Examples
 [![screenshot](examples.png)](https://raw.githubusercontent.com/thygate/stable-diffusion-webui-depthmap-script/main/examples.png)

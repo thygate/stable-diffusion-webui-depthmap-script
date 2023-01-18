@@ -61,7 +61,7 @@ from rembg import new_session, remove
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.7"
+scriptname = "DepthMap v0.3.8"
 
 class Script(scripts.Script):
 	def title(self):
@@ -123,6 +123,8 @@ class Script(scripts.Script):
 			with gr.Box():
 				gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
+			gen_normal = gr.Checkbox(label="Generate Normalmap (hidden! api only)",value=False, visible=False)
+
 			clipthreshold_far.change(
 				fn = lambda a, b: a if b < a else b,
 				inputs = [clipthreshold_far, clipthreshold_near],
@@ -135,10 +137,10 @@ class Script(scripts.Script):
 				outputs=[clipthreshold_far]
 			)
 
-		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks]
+		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal]
 
 	# run from script in txt2img or img2img
-	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks):
+	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal):
 
 		# sd process 
 		processed = processing.process_images(p)
@@ -161,14 +163,14 @@ class Script(scripts.Script):
 			else:
 				background_removed_images = batched_background_removal(inputimages, background_removal_model)			
 
-		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, "mp4", 0, background_removal, background_removed_images, save_background_removal_masks)
+		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, "mp4", 0, background_removal, background_removed_images, save_background_removal_masks, gen_normal)
 		
 		for img in newmaps:
 			processed.images.append(img)
 
 		return processed
 
-def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks):
+def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks, gen_normal):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return []
@@ -414,13 +416,19 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 				img_output[bg_mask] = far_value * far_value #255*255 or 0*0
 				
 				#should this be optional
-				images.save_image(background_removed_image, path=outpath, basename='depthmap', seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_background_removed")
+				if (processed is not None):
+					images.save_image(background_removed_image, outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_background_removed")
+				else:
+					images.save_image(background_removed_image, path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_background_removed")
 				outimages.append(background_removed_image )
 				if save_background_removal_masks:
 					bg_array = (1 - bg_mask.astype('int8'))*255
 					mask_array = np.stack( (bg_array, bg_array, bg_array, bg_array), axis=2)
 					mask_image = Image.fromarray( mask_array.astype(np.uint8))
-					images.save_image(mask_image, path=outpath, basename='depthmap', seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_foreground_mask")
+					if (processed is not None):
+						images.save_image(mask_image, outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_foreground_mask")
+					else:
+						images.save_image(mask_image, path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_foreground_mask")
 					outimages.append(mask_image)
 
 			if not combine_output:
@@ -486,6 +494,31 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 						images.save_image(Image.fromarray(stereo_img), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_stereo")
 					if gen_anaglyph:
 						images.save_image(Image.fromarray(anaglyph_img), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_anaglyph")
+
+
+			
+			if gen_normal:
+				# taken from @graemeniedermayer, hidden, for api use only, will remove in future
+				# take gradients 
+				zx = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 1, 0, ksize=3)     
+				zy = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 0, 1, ksize=3) 
+
+				# combine and normalize gradients.
+				normal = np.dstack((zx, -zy, np.ones_like(img_output)))
+				n = np.linalg.norm(normal, axis=2)
+				normal[:, :, 0] /= n
+				normal[:, :, 1] /= n
+				normal[:, :, 2] /= n
+
+				# offset and rescale values to be in 0-255
+				normal += 1
+				normal /= 2
+				normal *= 255	
+				normal = normal.astype(np.uint8)
+				
+				outimages.append(Image.fromarray(normal))
+
+
 
 		print("Done.")
 
@@ -1110,7 +1143,7 @@ def run_generate(depthmap_mode,
 		else:
 			background_removed_images = batched_background_removal(imageArr, background_removal_model)	
 
-	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks)
+	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks, False)
 
 	return outputs, mesh_fi, plaintext_to_html('info'), ''
 

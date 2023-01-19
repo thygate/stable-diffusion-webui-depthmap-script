@@ -150,7 +150,7 @@ class Script(scripts.Script):
 		inputimages = []
 		for count in range(0, len(processed.images)):
 			# skip first grid image
-			if count == 0 and len(processed.images) > 1:
+			if count == 0 and len(processed.images) > 1 and opts.return_grid:
 				continue
 			inputimages.append(processed.images[count])
 		
@@ -407,7 +407,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 			#applying background masks after depth
 			if background_removal:
 				print('applying background masks')
-				background_removed_image = background_removed_images[count-1]
+				background_removed_image = background_removed_images[count]
 				#maybe a threshold cut would be better on the line below.
 				background_removed_array = np.array(background_removed_image)
 				bg_mask = (background_removed_array[:,:,0]==0)|(background_removed_array[:,:,1]==0)|(background_removed_array[:,:,2]==0)
@@ -1345,9 +1345,6 @@ def batched_background_removal(inimages, model_name):
 	#starting a session
 	background_removal_session = new_session(model_name)
 	for count in range(0, len(inimages)):
-		# skip first grid image
-		if count == 0 and len(inimages) > 1:
-			continue
 		bg_remove_img = np.array(remove(inimages[count], session=background_removal_session))
 		outimages.append(Image.fromarray(bg_remove_img))
 	#The line below might be redundant

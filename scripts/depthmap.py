@@ -410,7 +410,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 				background_removed_image = background_removed_images[count]
 				#maybe a threshold cut would be better on the line below.
 				background_removed_array = np.array(background_removed_image)
-				bg_mask = (background_removed_array[:,:,0]==0)|(background_removed_array[:,:,1]==0)|(background_removed_array[:,:,2]==0)
+				bg_mask = (background_removed_array[:,:,0]==0)&(background_removed_array[:,:,1]==0)&(background_removed_array[:,:,2]==0)&(background_removed_array[:,:,3]<=0.2)
 				far_value = 255 if invert_depth else 0
 
 				img_output[bg_mask] = far_value * far_value #255*255 or 0*0

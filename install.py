@@ -1,4 +1,5 @@
 import launch
+import platform
 
 if not launch.is_installed("timm"): #0.6.7
     launch.run_pip("install --force-reinstall timm==0.6.12", "timm requirement for depthmap script")
@@ -24,6 +25,7 @@ if not launch.is_installed("imageio-ffmpeg"):
     launch.run_pip("install imageio-ffmpeg", "imageio-ffmpeg requirement for depthmap script")
 if not launch.is_installed("networkx"):
     launch.run_pip("install install networkx==2.5", "networkx requirement for depthmap script")
-if not launch.is_installed("pyqt5"):
-    launch.run_pip("install pyqt5", "pyqt5 requirement for depthmap script")
+if platform.system() == 'Windows':
+    if not launch.is_installed("pyqt5"):
+        launch.run_pip("install pyqt5", "pyqt5 requirement for depthmap script")
 

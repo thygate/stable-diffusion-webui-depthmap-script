@@ -101,6 +101,7 @@ class Script(scripts.Script):
 			with gr.Group():
 				with gr.Row():
 					gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
+					gen_stereo_count = gr.Slider(minimum=2, maximum=10, step=1, label="Side-by-side image count", value=2)
 					gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
 				with gr.Row():
 					stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)', value=2.5)
@@ -137,10 +138,10 @@ class Script(scripts.Script):
 				outputs=[clipthreshold_far]
 			)
 
-		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal]
+		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereo_count, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal]
 
 	# run from script in txt2img or img2img
-	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal):
+	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereo_count, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal):
 
 		# sd process 
 		processed = processing.process_images(p)
@@ -163,14 +164,14 @@ class Script(scripts.Script):
 			else:
 				background_removed_images = batched_background_removal(inputimages, background_removal_model)			
 
-		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, "mp4", 0, background_removal, background_removed_images, save_background_removal_masks, gen_normal)
+		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereo_count, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, "mp4", 0, background_removal, background_removed_images, save_background_removal_masks, gen_normal)
 		
 		for img in newmaps:
 			processed.images.append(img)
 
 		return processed
 
-def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks, gen_normal):
+def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereo_count, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks, gen_normal):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return []
@@ -462,20 +463,28 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 				outimages.append(heatmap)
 
 			if gen_stereo or gen_anaglyph:
-				print("Generating Stereo image..")
+				print("Generating Stereo image with "+str(gen_stereo_count)+" images..")
 				#img_output = cv2.blur(img_output, (3, 3))
 				balance = (stereo_balance + 1) / 2
 				original_image = np.asarray(inputimages[count])
-				left_image = original_image if balance < 0.001 else \
-					apply_stereo_divergence(original_image, img_output, - stereo_divergence * balance, stereo_fill)
-				right_image = original_image if balance > 0.999 else \
-					apply_stereo_divergence(original_image, img_output, stereo_divergence * (1 - balance), stereo_fill)
-				stereo_img = np.hstack([left_image, right_image])
+
+				img_array = []
+
+				# Make the stereogram iteratively
+				for i in range(0,gen_stereo_count):
+					negate = -1.0 if i > (gen_stereo_count/2.0) else 1.0
+					img_array.append(apply_stereo_divergence(original_image, img_output, negate * stereo_divergence * (1.0/gen_stereo_count), stereo_fill))
+
+				# Keep the L/R generation for anaglyph
+				left_image = apply_stereo_divergence(original_image, img_output, - stereo_divergence * balance, stereo_fill)
+				right_image = apply_stereo_divergence(original_image, img_output, stereo_divergence * 1-balance, stereo_fill)
+
+				stereo_img = np.hstack(img_array)
 
 				# flip sbs left/right if enabled in settings
 				if hasattr(opts, 'depthmap_script_sbsflip'):
 					if opts.depthmap_script_sbsflip:
-						stereo_img = np.hstack([right_image, left_image])
+						stereo_img = np.hstack(img_array.reverse)
 
 				if gen_stereo:
 					outimages.append(stereo_img)
@@ -1079,6 +1088,7 @@ def run_generate(depthmap_mode,
 				combine_output, 
 				combine_output_axis,
 				gen_stereo, 
+				gen_stereo_count, 
 				gen_anaglyph,
 				stereo_divergence,
 				stereo_fill,
@@ -1143,7 +1153,7 @@ def run_generate(depthmap_mode,
 		else:
 			background_removed_images = batched_background_removal(imageArr, background_removal_model)	
 
-	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks, False)
+	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereo_count, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks, False)
 
 	return outputs, mesh_fi, plaintext_to_html('info'), ''
 
@@ -1199,6 +1209,7 @@ def on_ui_tabs():
                 with gr.Group():
                     with gr.Row():
                         gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
+                        gen_stereo_count = gr.Slider(minimum=2, maximum=10, step=1, label="Side-by-side image count", value=2)
                         gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
                     with gr.Row():
                         stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)', value=2.5)
@@ -1284,6 +1295,7 @@ def on_ui_tabs():
 				combine_output, 
 				combine_output_axis,
 				gen_stereo, 
+				gen_stereo_count, 
 				gen_anaglyph,
 				stereo_divergence,
 				stereo_fill,

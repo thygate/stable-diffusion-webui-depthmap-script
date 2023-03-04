@@ -101,10 +101,10 @@ class Script(scripts.Script):
 			with gr.Group():
 				with gr.Row():
 					gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
-					gen_stereo_count = gr.Slider(minimum=2, maximum=10, step=1, label="Side-by-side image count", value=2)
+					gen_stereo_count = gr.Slider(minimum=2, maximum=10, step=2, label="Side-by-side image count", value=2)
 					gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
 				with gr.Row():
-					stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)', value=2.5)
+					stereo_divergence = gr.Slider(minimum=0.05, maximum=100.005, step=0.01, label='Divergence (3D effect)', value=2.5)
 				with gr.Row():
 					stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='polylines_sharp', type="index", elem_id="stereo_fill_type")
 					stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
@@ -471,9 +471,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 				img_array = []
 
 				# Make the stereogram iteratively
-				for i in range(0,gen_stereo_count):
-					negate = -1.0 if i > (gen_stereo_count/2.0) else 1.0
-					img_array.append(apply_stereo_divergence(original_image, img_output, negate * stereo_divergence * (1.0/gen_stereo_count), stereo_fill))
+				for i in np.linspace(-1,1,gen_stereo_count):
+					img_array.append(apply_stereo_divergence(original_image, img_output, (i) * stereo_divergence * (1.0/gen_stereo_count), stereo_fill))
 
 				# Keep the L/R generation for anaglyph
 				left_image = apply_stereo_divergence(original_image, img_output, - stereo_divergence * balance, stereo_fill)
@@ -1209,10 +1208,10 @@ def on_ui_tabs():
                 with gr.Group():
                     with gr.Row():
                         gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
-                        gen_stereo_count = gr.Slider(minimum=2, maximum=10, step=1, label="Side-by-side image count", value=2)
+                        gen_stereo_count = gr.Slider(minimum=2, maximum=10, step=2, label="Side-by-side image count", value=2)
                         gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
                     with gr.Row():
-                        stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)', value=2.5)
+                        stereo_divergence = gr.Slider(minimum=0.05, maximum=100.005, step=0.01, label='Divergence (3D effect)', value=2.5)
                     with gr.Row():
                         stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='polylines_sharp', type="index", elem_id="stereo_fill_type")
                         stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)

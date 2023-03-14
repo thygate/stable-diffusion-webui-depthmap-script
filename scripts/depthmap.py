@@ -724,6 +724,8 @@ def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border,
 
 	if platform.system() == 'Windows':
 		vispy.use(app='PyQt5')
+	elif platform.system() == 'Darwin':
+		vispy.use('PyQt6')
 	else:
 		vispy.use(app='egl')
 

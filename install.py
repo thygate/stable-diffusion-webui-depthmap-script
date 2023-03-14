@@ -29,3 +29,6 @@ if platform.system() == 'Windows':
     if not launch.is_installed("pyqt5"):
         launch.run_pip("install pyqt5", "pyqt5 requirement for depthmap script")
 
+if platform.system() == 'Darwin':
+    if not launch.is_installed("pyqt6"):
+        launch.run_pip("install pyqt6", "pyqt6 requirement for depthmap script")

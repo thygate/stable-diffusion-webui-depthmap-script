@@ -142,7 +142,7 @@ class Script(scripts.Script):
 		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereotb, gen_stereo_count, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal]
 
     # run from script in txt2img or img2img
-    def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereotb, gen_stereo_count, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal):
+	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereotb, gen_stereo_count, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal):
 
 		# sd process 
 		processed = processing.process_images(p)
@@ -172,7 +172,7 @@ class Script(scripts.Script):
 
 		return processed
 
-  def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereotb, gen_stereo_count, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks, gen_normal):
+def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereotb, gen_stereo_count, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks, gen_normal):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return []
@@ -480,7 +480,7 @@ class Script(scripts.Script):
 				right_image = apply_stereo_divergence(original_image, img_output, stereo_divergence * 1-balance, stereo_fill)
 
 				stereo_img = np.hstack(img_array)
-        stereotb_img = np.vstack([left_image, right_image])
+				stereotb_img = np.vstack([left_image, right_image])
 
 				# flip sbs left/right if enabled in settings
 				if hasattr(opts, 'depthmap_script_sbsflip'):

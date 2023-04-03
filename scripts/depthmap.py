@@ -76,17 +76,17 @@ def main_ui_panel():
 									 type="index", elem_id="tabmodel_type")
 		with gr.Group():
 			with gr.Row():
-				net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
-				net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
-			match_size = gr.Checkbox(label="Match input size (size is ignored when using boost)", value=False)
-		with gr.Group():
-			with gr.Row():
 				boost = gr.Checkbox(label="BOOST (multi-resolution merging)", value=True)
 				invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)", value=False)
+			with gr.Group(visible=False) as options_depend_on_boost:
+				match_size = gr.Checkbox(label="Match input size", value=False)
+				with gr.Row() as options_depend_on_match_size:
+					net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
+					net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
 		with gr.Group():
 			with gr.Row():
 				clipdepth = gr.Checkbox(label="Clip and renormalize", value=False)
-			with gr.Row():
+			with gr.Row(visible=False) as clip_options_row_1:
 				clipthreshold_far = gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
 				clipthreshold_near = gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
 		with gr.Group():
@@ -101,14 +101,15 @@ def main_ui_panel():
 		with gr.Group():
 			with gr.Row():
 				gen_stereo = gr.Checkbox(label="Generate stereoscopic image", value=False)
-				stereo_mode = gr.Dropdown(label="Stereoscopic image type",
-										  choices=['left-right', 'right-left', 'top-bottom', 'bottom-top',
-												   'red-cyan-anaglyph'], value='left-right', type="value",
-										  elem_id="stereo_mode")
-			with gr.Row():
+				with gr.Group(visible=False) as stereo_options_row_0:
+					stereo_mode = gr.Dropdown(label="Stereoscopic image type",
+											  choices=['left-right', 'right-left', 'top-bottom', 'bottom-top',
+													   'red-cyan-anaglyph'], value='left-right', type="value",
+											  elem_id="stereo_mode")
+			with gr.Row(visible=False) as stereo_options_row_1:
 				stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)',
 											  value=2.5)
-			with gr.Row():
+			with gr.Row(visible=False) as stereo_options_row_2:
 				stereo_fill = gr.Dropdown(label="Gap fill technique",
 										  choices=['none', 'naive', 'naive_interpolating', 'polylines_soft',
 												   'polylines_sharp'], value='polylines_sharp', type="value",
@@ -123,9 +124,10 @@ def main_ui_panel():
 		with gr.Group():
 			with gr.Row():
 				background_removal = gr.Checkbox(label="Remove background", value=False)
+			with gr.Row(visible=False) as bgrem_options_row_1:
 				save_background_removal_masks = gr.Checkbox(label="Save the foreground masks", value=False)
-				pre_depth_background_removal = gr.Checkbox(label="pre-depth background removal", value=False)
-			with gr.Row():
+				pre_depth_background_removal = gr.Checkbox(label="Pre-depth background removal", value=False)
+			with gr.Row(visible=False) as bgrem_options_row_2:
 				background_removal_model = gr.Dropdown(label="Rembg Model",
 													   choices=['u2net', 'u2netp', 'u2net_human_seg', 'silueta'],
 													   value='u2net', type="value", elem_id="backgroundmodel_type")
@@ -137,6 +139,7 @@ def main_ui_panel():
 
 		gen_normal = gr.Checkbox(label="Generate Normalmap (hidden! api only)", value=False, visible=False)
 
+
 		clipthreshold_far.change(
 			fn=lambda a, b: a if b < a else b,
 			inputs=[clipthreshold_far, clipthreshold_near],
@@ -147,6 +150,45 @@ def main_ui_panel():
 			fn=lambda a, b: a if b > a else b,
 			inputs=[clipthreshold_near, clipthreshold_far],
 			outputs=[clipthreshold_far]
+		)
+
+		boost.change(
+			fn=lambda a: options_depend_on_boost.update(visible = not a),
+			inputs=[boost],
+			outputs=[options_depend_on_boost]
+		)
+
+		match_size.change(
+			fn=lambda a: options_depend_on_match_size.update(visible = not a),
+			inputs=[match_size],
+			outputs=[options_depend_on_match_size]
+		)
+
+		def clipdepth_options_visibility(v):
+			return clip_options_row_1.update(visible=v)
+		clipdepth.change(
+			fn=clipdepth_options_visibility,
+			inputs=[clipdepth],
+			outputs=[clip_options_row_1]
+		)
+
+		def stereo_options_visibility(v):
+			return stereo_options_row_0.update(visible=v),\
+				   stereo_options_row_1.update(visible=v),\
+				   stereo_options_row_2.update(visible=v)
+		gen_stereo.change(
+			fn=stereo_options_visibility,
+			inputs=[gen_stereo],
+			outputs=[stereo_options_row_0, stereo_options_row_1, stereo_options_row_2]
+		)
+
+		def background_removal_options_visibility(v):
+			return bgrem_options_row_1.update(visible=v), \
+				   bgrem_options_row_2.update(visible=v)
+		background_removal.change(
+			fn=background_removal_options_visibility,
+			inputs=[background_removal],
+			outputs=[bgrem_options_row_1, bgrem_options_row_2]
 		)
 
 	return [compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,   pre_depth_background_removal, background_removal_model]
@@ -494,7 +536,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				outimages.append(heatmap)
 
 			if gen_stereo:
-				print("Generating stereoscopic image(s)..")
+				print("Generating stereoscopic image..")
 				stereoimage = create_stereoimage(inputimages[count], img_output, stereo_divergence, stereo_mode, stereo_balance, stereo_fill)
 				outimages.append(stereoimage)
 
@@ -1000,18 +1042,6 @@ def on_ui_tabs():
                         vid_dolly = gr.Checkbox(label="Dolly",value=False)
                     with gr.Row():
                         submit_vid = gr.Button('Generate Video', elem_id="depthmap_generatevideo", variant='primary')
-
-        clipthreshold_far.change(
-            fn = lambda a, b: a if b < a else b,
-            inputs = [clipthreshold_far, clipthreshold_near],
-            outputs=[clipthreshold_near]
-        )
-
-        clipthreshold_near.change(
-            fn = lambda a, b: a if b > a else b,
-            inputs = [clipthreshold_near, clipthreshold_far],
-            outputs=[clipthreshold_far]
-        )
 
         submit.click(
             fn=wrap_gradio_gpu_call(run_generate),

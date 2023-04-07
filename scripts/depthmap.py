@@ -416,9 +416,14 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			if (match_size):
 				net_width, net_height = inputimages[count].width, inputimages[count].height
 
+			# Convert single channel input (PIL) images to rgb
+			if inputimages[count].mode == 'I':
+				inputimages[count].point(lambda p: p*0.0039063096, mode='RGB')
+				inputimages[count] = inputimages[count].convert('RGB')
+
 			# input image
 			img = cv2.cvtColor(np.asarray(inputimages[count]), cv2.COLOR_BGR2RGB) / 255.0
-			
+	
 			# compute
 			if not boost:
 				if model_type == 0:
@@ -1013,7 +1018,7 @@ def on_ui_tabs():
 
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
 
-                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,   pre_depth_background_removal, background_removal_model = main_ui_panel()
+                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model = main_ui_panel()
 
             #result_images, html_info_x, html_info = modules.ui.create_output_panel("depthmap", opts.outdir_extras_samples)
             with gr.Column(variant='panel'):

@@ -65,7 +65,7 @@ whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
 scriptname = "DepthMap v0.3.9"
 
-def main_ui_panel():
+def main_ui_panel(is_depth_tab):
 	with gr.Blocks():
 		with gr.Row():
 			compute_device = gr.Radio(label="Compute on", choices=['GPU', 'CPU'], value='GPU', type="index")
@@ -116,10 +116,12 @@ def main_ui_panel():
 										  elem_id="stereo_fill_type")
 				stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes',
 										   value=0.0)
-		with gr.Group():
+
+		with gr.Group(visible=is_depth_tab):
 			with gr.Row():
-				inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow)", value=False, visible=True)
-				inpaint_vids = gr.Checkbox(label="Generate 4 demo videos with 3D inpainted mesh.", value=False)
+				inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow)", value=False, visible=is_depth_tab)
+			with gr.Row(visible=False) as inpaint_options_row_0:
+				inpaint_vids = gr.Checkbox(label="Generate 4 demo videos with 3D inpainted mesh.", value=False, visible=is_depth_tab)
 
 		with gr.Group():
 			with gr.Row():
@@ -182,6 +184,14 @@ def main_ui_panel():
 			outputs=[stereo_options_row_0, stereo_options_row_1, stereo_options_row_2]
 		)
 
+		def inpaint_options_visibility(v):
+			return inpaint_options_row_0.update(visible=v)
+		inpaint.change(
+			fn=inpaint_options_visibility,
+			inputs=[inpaint],
+			outputs=[inpaint_options_row_0]
+		)
+
 		def background_removal_options_visibility(v):
 			return bgrem_options_row_1.update(visible=v), \
 				   bgrem_options_row_2.update(visible=v)
@@ -203,7 +213,7 @@ class Script(scripts.Script):
 
 	def ui(self, is_img2img):
 		with gr.Column(variant='panel'):
-			ret = main_ui_panel()
+			ret = main_ui_panel(False)
 		return ret
 
 	# run from script in txt2img or img2img
@@ -247,7 +257,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
                  background_removed_images, fnExt, vid_ssaa):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
-		return []
+		return [], []
 
 	print('\n%s' % scriptname)
 
@@ -618,7 +628,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 
 @njit(parallel=True)
 def clipdepthmap(img, clipthreshold_far, clipthreshold_near):
-	clipped_img = img #copy.deepcopy(img)
+	clipped_img = img
 	w, h = img.shape
 	min = img.min()
 	max = img.max()
@@ -1018,7 +1028,7 @@ def on_ui_tabs():
 
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
 
-                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model = main_ui_panel()
+                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model = main_ui_panel(True)
 
             #result_images, html_info_x, html_info = modules.ui.create_output_panel("depthmap", opts.outdir_extras_samples)
             with gr.Column(variant='panel'):

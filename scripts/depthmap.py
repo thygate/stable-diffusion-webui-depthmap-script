@@ -39,10 +39,10 @@ sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 from stereoimage_generation import *
 
 # midas imports
-from midas.dpt_depth import DPTDepthModel
-from midas.midas_net import MidasNet
-from midas.midas_net_custom import MidasNet_small
-from midas.transforms import Resize, NormalizeImage, PrepareForNet
+from dmidas.dpt_depth import DPTDepthModel
+from dmidas.midas_net import MidasNet
+from dmidas.midas_net_custom import MidasNet_small
+from dmidas.transforms import Resize, NormalizeImage, PrepareForNet
 
 # AdelaiDepth/LeReS imports
 from lib.multi_depth_model_woauxi import RelDepthModel
@@ -118,7 +118,7 @@ def main_ui_panel():
 										   value=0.0)
 		with gr.Group():
 			with gr.Row():
-				inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow)", value=False, visible=False)
+				inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow)", value=False, visible=True)
 				inpaint_vids = gr.Checkbox(label="Generate 4 demo videos with 3D inpainted mesh.", value=False)
 
 		with gr.Group():

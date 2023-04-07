@@ -36,6 +36,8 @@ import imageio
 
 sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
+from stereoimage_generation import *
+
 # midas imports
 from midas.dpt_depth import DPTDepthModel
 from midas.midas_net import MidasNet
@@ -61,7 +63,136 @@ from rembg import new_session, remove
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.8"
+scriptname = "DepthMap v0.3.9"
+
+def main_ui_panel():
+	with gr.Blocks():
+		with gr.Row():
+			compute_device = gr.Radio(label="Compute on", choices=['GPU', 'CPU'], value='GPU', type="index")
+			model_type = gr.Dropdown(label="Model", choices=['res101', 'dpt_beit_large_512 (midas 3.1)',
+															 'dpt_beit_large_384 (midas 3.1)',
+															 'dpt_large_384 (midas 3.0)', 'dpt_hybrid_384 (midas 3.0)',
+															 'midas_v21', 'midas_v21_small'], value='res101',
+									 type="index", elem_id="tabmodel_type")
+		with gr.Group():
+			with gr.Row():
+				boost = gr.Checkbox(label="BOOST (multi-resolution merging)", value=True)
+				invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)", value=False)
+			with gr.Group(visible=False) as options_depend_on_boost:
+				match_size = gr.Checkbox(label="Match input size", value=False)
+				with gr.Row() as options_depend_on_match_size:
+					net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
+					net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
+		with gr.Group():
+			with gr.Row():
+				clipdepth = gr.Checkbox(label="Clip and renormalize", value=False)
+			with gr.Row(visible=False) as clip_options_row_1:
+				clipthreshold_far = gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
+				clipthreshold_near = gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
+		with gr.Group():
+			with gr.Row():
+				combine_output = gr.Checkbox(label="Combine into one image", value=False)
+				combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical', 'Horizontal'],
+											   value='Horizontal', type="index")
+			with gr.Row():
+				save_depth = gr.Checkbox(label="Save DepthMap", value=True)
+				show_depth = gr.Checkbox(label="Show DepthMap", value=True)
+				show_heat = gr.Checkbox(label="Show HeatMap", value=False)
+		with gr.Group():
+			with gr.Row():
+				gen_stereo = gr.Checkbox(label="Generate stereoscopic image", value=False)
+				with gr.Group(visible=False) as stereo_options_row_0:
+					stereo_mode = gr.Dropdown(label="Stereoscopic image type",
+											  choices=['left-right', 'right-left', 'top-bottom', 'bottom-top',
+													   'red-cyan-anaglyph'], value='left-right', type="value",
+											  elem_id="stereo_mode")
+			with gr.Row(visible=False) as stereo_options_row_1:
+				stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)',
+											  value=2.5)
+			with gr.Row(visible=False) as stereo_options_row_2:
+				stereo_fill = gr.Dropdown(label="Gap fill technique",
+										  choices=['none', 'naive', 'naive_interpolating', 'polylines_soft',
+												   'polylines_sharp'], value='polylines_sharp', type="value",
+										  elem_id="stereo_fill_type")
+				stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes',
+										   value=0.0)
+		with gr.Group():
+			with gr.Row():
+				inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow)", value=False, visible=False)
+				inpaint_vids = gr.Checkbox(label="Generate 4 demo videos with 3D inpainted mesh.", value=False)
+
+		with gr.Group():
+			with gr.Row():
+				background_removal = gr.Checkbox(label="Remove background", value=False)
+			with gr.Row(visible=False) as bgrem_options_row_1:
+				save_background_removal_masks = gr.Checkbox(label="Save the foreground masks", value=False)
+				pre_depth_background_removal = gr.Checkbox(label="Pre-depth background removal", value=False)
+			with gr.Row(visible=False) as bgrem_options_row_2:
+				background_removal_model = gr.Dropdown(label="Rembg Model",
+													   choices=['u2net', 'u2netp', 'u2net_human_seg', 'silueta'],
+													   value='u2net', type="value", elem_id="backgroundmodel_type")
+
+		with gr.Box():
+			gr.HTML("Information, comment and share @ <a "
+					"href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>"
+					"https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
+
+		gen_normal = gr.Checkbox(label="Generate Normalmap (hidden! api only)", value=False, visible=False)
+
+
+		clipthreshold_far.change(
+			fn=lambda a, b: a if b < a else b,
+			inputs=[clipthreshold_far, clipthreshold_near],
+			outputs=[clipthreshold_near]
+		)
+
+		clipthreshold_near.change(
+			fn=lambda a, b: a if b > a else b,
+			inputs=[clipthreshold_near, clipthreshold_far],
+			outputs=[clipthreshold_far]
+		)
+
+		boost.change(
+			fn=lambda a: options_depend_on_boost.update(visible = not a),
+			inputs=[boost],
+			outputs=[options_depend_on_boost]
+		)
+
+		match_size.change(
+			fn=lambda a: options_depend_on_match_size.update(visible = not a),
+			inputs=[match_size],
+			outputs=[options_depend_on_match_size]
+		)
+
+		def clipdepth_options_visibility(v):
+			return clip_options_row_1.update(visible=v)
+		clipdepth.change(
+			fn=clipdepth_options_visibility,
+			inputs=[clipdepth],
+			outputs=[clip_options_row_1]
+		)
+
+		def stereo_options_visibility(v):
+			return stereo_options_row_0.update(visible=v),\
+				   stereo_options_row_1.update(visible=v),\
+				   stereo_options_row_2.update(visible=v)
+		gen_stereo.change(
+			fn=stereo_options_visibility,
+			inputs=[gen_stereo],
+			outputs=[stereo_options_row_0, stereo_options_row_1, stereo_options_row_2]
+		)
+
+		def background_removal_options_visibility(v):
+			return bgrem_options_row_1.update(visible=v), \
+				   bgrem_options_row_2.update(visible=v)
+		background_removal.change(
+			fn=background_removal_options_visibility,
+			inputs=[background_removal],
+			outputs=[bgrem_options_row_1, bgrem_options_row_2]
+		)
+
+	return [compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,   pre_depth_background_removal, background_removal_model]
+
 
 class Script(scripts.Script):
 	def title(self):
@@ -72,76 +203,13 @@ class Script(scripts.Script):
 
 	def ui(self, is_img2img):
 		with gr.Column(variant='panel'):
-			with gr.Row():
-				compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index")
-				model_type = gr.Dropdown(label="Model", choices=['res101', 'dpt_beit_large_512 (midas 3.1)', 'dpt_beit_large_384 (midas 3.1)', 'dpt_large_384 (midas 3.0)','dpt_hybrid_384 (midas 3.0)','midas_v21','midas_v21_small'], value='res101', type="index", elem_id="tabmodel_type")
-			with gr.Group():
-				with gr.Row():
-					net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
-					net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
-				match_size = gr.Checkbox(label="Match input size (size is ignored when using boost)",value=False)
-			with gr.Group():
-				with gr.Row():
-					boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
-					invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)",value=False)
-			with gr.Group():
-				with gr.Row():
-					clipdepth = gr.Checkbox(label="Clip and renormalize",value=False)
-				with gr.Row():
-					clipthreshold_far = gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
-					clipthreshold_near = gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
-			with gr.Group():
-				with gr.Row():
-					combine_output = gr.Checkbox(label="Combine into one image.",value=False)
-					combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index")
-				with gr.Row():
-					save_depth = gr.Checkbox(label="Save DepthMap",value=True)
-					show_depth = gr.Checkbox(label="Show DepthMap",value=True)
-					show_heat = gr.Checkbox(label="Show HeatMap",value=False)
-			with gr.Group():
-				with gr.Row():
-					gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
-					gen_stereotb = gr.Checkbox(label="Generate Stereo top-bottom image",value=False)
-					gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
-				with gr.Row():
-					stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)', value=2.5)
-				with gr.Row():
-					stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='polylines_sharp', type="index", elem_id="stereo_fill_type")
-					stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
-			with gr.Group():
-				with gr.Row():
-					inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow)",value=False, visible=False)
-					inpaint_vids = gr.Checkbox(label="Generate 4 demo videos with 3D inpainted mesh.",value=False)
-
-			with gr.Group():
-				with gr.Row():	
-					background_removal = gr.Checkbox(label="Remove background",value=False)
-					save_background_removal_masks = gr.Checkbox(label="Save the foreground masks",value=False)
-					pre_depth_background_removal = gr.Checkbox(label="pre-depth background removal",value=False)
-				with gr.Row():
-					background_removal_model = gr.Dropdown(label="Rembg Model", choices=['u2net','u2netp','u2net_human_seg', 'silueta'], value='u2net', type="value", elem_id="backgroundmodel_type")
-
-			with gr.Box():
-				gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
-
-			gen_normal = gr.Checkbox(label="Generate Normalmap (hidden! api only)",value=False, visible=False)
-
-			clipthreshold_far.change(
-				fn = lambda a, b: a if b < a else b,
-				inputs = [clipthreshold_far, clipthreshold_near],
-				outputs=[clipthreshold_near]
-			)
-
-			clipthreshold_near.change(
-				fn = lambda a, b: a if b > a else b,
-				inputs = [clipthreshold_near, clipthreshold_far],
-				outputs=[clipthreshold_far]
-			)
-
-		return [compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereotb,  gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal]
+			ret = main_ui_panel()
+		return ret
 
 	# run from script in txt2img or img2img
-	def run(self, p, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereotb, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, background_removal_model, background_removal, pre_depth_background_removal, save_background_removal_masks, gen_normal):
+	def run(self, p,
+			compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,  pre_depth_background_removal, background_removal_model
+			):
 
 		# sd process 
 		processed = processing.process_images(p)
@@ -164,14 +232,19 @@ class Script(scripts.Script):
 			else:
 				background_removed_images = batched_background_removal(inputimages, background_removal_model)			
 
-		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereotb, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, "mp4", 0, background_removal, background_removed_images, save_background_removal_masks, gen_normal)
+		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None,
+                                        compute_device, model_type,
+                                        net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+                                        background_removed_images, "mp4", 0)
 		
 		for img in newmaps:
 			processed.images.append(img)
 
 		return processed
 
-def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereotb, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks, gen_normal):
+def run_depthmap(processed, outpath, inputimages, inputnames,
+                 compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+                 background_removed_images, fnExt, vid_ssaa):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return []
@@ -462,50 +535,22 @@ def run_depthmap(processed, outpath, inputimages, inputnames, compute_device, mo
 				heatmap = (colormap(img_output2[:,:,0] / 256.0) * 2**16).astype(np.uint16)[:,:,:3]
 				outimages.append(heatmap)
 
-			if gen_stereo or gen_stereotb or gen_anaglyph:
-				print("Generating Stereo image..")
-				#img_output = cv2.blur(img_output, (3, 3))
-				balance = (stereo_balance + 1) / 2
-				original_image = np.asarray(inputimages[count])
-				left_image = original_image if balance < 0.001 else \
-					apply_stereo_divergence(original_image, img_output, - stereo_divergence * balance, stereo_fill)
-				right_image = original_image if balance > 0.999 else \
-					apply_stereo_divergence(original_image, img_output, stereo_divergence * (1 - balance), stereo_fill)
-				stereo_img = np.hstack([left_image, right_image])
-				stereotb_img = np.vstack([left_image, right_image])
+			if gen_stereo:
+				print("Generating stereoscopic image..")
+				stereoimage = create_stereoimage(inputimages[count], img_output, stereo_divergence, stereo_mode, stereo_balance, stereo_fill)
+				outimages.append(stereoimage)
 
-				# flip sbs left/right if enabled in settings
-				if hasattr(opts, 'depthmap_script_sbsflip'):
-					if opts.depthmap_script_sbsflip:
-						stereo_img = np.hstack([right_image, left_image])
-						stereotb_img = np.vstack([right_image, left_image])
-
-				if gen_stereo:
-					outimages.append(stereo_img)
-				if gen_stereotb:
-					outimages.append(stereotb_img)
-				if gen_anaglyph:
-					print("Generating Anaglyph image..")
-					anaglyph_img = overlap(left_image, right_image)
-					outimages.append(anaglyph_img)
-				if (processed is not None):
-					if gen_stereo:
-						images.save_image(Image.fromarray(stereo_img), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_stereo")
-					if gen_stereotb:
-						images.save_image(Image.fromarray(stereotb_img), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_stereotb")
-					if gen_anaglyph:
-						images.save_image(Image.fromarray(anaglyph_img), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_anaglyph")
+				if processed is not None:
+					images.save_image(stereoimage, outpath, "", processed.all_seeds[count],
+									  processed.all_prompts[count], opts.samples_format, info=info, p=processed,
+									  suffix=f"_{stereo_mode}")
 				else:
 					# from tab
-					if gen_stereo:
-						images.save_image(Image.fromarray(stereo_img), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_stereo")
-					if gen_stereotb:
-						images.save_image(Image.fromarray(stereotb_img), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_stereotb")
-					if gen_anaglyph:
-						images.save_image(Image.fromarray(anaglyph_img), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_anaglyph")
+					images.save_image(stereoimage, path=outpath, basename=basename, seed=None,
+									  prompt=None, extension=opts.samples_format, info=info, short_filename=True,
+									  no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
+									  forced_filename=None, suffix=f"_{stereo_mode}")
 
-
-			
 			if gen_normal:
 				# taken from @graemeniedermayer, hidden, for api use only, will remove in future
 				# take gradients 
@@ -853,259 +898,43 @@ def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_bord
 	return fn_saved[-1], fn_saved[-1], ''
 
 
-def apply_stereo_divergence(original_image, depth, divergence, fill_technique):
-    depth_min = depth.min()
-    depth_max = depth.max()
-    depth = (depth - depth_min) / (depth_max - depth_min)
-    divergence_px = (divergence / 100.0) * original_image.shape[1]
-
-    if fill_technique in [0, 1, 2]:
-        return apply_stereo_divergence_naive(original_image, depth, divergence_px, fill_technique)
-    if fill_technique in [3, 4]:
-        return apply_stereo_divergence_polylines(original_image, depth, divergence_px, fill_technique)
-
-@njit
-def apply_stereo_divergence_naive(original_image, normalized_depth, divergence_px: float, fill_technique):
-    h, w, c = original_image.shape
-
-    derived_image = np.zeros_like(original_image)
-    filled = np.zeros(h * w, dtype=np.uint8)
-
-    for row in prange(h):
-        # Swipe order should ensure that pixels that are closer overwrite
-        # (at their destination) pixels that are less close
-        for col in range(w) if divergence_px < 0 else range(w - 1, -1, -1):
-            col_d = col + int((1 - normalized_depth[row][col] ** 2) * divergence_px)
-            if 0 <= col_d < w:
-                derived_image[row][col_d] = original_image[row][col]
-                filled[row * w + col_d] = 1
-
-    # Fill the gaps
-    if fill_technique == 2:  # naive_interpolating
-        for row in range(h):
-            for l_pointer in range(w):
-                # This if (and the next if) performs two checks that are almost the same - for performance reasons
-                if sum(derived_image[row][l_pointer]) != 0 or filled[row * w + l_pointer]:
-                    continue
-                l_border = derived_image[row][l_pointer - 1] if l_pointer > 0 else np.zeros(3, dtype=np.uint8)
-                r_border = np.zeros(3, dtype=np.uint8)
-                r_pointer = l_pointer + 1
-                while r_pointer < w:
-                    if sum(derived_image[row][r_pointer]) != 0 and filled[row * w + r_pointer]:
-                        r_border = derived_image[row][r_pointer]
-                        break
-                    r_pointer += 1
-                if sum(l_border) == 0:
-                    l_border = r_border
-                elif sum(r_border) == 0:
-                    r_border = l_border
-                # Example illustrating positions of pointers at this point in code:
-                # is filled?  : +   -   -   -   -   +
-                # pointers    :     l               r
-                # interpolated: 0   1   2   3   4   5
-                # In total: 5 steps between two filled pixels
-                total_steps = 1 + r_pointer - l_pointer
-                step = (r_border.astype(np.float_) - l_border) / total_steps
-                for col in range(l_pointer, r_pointer):
-                    derived_image[row][col] = l_border + (step * (col - l_pointer + 1)).astype(np.uint8)
-        return derived_image
-    elif fill_technique == 1:  # naive
-        derived_fix = np.copy(derived_image)
-        for pos in np.where(filled == 0)[0]:
-            row = pos // w
-            col = pos % w
-            row_times_w = row * w
-            for offset in range(1, abs(int(divergence_px)) + 2):
-                r_offset = col + offset
-                l_offset = col - offset
-                if r_offset < w and filled[row_times_w + r_offset]:
-                    derived_fix[row][col] = derived_image[row][r_offset]
-                    break
-                if 0 <= l_offset and filled[row_times_w + l_offset]:
-                    derived_fix[row][col] = derived_image[row][l_offset]
-                    break
-        return derived_fix
-    else:  # none
-        return derived_image
-
-@njit(parallel=True)  # fastmath=True does not reasonably improve performance
-def apply_stereo_divergence_polylines(original_image, normalized_depth, divergence_px: float, fill_technique):
-    # This code treats rows of the image as polylines
-    # It generates polylines, morphs them (applies divergence) to them, and then rasterizes them
-    EPSILON = 1e-7
-    PIXEL_HALF_WIDTH = 0.45 if fill_technique == 4 else 0.0
-    # PERF_COUNTERS = [0, 0, 0]
-
-    h, w, c = original_image.shape
-    derived_image = np.zeros_like(original_image)
-    for row in prange(h):
-        # generating the vertices of the morphed polyline
-        # format: new coordinate of the vertex, divergence (closeness), column of pixel that contains the point's color
-        pt = np.zeros((5 + 2 * w, 3), dtype=np.float_)
-        pt_end: int = 0
-        pt[pt_end] = [-3.0 * abs(divergence_px), 0.0, 0.0]
-        pt_end += 1
-        for col in range(0, w):
-            coord_d = (1 - normalized_depth[row][col] ** 2) * divergence_px
-            coord_x = col + 0.5 + coord_d
-            if PIXEL_HALF_WIDTH < EPSILON:
-                pt[pt_end] = [coord_x, abs(coord_d), col]
-                pt_end += 1
-            else:
-                pt[pt_end] = [coord_x - PIXEL_HALF_WIDTH, abs(coord_d), col]
-                pt[pt_end + 1] = [coord_x + PIXEL_HALF_WIDTH, abs(coord_d), col]
-                pt_end += 2
-        pt[pt_end] = [w + 3.0 * abs(divergence_px), 0.0, w - 1]
-        pt_end += 1
-
-        # generating the segments of the morphed polyline
-        # format: coord_x, coord_d, color_i of the first point, then the same for the second point
-        sg_end: int = pt_end - 1
-        sg = np.zeros((sg_end, 6), dtype=np.float_)
-        for i in range(sg_end):
-            sg[i] += np.concatenate((pt[i], pt[i + 1]))
-        # Here is an informal proof that this (morphed) polyline does not self-intersect:
-        # Draw a plot with two axes: coord_x and coord_d. Now draw the original line - it will be positioned at the
-        # bottom of the graph (that is, for every point coord_d == 0). Now draw the morphed line using the vertices of
-        # the original polyline. Observe that for each vertex in the new polyline, its increments
-        # (from the corresponding vertex in the old polyline) over coord_x and coord_d are in direct proportion.
-        # In fact, this proportion is equal for all the vertices and it is equal either -1 or +1,
-        # depending on the sign of divergence_px. Now draw the lines from each old vertex to a corresponding new vertex.
-        # Since the proportions are equal, these lines have the same angle with an axe and are parallel.
-        # So, these lines do not intersect. Now rotate the plot by 45 or -45 degrees and observe that
-        # each dot of the polyline is further right from the last dot,
-        # which makes it impossible for the polyline to self-interset. QED.
-
-        # sort segments and points using insertion sort
-        # has a very good performance in practice, since these are almost sorted to begin with
-        for i in range(1, sg_end):
-            u = i - 1
-            while pt[u][0] > pt[u + 1][0] and 0 <= u:
-                pt[u], pt[u + 1] = np.copy(pt[u + 1]), np.copy(pt[u])
-                sg[u], sg[u + 1] = np.copy(sg[u + 1]), np.copy(sg[u])
-                u -= 1
-
-        # rasterizing
-        # at each point in time we keep track of segments that are "active" (or "current")
-        csg = np.zeros((5 * int(abs(divergence_px)) + 25, 6), dtype=np.float_)
-        csg_end: int = 0
-        sg_pointer: int = 0
-        # and index of the point that should be processed next
-        pt_i: int = 0
-        for col in range(w):  # iterate over regions (that will be rasterizeed into pixels)
-            color = np.full(c, 0.5, dtype=np.float_)  # we start with 0.5 because of how floats are converted to ints
-            while pt[pt_i][0] < col:
-                pt_i += 1
-            pt_i -= 1  # pt_i now points to the dot before the region start
-            # Finding segment' parts that contribute color to the region
-            while pt[pt_i][0] < col + 1:
-                coord_from = max(col, pt[pt_i][0]) + EPSILON
-                coord_to = min(col + 1, pt[pt_i + 1][0]) - EPSILON
-                significance = coord_to - coord_from
-                # the color at center point is the same as the average of color of segment part
-                coord_center = coord_from + 0.5 * significance
-
-                # adding semgents that now may contribute
-                while sg_pointer < sg_end and sg[sg_pointer][0] < coord_center:
-                    csg[csg_end] = sg[sg_pointer]
-                    sg_pointer += 1
-                    csg_end += 1
-                # removing segments that will no longer contribute
-                csg_i = 0
-                while csg_i < csg_end:
-                    if csg[csg_i][3] < coord_center:
-                        csg[csg_i] = csg[csg_end - 1]
-                        csg_end -= 1
-                    else:
-                        csg_i += 1
-                # finding the closest segment (segment with most divergence)
-                # note that this segment will be the closest from coord_from right up to coord_to, since there
-                # no new segments "appearing" inbetween these two and _the polyline does not self-intersect_
-                best_csg_i: int = 0
-                # PERF_COUNTERS[0] += 1
-                if csg_end != 1:
-                    # PERF_COUNTERS[1] += 1
-                    best_csg_closeness: float = -EPSILON
-                    for csg_i in range(csg_end):
-                        ip_k = (coord_center - csg[csg_i][0]) / (csg[csg_i][3] - csg[csg_i][0])
-                        # assert 0.0 <= ip_k <= 1.0
-                        closeness = (1.0 - ip_k) * csg[csg_i][1] + ip_k * csg[csg_i][4]
-                        if best_csg_closeness < closeness and 0.0 < ip_k < 1.0:
-                            best_csg_closeness = closeness
-                            best_csg_i = csg_i
-                # getting the color
-                col_l: int = int(csg[best_csg_i][2] + EPSILON)
-                col_r: int = int(csg[best_csg_i][5] + EPSILON)
-                if col_l == col_r:
-                    color += original_image[row][col_l] * significance
-                else:
-                    # PERF_COUNTERS[2] += 1
-                    ip_k = (coord_center - csg[best_csg_i][0]) / (csg[best_csg_i][3] - csg[best_csg_i][0])
-                    color += (original_image[row][col_l] * (1.0 - ip_k) + original_image[row][col_r] * ip_k) \
-                        * significance
-                pt_i += 1
-            derived_image[row][col] = np.asarray(color, dtype=np.uint8)
-    # print(PERF_COUNTERS)
-    return derived_image
-
-@njit(parallel=True)
-def overlap(im1, im2):
-    width1 = im1.shape[1]
-    height1 = im1.shape[0]
-    width2 = im2.shape[1]
-    height2 = im2.shape[0]
-
-    # final image
-    composite = np.zeros((height2, width2, 3), np.uint8)
-
-    # iterate through "left" image, filling in red values of final image
-    for i in prange(height1):
-        for j in range(width1):
-            composite[i, j, 0] = im1[i, j, 0]
-
-    # iterate through "right" image, filling in blue/green values of final image
-    for i in prange(height2):
-        for j in range(width2):
-            composite[i, j, 1] = im2[i, j, 1]
-            composite[i, j, 2] = im2[i, j, 2]
-
-    return composite
-
 # called from depth tab
 def run_generate(depthmap_mode, 
 				depthmap_image,
                 image_batch,
                 depthmap_batch_input_dir,
                 depthmap_batch_output_dir,
-				compute_device, 
-				model_type,
-				net_width, 
-				net_height, 
-				match_size,
-				invert_depth,
-				boost, 
-				save_depth, 
-				show_depth, 
-				show_heat, 
-				combine_output, 
-				combine_output_axis,
-				gen_stereo, 
-				gen_stereotb, 
-				gen_anaglyph,
-				stereo_divergence,
-				stereo_fill,
-				stereo_balance,
-				clipdepth,
-				clipthreshold_far,
-				clipthreshold_near,
-				inpaint,
-				inpaint_vids,
-                background_removal_model, 
-                background_removal, 
-                pre_depth_background_removal, 
-                save_background_removal_masks,
-				vid_format,
-				vid_ssaa
+
+                 compute_device,
+                 model_type,
+                 net_width,
+                 net_height,
+                 match_size,
+                 boost,
+                 invert_depth,
+                 clipdepth,
+                 clipthreshold_far,
+                 clipthreshold_near,
+                 combine_output,
+                 combine_output_axis,
+                 save_depth,
+                 show_depth,
+                 show_heat,
+                 gen_stereo,
+                 stereo_mode,
+                 stereo_divergence,
+                 stereo_fill,
+                 stereo_balance,
+                 inpaint,
+                 inpaint_vids,
+                 background_removal,
+                 save_background_removal_masks,
+                 gen_normal,
+
+                 background_removal_model,
+                 pre_depth_background_removal,
+                 vid_format,
+                 vid_ssaa
 				):
 
 				
@@ -1153,16 +982,18 @@ def run_generate(depthmap_mode,
 			imageArr = batched_background_removal(imageArr, background_removal_model)
 			background_removed_images = imageArr
 		else:
-			background_removed_images = batched_background_removal(imageArr, background_removal_model)	
+			background_removed_images = batched_background_removal(imageArr, background_removal_model)
 
-	outputs, mesh_fi = run_depthmap(None, outpath, imageArr, imageNameArr, compute_device, model_type, net_width, net_height, match_size, invert_depth, boost, save_depth, show_depth, show_heat, combine_output, combine_output_axis, gen_stereo, gen_stereotb, gen_anaglyph, stereo_divergence, stereo_fill, stereo_balance, clipdepth, clipthreshold_far, clipthreshold_near, inpaint, inpaint_vids, fnExt, vid_ssaa, background_removal, background_removed_images, save_background_removal_masks, False)
+	outputs, mesh_fi = run_depthmap(
+        None, outpath, imageArr, imageNameArr,
+        compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+        background_removed_images, fnExt, vid_ssaa)
 
 	return outputs, mesh_fi, plaintext_to_html('info'), ''
 
 def on_ui_settings():
     section = ('depthmap-script', "Depthmap extension")
     shared.opts.add_option("depthmap_script_boost_rmax", shared.OptionInfo(1600, "Maximum wholesize for boost", section=section))
-    shared.opts.add_option("depthmap_script_sbsflip", shared.OptionInfo(False, "Flip Left/Right in SBS stereo images (requested for cross-eyed viewing)", section=section))
 
 def on_ui_tabs():
     with gr.Blocks(analytics_enabled=False) as depthmap_interface:
@@ -1182,58 +1013,7 @@ def on_ui_tabs():
 
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
 
-                with gr.Row():
-                    compute_device = gr.Radio(label="Compute on", choices=['GPU','CPU'], value='GPU', type="index")
-                    model_type = gr.Dropdown(label="Model", choices=['res101', 'dpt_beit_large_512 (midas 3.1)', 'dpt_beit_large_384 (midas 3.1)', 'dpt_large_384 (midas 3.0)','dpt_hybrid_384 (midas 3.0)','midas_v21','midas_v21_small'], value='res101', type="index", elem_id="tabmodel_type")
-                with gr.Group():
-                    with gr.Row():
-                        net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
-                        net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
-                    match_size = gr.Checkbox(label="Match input size (size is ignored when using boost)",value=False)
-                with gr.Group():
-                    with gr.Row():
-                        boost = gr.Checkbox(label="BOOST (multi-resolution merging)",value=True)
-                        invert_depth = gr.Checkbox(label="Invert DepthMap (black=near, white=far)",value=False)
-                with gr.Group():
-                    with gr.Row():
-                        clipdepth = gr.Checkbox(label="Clip and renormalize",value=False)
-                    with gr.Row():
-                        clipthreshold_far = gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
-                        clipthreshold_near = gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
-                with gr.Group():
-                    with gr.Row():
-                        combine_output = gr.Checkbox(label="Combine into one image.",value=False)
-                        combine_output_axis = gr.Radio(label="Combine axis", choices=['Vertical','Horizontal'], value='Horizontal', type="index")
-                    with gr.Row():
-                        save_depth = gr.Checkbox(label="Save DepthMap",value=True)
-                        show_depth = gr.Checkbox(label="Show DepthMap",value=True)
-                        show_heat = gr.Checkbox(label="Show HeatMap",value=False)
-                with gr.Group():
-                    with gr.Row():
-                        gen_stereo = gr.Checkbox(label="Generate Stereo side-by-side image",value=False)
-                        gen_stereotb = gr.Checkbox(label="Generate Stereo top-bottom image",value=False)
-                        gen_anaglyph = gr.Checkbox(label="Generate Stereo anaglyph image (red/cyan)",value=False)
-                    with gr.Row():
-                        stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)', value=2.5)
-                    with gr.Row():
-                        stereo_fill = gr.Dropdown(label="Gap fill technique", choices=['none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'], value='polylines_sharp', type="index", elem_id="stereo_fill_type")
-                        stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes', value=0.0)
-                with gr.Group():
-                    with gr.Row():
-                        inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow)",value=False)
-                        inpaint_vids = gr.Checkbox(label="Generate 4 demo videos with 3D inpainted mesh.",value=False)
-
-                with gr.Group():
-                    with gr.Row():	
-                        background_removal = gr.Checkbox(label="Remove background",value=False)
-                        save_background_removal_masks = gr.Checkbox(label="Save the foreground masks",value=False)
-                        pre_depth_background_removal = gr.Checkbox(label="pre-depth background removal",value=False)
-                    with gr.Row():
-                        background_removal_model = gr.Dropdown(label="Rembg Model", choices=['u2net','u2netp','u2net_human_seg', 'silueta'], value='u2net', type="value", elem_id="backgroundmodel_type")
-
-                with gr.Box():
-                    gr.HTML("Information, comment and share @ <a href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
-
+                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,   pre_depth_background_removal, background_removal_model = main_ui_panel()
 
             #result_images, html_info_x, html_info = modules.ui.create_output_panel("depthmap", opts.outdir_extras_samples)
             with gr.Column(variant='panel'):
@@ -1244,7 +1024,7 @@ def on_ui_tabs():
                     html_info = gr.HTML()
 
                 # generate video
-                with gr.Accordion("Generate video from inpainted mesh.", open=True):
+                with gr.Accordion("Generate video from inpainted mesh.", open=False):
                     depth_vid = gr.Video(interactive=False)
                     with gr.Column():
                         vid_html_info_x = gr.HTML()
@@ -1263,18 +1043,6 @@ def on_ui_tabs():
                     with gr.Row():
                         submit_vid = gr.Button('Generate Video', elem_id="depthmap_generatevideo", variant='primary')
 
-        clipthreshold_far.change(
-            fn = lambda a, b: a if b < a else b,
-            inputs = [clipthreshold_far, clipthreshold_near],
-            outputs=[clipthreshold_near]
-        )
-
-        clipthreshold_near.change(
-            fn = lambda a, b: a if b > a else b,
-            inputs = [clipthreshold_near, clipthreshold_far],
-            outputs=[clipthreshold_far]
-        )
-
         submit.click(
             fn=wrap_gradio_gpu_call(run_generate),
             _js="get_depthmap_tab_index",
@@ -1284,33 +1052,35 @@ def on_ui_tabs():
                 image_batch,
                 depthmap_batch_input_dir,
                 depthmap_batch_output_dir,
-				compute_device, 
+
+				compute_device,
 				model_type,
 				net_width, 
 				net_height, 
 				match_size,
-				invert_depth,
-				boost, 
-				save_depth, 
+                boost,
+                invert_depth,
+                clipdepth,
+                clipthreshold_far,
+                clipthreshold_near,
+                combine_output,
+                combine_output_axis,
+                save_depth,
 				show_depth, 
-				show_heat, 
-				combine_output, 
-				combine_output_axis,
-				gen_stereo, 
-				gen_stereotb, 
-				gen_anaglyph,
+				show_heat,
+				gen_stereo,
+				stereo_mode,
 				stereo_divergence,
 				stereo_fill,
 				stereo_balance,
-				clipdepth,
-				clipthreshold_far,
-				clipthreshold_near,
 				inpaint,
 				inpaint_vids,
-				background_removal_model, 
-				background_removal, 
-				pre_depth_background_removal, 
-				save_background_removal_masks,
+                background_removal,
+                save_background_removal_masks,
+                gen_normal,
+
+                background_removal_model,
+				pre_depth_background_removal,
 				vid_format,
 				vid_ssaa
             ],

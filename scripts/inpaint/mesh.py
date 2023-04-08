@@ -2071,6 +2071,42 @@ def write_ply(image,
     pbar.update(1)
     pbar.close()
 
+    if config['save_obj'] is True:
+        basename = os.path.splitext(ply_name)[0]
+        obj_name = basename + '.obj'
+        print("Writing mesh file %s ..." % obj_name)
+        with open(obj_name, 'w') as obj_fi:
+            obj_fi.write(('# H ' + str(int(input_mesh.graph['H'])) + '\n'))
+            obj_fi.write(('# W ' + str(int(input_mesh.graph['W'])) + '\n'))
+            obj_fi.write(('# hFov ' + str(float(input_mesh.graph['hFov'])) + '\n'))
+            obj_fi.write(('# vFov ' + str(float(input_mesh.graph['vFov'])) + '\n'))
+            obj_fi.write(('# meanLoc ' + str(float(mean_loc_depth)) + '\n'))
+            obj_fi.write(('# vertices ' + str(len(node_str_list)) + '\n'))
+            
+            pbar = tqdm.tqdm(total = len(node_str_list)+len(str_faces))
+            pbar.set_description("Saving vertices")
+            for v in node_str_list:
+                x, y, z, r, g, b, a = v.split(' ')
+                x = float(x)
+                y = float(y)
+                z = float(z)
+                r = float(r) / 255.0
+                g = float(g) / 255.0
+                b = float(b) / 255.0
+                obj_fi.write(f"v {x:.8f} {y:.8f} {z:.8f} {r:.4f} {g:.4f} {b:.4f}\n")
+                pbar.update(1)
+
+            pbar.set_description("Saving faces")
+            for face in str_faces:
+                n, a, b, c = face.split(' ')
+                a = int(a) + 1
+                b = int(b) + 1
+                c = int(c) + 1
+                obj_fi.write(f"f {a} {b} {c}\n")
+                pbar.update(1)
+            pbar.close()
+            obj_fi.close()
+
     if config['save_ply'] is True:
         print("Writing mesh file %s ..." % ply_name)
         #bty: implement binary ply 

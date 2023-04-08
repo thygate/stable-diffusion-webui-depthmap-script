@@ -734,6 +734,10 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 		config['save_ply'] = True
 		config['ply_fmt'] = "bin"
 
+		config['save_obj'] = False
+		if hasattr(opts, 'depthmap_script_save_obj') and opts.depthmap_script_save_obj:
+			config['save_obj'] = True
+
 		if device == torch.device("cpu"):
 			config["gpu_ids"] = -1
 
@@ -1043,6 +1047,7 @@ def run_generate(depthmap_mode,
 def on_ui_settings():
     section = ('depthmap-script', "Depthmap extension")
     shared.opts.add_option("depthmap_script_boost_rmax", shared.OptionInfo(1600, "Maximum wholesize for boost", section=section))
+    shared.opts.add_option("depthmap_script_save_obj", shared.OptionInfo(False, "Save additional Wavefront OBJ file with 3D inpainted PLY mesh.", section=section))
 
 def on_ui_tabs():
     with gr.Blocks(analytics_enabled=False) as depthmap_interface:

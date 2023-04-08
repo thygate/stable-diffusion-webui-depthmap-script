@@ -26,19 +26,18 @@ def create_stereoimage(original_image, depthmap, divergence, mode='left-right', 
         apply_stereo_divergence(original_image, depthmap, -1 * divergence * (balance), fill_technique)
     right_eye = original_image if balance > 0.999 else \
         apply_stereo_divergence(original_image, depthmap, +1 * divergence * (1 - balance), fill_technique)
-    match mode:
-        case 'left-right':
+    if mode == 'left-right':
             result = np.hstack([left_eye, right_eye])
-        case 'right-left':
+    elif mode == 'right-left':
             result = np.hstack([right_eye, left_eye])
-        case 'top-bottom':
+    elif mode == 'top-bottom':
             result = np.vstack([left_eye, right_eye])
-        case 'bottom-top':
+    elif mode == 'bottom-top':
             result = np.vstack([right_eye, left_eye])
-        case 'red-cyan-anaglyph':
+    elif mode == 'red-cyan-anaglyph':
             result = overlap_red_cyan(left_eye, right_eye)
-        case _:
-            raise Exception('Unknown mode')
+    else:
+        raise Exception('Unknown mode')
     return Image.fromarray(result)
 
 

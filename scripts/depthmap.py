@@ -36,7 +36,7 @@ import imageio
 
 sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
-from stereoimage_generation import *
+from stereoimage_generation import apply_stereo_divergence, overlap_red_cyan
 
 # midas imports
 from dmidas.dpt_depth import DPTDepthModel
@@ -83,12 +83,14 @@ def main_ui_panel(is_depth_tab):
 				with gr.Row() as options_depend_on_match_size:
 					net_width = gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
 					net_height = gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
+
 		with gr.Group():
 			with gr.Row():
 				clipdepth = gr.Checkbox(label="Clip and renormalize", value=False)
 			with gr.Row(visible=False) as clip_options_row_1:
 				clipthreshold_far = gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
 				clipthreshold_near = gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
+
 		with gr.Group():
 			with gr.Row():
 				combine_output = gr.Checkbox(label="Combine into one image", value=False)
@@ -98,14 +100,19 @@ def main_ui_panel(is_depth_tab):
 				save_depth = gr.Checkbox(label="Save DepthMap", value=True)
 				show_depth = gr.Checkbox(label="Show DepthMap", value=True)
 				show_heat = gr.Checkbox(label="Show HeatMap", value=False)
+
 		with gr.Group():
 			with gr.Row():
 				gen_stereo = gr.Checkbox(label="Generate stereoscopic image", value=False)
 				with gr.Group(visible=False) as stereo_options_row_0:
-					stereo_mode = gr.Dropdown(label="Stereoscopic image type",
-											  choices=['left-right', 'right-left', 'top-bottom', 'bottom-top',
-													   'red-cyan-anaglyph'], value='left-right', type="value",
-											  elem_id="stereo_mode")
+					with gr.Row(variant="compact"):
+						stereo_mode_lr = gr.Checkbox(label="left-right", value=True)
+						stereo_mode_rl = gr.Checkbox(label="right-left", value=True)
+						stereo_mode_tb = gr.Checkbox(label="top-bottom", value=True)
+						stereo_mode_bt = gr.Checkbox(label="bottom-top", value=True)
+						stereo_mode_an = gr.Checkbox(label="red-cyan-anaglyph", value=True)
+				
+
 			with gr.Row(visible=False) as stereo_options_row_1:
 				stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)',
 											  value=2.5)
@@ -201,7 +208,7 @@ def main_ui_panel(is_depth_tab):
 			outputs=[bgrem_options_row_1, bgrem_options_row_2]
 		)
 
-	return [compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,   pre_depth_background_removal, background_removal_model]
+	return [compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,   pre_depth_background_removal, background_removal_model]
 
 
 class Script(scripts.Script):
@@ -218,7 +225,7 @@ class Script(scripts.Script):
 
 	# run from script in txt2img or img2img
 	def run(self, p,
-			compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,  pre_depth_background_removal, background_removal_model
+			compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,  pre_depth_background_removal, background_removal_model
 			):
 
 		# sd process 
@@ -244,7 +251,7 @@ class Script(scripts.Script):
 
 		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None,
                                         compute_device, model_type,
-                                        net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+                                        net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
                                         background_removed_images, "mp4", 0)
 		
 		for img in newmaps:
@@ -253,7 +260,7 @@ class Script(scripts.Script):
 		return processed
 
 def run_depthmap(processed, outpath, inputimages, inputnames,
-                 compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+                 compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
                  background_removed_images, fnExt, vid_ssaa):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
@@ -551,23 +558,57 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				outimages.append(heatmap)
 
 			if gen_stereo:
-				print("Generating stereoscopic image..")
-				stereoimage = create_stereoimage(inputimages[count], img_output, stereo_divergence, stereo_mode, stereo_balance, stereo_fill)
-				outimages.append(stereoimage)
+				print("Generating stereoscopic images..")
+				
+				original_image = np.asarray(inputimages[count])
+				balance = (stereo_balance + 1) / 2
+				left_eye = original_image if balance < 0.001 else \
+					apply_stereo_divergence(original_image, img_output, -1 * stereo_divergence * (balance), stereo_fill)
+				right_eye = original_image if balance > 0.999 else \
+					apply_stereo_divergence(original_image, img_output, +1 * stereo_divergence * (1 - balance), stereo_fill)
 
-				if processed is not None:
-					images.save_image(stereoimage, outpath, "", processed.all_seeds[count],
-									  processed.all_prompts[count], opts.samples_format, info=info, p=processed,
-									  suffix=f"_{stereo_mode}")
-				else:
-					# from tab
-					images.save_image(stereoimage, path=outpath, basename=basename, seed=None,
-									  prompt=None, extension=opts.samples_format, info=info, short_filename=True,
-									  no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
-									  forced_filename=None, suffix=f"_{stereo_mode}")
+				stereoimages = []
+				stereonames = []
+				if stereo_mode_lr:
+					stereonames.append("left-right")
+					result = Image.fromarray(np.hstack([left_eye, right_eye]))
+					stereoimages.append(result)
+					outimages.append(result)
+				if stereo_mode_rl:
+					stereonames.append("right-left")
+					result = Image.fromarray(np.hstack([right_eye, left_eye]))
+					stereoimages.append(result)
+					outimages.append(result)
+				if stereo_mode_tb:
+					stereonames.append("top-bottom")
+					result = Image.fromarray(np.vstack([left_eye, right_eye]))
+					stereoimages.append(result)
+					outimages.append(result)
+				if stereo_mode_bt:
+					stereonames.append("bottom-top")
+					result = Image.fromarray(np.vstack([right_eye, left_eye]))
+					stereoimages.append(result)
+					outimages.append(result)
+				if stereo_mode_an:
+					stereonames.append("red-cyan-anaglyph")
+					result = Image.fromarray(overlap_red_cyan(left_eye, right_eye))
+					stereoimages.append(result)
+					outimages.append(result)
+
+				for c in range(0, len(stereoimages)):
+					if processed is not None:
+						images.save_image(stereoimages[c], outpath, "", processed.all_seeds[count],
+										processed.all_prompts[count], opts.samples_format, info=info, p=processed,
+										suffix=f"_{stereonames[c]}")
+					else:
+						# from tab
+						images.save_image(stereoimages[c], path=outpath, basename=basename, seed=None,
+										prompt=None, extension=opts.samples_format, info=info, short_filename=True,
+										no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
+										forced_filename=None, suffix=f"_{stereonames[c]}")
 
 			if gen_normal:
-				# taken from @graemeniedermayer, hidden, for api use only, will remove in future
+				# taken from @graemeniedermayer, hidden, for api use only, will remove in future.
 				# take gradients 
 				zx = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 1, 0, ksize=3)     
 				zy = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 0, 1, ksize=3) 
@@ -777,6 +818,8 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 					[0.00, 0.00, -0.015, -0.00], 
 					[-0.05, -0.05, -0.05, -0.05], 
 					['dolly-zoom-in', 'zoom-in', 'circle', 'swing'], False, fnExt, vid_ssaa)
+				
+			devices.torch_gc()
 
 	finally:
 		del rgb_model
@@ -936,7 +979,7 @@ def run_generate(depthmap_mode,
                  show_depth,
                  show_heat,
                  gen_stereo,
-                 stereo_mode,
+                 stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an,
                  stereo_divergence,
                  stereo_fill,
                  stereo_balance,
@@ -1001,7 +1044,7 @@ def run_generate(depthmap_mode,
 
 	outputs, mesh_fi = run_depthmap(
         None, outpath, imageArr, imageNameArr,
-        compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+        compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
         background_removed_images, fnExt, vid_ssaa)
 
 	return outputs, mesh_fi, plaintext_to_html('info'), ''
@@ -1028,7 +1071,7 @@ def on_ui_tabs():
 
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
 
-                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model = main_ui_panel(True)
+                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model = main_ui_panel(True)
 
             #result_images, html_info_x, html_info = modules.ui.create_output_panel("depthmap", opts.outdir_extras_samples)
             with gr.Column(variant='panel'):
@@ -1084,7 +1127,7 @@ def on_ui_tabs():
 				show_depth, 
 				show_heat,
 				gen_stereo,
-				stereo_mode,
+				stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an,
 				stereo_divergence,
 				stereo_fill,
 				stereo_balance,

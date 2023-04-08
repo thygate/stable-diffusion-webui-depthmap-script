@@ -521,7 +521,7 @@ def fill_missing_node(mesh, info_on_pix, image, depth):
         for y in range(mesh.graph['bord_left'], mesh.graph['bord_right']):
             if info_on_pix.get((x, y)) is None:
                 print("fill missing node = ", x, y)
-                import pdb; pdb.set_trace()
+                #import pdb; pdb.set_trace()
                 re_depth, re_count = 0, 0
                 for ne in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]:
                     if info_on_pix.get(ne) is not None:

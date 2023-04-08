@@ -571,31 +571,22 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				stereonames = []
 				if stereo_mode_lr:
 					stereonames.append("left-right")
-					result = Image.fromarray(np.hstack([left_eye, right_eye]))
-					stereoimages.append(result)
-					outimages.append(result)
+					stereoimages.append(Image.fromarray(np.hstack([left_eye, right_eye])))
 				if stereo_mode_rl:
 					stereonames.append("right-left")
-					result = Image.fromarray(np.hstack([right_eye, left_eye]))
-					stereoimages.append(result)
-					outimages.append(result)
+					stereoimages.append(Image.fromarray(np.hstack([right_eye, left_eye])))
 				if stereo_mode_tb:
 					stereonames.append("top-bottom")
-					result = Image.fromarray(np.vstack([left_eye, right_eye]))
-					stereoimages.append(result)
-					outimages.append(result)
+					stereoimages.append(Image.fromarray(np.vstack([left_eye, right_eye])))
 				if stereo_mode_bt:
 					stereonames.append("bottom-top")
-					result = Image.fromarray(np.vstack([right_eye, left_eye]))
-					stereoimages.append(result)
-					outimages.append(result)
+					stereoimages.append(Image.fromarray(np.vstack([right_eye, left_eye])))
 				if stereo_mode_an:
 					stereonames.append("red-cyan-anaglyph")
-					result = Image.fromarray(overlap_red_cyan(left_eye, right_eye))
-					stereoimages.append(result)
-					outimages.append(result)
+					stereoimages.append(Image.fromarray(overlap_red_cyan(left_eye, right_eye)))
 
 				for c in range(0, len(stereoimages)):
+					outimages.append(stereoimages[c])
 					if processed is not None:
 						images.save_image(stereoimages[c], outpath, "", processed.all_seeds[count],
 										processed.all_prompts[count], opts.samples_format, info=info, p=processed,

@@ -252,7 +252,7 @@ class Script(scripts.Script):
 		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None,
                                         compute_device, model_type,
                                         net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
-                                        background_removed_images, "mp4", 0, False, None)
+                                        background_removed_images, "mp4", 0, False, None, False)
 		
 		for img in newmaps:
 			processed.images.append(img)
@@ -261,7 +261,7 @@ class Script(scripts.Script):
 
 def run_depthmap(processed, outpath, inputimages, inputnames,
                  compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
-                 background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img):
+                 background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img, depthmap_batch_reuse):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return [], []
@@ -430,6 +430,20 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 
 			print('\n')
 
+			# filename
+			basename = 'depthmap'
+			batchdepthfn = None
+			# filenames in batch mode
+			if inputnames is not None:
+				save_depth = True
+				if inputnames[count] is not None:
+					p = Path(inputnames[count])
+					basename = p.stem
+					if depthmap_batch_reuse:
+						batchdepthfn = os.path.join(outpath, basename + '-0000.' + opts.samples_format)
+						if not os.path.isfile(batchdepthfn):
+							batchdepthfn = None
+
 			# override net size
 			if (match_size):
 				net_width, net_height = inputimages[count].width, inputimages[count].height
@@ -441,8 +455,11 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 
 			# input image
 			img = cv2.cvtColor(np.asarray(inputimages[count]), cv2.COLOR_BGR2RGB) / 255.0
-	
-			if custom_depthmap and custom_depthmap_img != None:
+
+			skipInvertAndSave = False
+			if (custom_depthmap and custom_depthmap_img != None) or batchdepthfn != None:
+				if batchdepthfn != None:
+					custom_depthmap_img = batchdepthfn
 				# use custom depthmap
 				dimg = Image.open(custom_depthmap_img)
 				# resize if not same size as input
@@ -452,7 +469,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 					prediction = np.asarray(dimg, dtype="float")
 				else:
 					prediction = np.asarray(dimg, dtype="float")[:,:,0]
-				model_type = -1 # skip invert for leres (0)
+				skipInvertAndSave = True #skip invert for leres model (0)
 			else:
 				# compute depthmap
 				if not boost:
@@ -480,7 +497,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			img_output = out.astype("uint16")
 
 			# invert depth map
-			if invert_depth ^ model_type == 0:
+			if invert_depth ^ (model_type == 0 and not skipInvertAndSave):
 				img_output = cv2.bitwise_not(img_output)
 
 			# apply depth clip and renormalize if enabled
@@ -504,12 +521,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				info = create_infotext(processed, processed.all_prompts, processed.all_seeds, processed.all_subseeds, "", 0, count)
 			else:
 				info = None
-
-			basename = 'depthmap'
-			if inputnames is not None:
-				if inputnames[count] is not None:
-					p = Path(inputnames[count])
-					basename = p.stem
 
 			rgb_image = inputimages[count]
 
@@ -540,31 +551,32 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 						images.save_image(mask_image, path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_foreground_mask")
 					outimages.append(mask_image)
 
-			if not combine_output:
-				if show_depth:
-					outimages.append(Image.fromarray(img_output))
-				if save_depth and processed is not None:
-					# only save 16 bit single channel image when PNG format is selected
-					if opts.samples_format == "png":
-						images.save_image(Image.fromarray(img_output), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
-					else:
-						images.save_image(Image.fromarray(img_output2), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
-				elif save_depth:
-					# from depth tab
-					# only save 16 bit single channel image when PNG format is selected
-					if opts.samples_format == "png":
-						images.save_image(Image.fromarray(img_output), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
-					else:
-						images.save_image(Image.fromarray(img_output2), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
-			else:
-				img_concat = np.concatenate((rgb_image, img_output2), axis=combine_output_axis)
-				if show_depth:
-					outimages.append(Image.fromarray(img_concat))
-				if save_depth and processed is not None:
-					images.save_image(Image.fromarray(img_concat), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
-				elif save_depth:
-					# from tab
-					images.save_image(Image.fromarray(img_concat), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
+			if not skipInvertAndSave:
+				if not combine_output:
+					if show_depth:
+						outimages.append(Image.fromarray(img_output))
+					if save_depth and processed is not None:
+						# only save 16 bit single channel image when PNG format is selected
+						if opts.samples_format == "png":
+							images.save_image(Image.fromarray(img_output), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
+						else:
+							images.save_image(Image.fromarray(img_output2), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
+					elif save_depth:
+						# from depth tab
+						# only save 16 bit single channel image when PNG format is selected
+						if opts.samples_format == "png":
+							images.save_image(Image.fromarray(img_output), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
+						else:
+							images.save_image(Image.fromarray(img_output2), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
+				else:
+					img_concat = np.concatenate((rgb_image, img_output2), axis=combine_output_axis)
+					if show_depth:
+						outimages.append(Image.fromarray(img_concat))
+					if save_depth and processed is not None:
+						images.save_image(Image.fromarray(img_concat), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
+					elif save_depth:
+						# from tab
+						images.save_image(Image.fromarray(img_concat), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
 			if show_heat:
 				colormap = plt.get_cmap('inferno')
 				heatmap = (colormap(img_output2[:,:,0] / 256.0) * 2**16).astype(np.uint16)[:,:,:3]
@@ -1001,7 +1013,8 @@ def run_generate(depthmap_mode,
                 vid_format,
                 vid_ssaa,
                 custom_depthmap, 
-                custom_depthmap_img
+                custom_depthmap_img,
+                depthmap_batch_reuse
                 ):
 
 				
@@ -1054,7 +1067,7 @@ def run_generate(depthmap_mode,
 	outputs, mesh_fi = run_depthmap(
         None, outpath, imageArr, imageNameArr,
         compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
-        background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img)
+        background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img, depthmap_batch_reuse)
 
 	return outputs, mesh_fi, plaintext_to_html('info'), ''
 
@@ -1082,7 +1095,7 @@ def on_ui_tabs():
                     with gr.TabItem('Batch from Directory'):
                         depthmap_batch_input_dir = gr.Textbox(label="Input directory", **shared.hide_dirs, placeholder="A directory on the same machine where the server is running.")
                         depthmap_batch_output_dir = gr.Textbox(label="Output directory", **shared.hide_dirs, placeholder="Leave blank to save images to the default path.")
-
+                        depthmap_batch_reuse = gr.Checkbox(label="Skip generation and use (edited/custom) depthmaps in output directory when a file exists.",value=True)
 
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
 
@@ -1166,7 +1179,8 @@ def on_ui_tabs():
 				vid_format,
 				vid_ssaa,
 				custom_depthmap, 
-				custom_depthmap_img
+				custom_depthmap_img,
+				depthmap_batch_reuse
             ],
             outputs=[
                 result_images,

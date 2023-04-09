@@ -252,7 +252,7 @@ class Script(scripts.Script):
 		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None,
                                         compute_device, model_type,
                                         net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
-                                        background_removed_images, "mp4", 0)
+                                        background_removed_images, "mp4", 0, False, None)
 		
 		for img in newmaps:
 			processed.images.append(img)
@@ -261,7 +261,7 @@ class Script(scripts.Script):
 
 def run_depthmap(processed, outpath, inputimages, inputnames,
                  compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
-                 background_removed_images, fnExt, vid_ssaa):
+                 background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return [], []
@@ -290,135 +290,136 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 
 	outimages = []
 	try:
-		print("Loading model weights from ", end=" ")
+		if not (custom_depthmap and custom_depthmap_img != None):
+			print("Loading model weights from ", end=" ")
 
-        #"res101"
-		if model_type == 0: 
-			model_path = f"{model_dir}/res101.pth"
-			print(model_path)
-			if not os.path.exists(model_path):
-				download_file(model_path,"https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download")
-			if compute_device == 0:
-				checkpoint = torch.load(model_path)
-			else:
-				checkpoint = torch.load(model_path,map_location=torch.device('cpu'))
-			model = RelDepthModel(backbone='resnext101')
-			model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)
-			del checkpoint
+			#"res101"
+			if model_type == 0: 
+				model_path = f"{model_dir}/res101.pth"
+				print(model_path)
+				if not os.path.exists(model_path):
+					download_file(model_path,"https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download")
+				if compute_device == 0:
+					checkpoint = torch.load(model_path)
+				else:
+					checkpoint = torch.load(model_path,map_location=torch.device('cpu'))
+				model = RelDepthModel(backbone='resnext101')
+				model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)
+				del checkpoint
+				devices.torch_gc()
+
+			#"dpt_beit_large_512" midas 3.1
+			if model_type == 1: 
+				model_path = f"{model_dir}/dpt_beit_large_512.pt"
+				print(model_path)
+				if not os.path.exists(model_path):
+					download_file(model_path,"https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_512.pt")
+				model = DPTDepthModel(
+					path=model_path,
+					backbone="beitl16_512",
+					non_negative=True,
+				)
+				net_w, net_h = 512, 512
+				resize_mode = "minimal"
+				normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+			#"dpt_beit_large_384" midas 3.1
+			if model_type == 2: 
+				model_path = f"{model_dir}/dpt_beit_large_384.pt"
+				print(model_path)
+				if not os.path.exists(model_path):
+					download_file(model_path,"https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_384.pt")
+				model = DPTDepthModel(
+					path=model_path,
+					backbone="beitl16_384",
+					non_negative=True,
+				)
+				net_w, net_h = 384, 384
+				resize_mode = "minimal"
+				normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+			#"dpt_large_384" midas 3.0
+			if model_type == 3: 
+				model_path = f"{model_dir}/dpt_large-midas-2f21e586.pt"
+				print(model_path)
+				if not os.path.exists(model_path):
+					download_file(model_path,"https://github.com/intel-isl/DPT/releases/download/1_0/dpt_large-midas-2f21e586.pt")
+				model = DPTDepthModel(
+					path=model_path,
+					backbone="vitl16_384",
+					non_negative=True,
+				)
+				net_w, net_h = 384, 384
+				resize_mode = "minimal"
+				normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+			#"dpt_hybrid_384" midas 3.0
+			elif model_type == 4: 
+				model_path = f"{model_dir}/dpt_hybrid-midas-501f0c75.pt"
+				print(model_path)
+				if not os.path.exists(model_path):
+					download_file(model_path,"https://github.com/intel-isl/DPT/releases/download/1_0/dpt_hybrid-midas-501f0c75.pt")
+				model = DPTDepthModel(
+					path=model_path,
+					backbone="vitb_rn50_384",
+					non_negative=True,
+				)
+				net_w, net_h = 384, 384
+				resize_mode="minimal"
+				normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+			#"midas_v21"
+			elif model_type == 5: 
+				model_path = f"{model_dir}/midas_v21-f6b98070.pt"
+				print(model_path)
+				if not os.path.exists(model_path):
+					download_file(model_path,"https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21-f6b98070.pt")
+				model = MidasNet(model_path, non_negative=True)
+				net_w, net_h = 384, 384
+				resize_mode="upper_bound"
+				normalization = NormalizeImage(
+					mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+				)
+
+			#"midas_v21_small"
+			elif model_type == 6: 
+				model_path = f"{model_dir}/midas_v21_small-70d6b9c8.pt"
+				print(model_path)
+				if not os.path.exists(model_path):
+					download_file(model_path,"https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21_small-70d6b9c8.pt")
+				model = MidasNet_small(model_path, features=64, backbone="efficientnet_lite3", exportable=True, non_negative=True, blocks={'expand': True})
+				net_w, net_h = 256, 256
+				resize_mode="upper_bound"
+				normalization = NormalizeImage(
+					mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+				)
+
+
+			# load merge network if boost enabled
+			if boost:
+				pix2pixmodel_path = './models/pix2pix/latest_net_G.pth'
+				if not os.path.exists(pix2pixmodel_path):
+					download_file(pix2pixmodel_path,"https://sfu.ca/~yagiz/CVPR21/latest_net_G.pth")
+				opt = TestOptions().parse()
+				if compute_device == 1:
+					opt.gpu_ids = [] # cpu mode
+				pix2pixmodel = Pix2Pix4DepthModel(opt)
+				pix2pixmodel.save_dir = './models/pix2pix'
+				pix2pixmodel.load_networks('latest')
+				pix2pixmodel.eval()
+
 			devices.torch_gc()
 
-        #"dpt_beit_large_512" midas 3.1
-		if model_type == 1: 
-			model_path = f"{model_dir}/dpt_beit_large_512.pt"
-			print(model_path)
-			if not os.path.exists(model_path):
-				download_file(model_path,"https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_512.pt")
-			model = DPTDepthModel(
-				path=model_path,
-				backbone="beitl16_512",
-				non_negative=True,
-			)
-			net_w, net_h = 512, 512
-			resize_mode = "minimal"
-			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+			# prepare for evaluation
+			model.eval()
+		
+			# optimize
+			if device == torch.device("cuda"):
+				model = model.to(memory_format=torch.channels_last)  
+				if not cmd_opts.no_half and model_type != 0 and not boost:
+					model = model.half()
 
-        #"dpt_beit_large_384" midas 3.1
-		if model_type == 2: 
-			model_path = f"{model_dir}/dpt_beit_large_384.pt"
-			print(model_path)
-			if not os.path.exists(model_path):
-				download_file(model_path,"https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_384.pt")
-			model = DPTDepthModel(
-				path=model_path,
-				backbone="beitl16_384",
-				non_negative=True,
-			)
-			net_w, net_h = 384, 384
-			resize_mode = "minimal"
-			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-
-		#"dpt_large_384" midas 3.0
-		if model_type == 3: 
-			model_path = f"{model_dir}/dpt_large-midas-2f21e586.pt"
-			print(model_path)
-			if not os.path.exists(model_path):
-				download_file(model_path,"https://github.com/intel-isl/DPT/releases/download/1_0/dpt_large-midas-2f21e586.pt")
-			model = DPTDepthModel(
-				path=model_path,
-				backbone="vitl16_384",
-				non_negative=True,
-			)
-			net_w, net_h = 384, 384
-			resize_mode = "minimal"
-			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-
-		#"dpt_hybrid_384" midas 3.0
-		elif model_type == 4: 
-			model_path = f"{model_dir}/dpt_hybrid-midas-501f0c75.pt"
-			print(model_path)
-			if not os.path.exists(model_path):
-				download_file(model_path,"https://github.com/intel-isl/DPT/releases/download/1_0/dpt_hybrid-midas-501f0c75.pt")
-			model = DPTDepthModel(
-				path=model_path,
-				backbone="vitb_rn50_384",
-				non_negative=True,
-			)
-			net_w, net_h = 384, 384
-			resize_mode="minimal"
-			normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-
-		#"midas_v21"
-		elif model_type == 5: 
-			model_path = f"{model_dir}/midas_v21-f6b98070.pt"
-			print(model_path)
-			if not os.path.exists(model_path):
-				download_file(model_path,"https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21-f6b98070.pt")
-			model = MidasNet(model_path, non_negative=True)
-			net_w, net_h = 384, 384
-			resize_mode="upper_bound"
-			normalization = NormalizeImage(
-				mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-			)
-
-		#"midas_v21_small"
-		elif model_type == 6: 
-			model_path = f"{model_dir}/midas_v21_small-70d6b9c8.pt"
-			print(model_path)
-			if not os.path.exists(model_path):
-				download_file(model_path,"https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21_small-70d6b9c8.pt")
-			model = MidasNet_small(model_path, features=64, backbone="efficientnet_lite3", exportable=True, non_negative=True, blocks={'expand': True})
-			net_w, net_h = 256, 256
-			resize_mode="upper_bound"
-			normalization = NormalizeImage(
-				mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-			)
-
-
-		# load merge network if boost enabled
-		if boost:
-			pix2pixmodel_path = './models/pix2pix/latest_net_G.pth'
-			if not os.path.exists(pix2pixmodel_path):
-				download_file(pix2pixmodel_path,"https://sfu.ca/~yagiz/CVPR21/latest_net_G.pth")
-			opt = TestOptions().parse()
-			if compute_device == 1:
-				opt.gpu_ids = [] # cpu mode
-			pix2pixmodel = Pix2Pix4DepthModel(opt)
-			pix2pixmodel.save_dir = './models/pix2pix'
-			pix2pixmodel.load_networks('latest')
-			pix2pixmodel.eval()
-
-		devices.torch_gc()
-
-		# prepare for evaluation
-		model.eval()
-	
-		# optimize
-		if device == torch.device("cuda"):
-			model = model.to(memory_format=torch.channels_last)  
-			if not cmd_opts.no_half and model_type != 0 and not boost:
-				model = model.half()
-
-		model.to(device)
+			model.to(device)
 
 		print("Computing depthmap(s) ..")
 		inpaint_imgs = []
@@ -441,14 +442,26 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			# input image
 			img = cv2.cvtColor(np.asarray(inputimages[count]), cv2.COLOR_BGR2RGB) / 255.0
 	
-			# compute
-			if not boost:
-				if model_type == 0:
-					prediction = estimateleres(img, model, net_width, net_height)
+			if custom_depthmap and custom_depthmap_img != None:
+				# use custom depthmap
+				dimg = Image.open(custom_depthmap_img)
+				# resize if not same size as input
+				if dimg.width != inputimages[count].width or dimg.height != inputimages[count].height:
+					dimg = dimg.resize((inputimages[count].width, inputimages[count].height), Image.Resampling.LANCZOS)
+				if dimg.mode == 'I' or dimg.mode == 'P':
+					prediction = np.asarray(dimg, dtype="float")
 				else:
-					prediction = estimatemidas(img, model, net_width, net_height, resize_mode, normalization)
+					prediction = np.asarray(dimg, dtype="float")[:,:,0]
+				model_type = -1 # skip invert for leres (0)
 			else:
-				prediction = estimateboost(img, model, model_type, pix2pixmodel)
+				# compute depthmap
+				if not boost:
+					if model_type == 0:
+						prediction = estimateleres(img, model, net_width, net_height)
+					else:
+						prediction = estimatemidas(img, model, net_width, net_height, resize_mode, normalization)
+				else:
+					prediction = estimateboost(img, model, model_type, pix2pixmodel)
 
 			# output
 			depth = prediction
@@ -953,42 +966,43 @@ def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_bord
 
 # called from depth tab
 def run_generate(depthmap_mode, 
-				depthmap_image,
+                depthmap_image,
                 image_batch,
                 depthmap_batch_input_dir,
                 depthmap_batch_output_dir,
+                compute_device,
+                model_type,
+                net_width,
+                net_height,
+                match_size,
+                boost,
+                invert_depth,
+                clipdepth,
+                clipthreshold_far,
+                clipthreshold_near,
+                combine_output,
+                combine_output_axis,
+                save_depth,
+                show_depth,
+                show_heat,
+                gen_stereo,
+                stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an,
+                stereo_divergence,
+                stereo_fill,
+                stereo_balance,
+                inpaint,
+                inpaint_vids,
+                background_removal,
+                save_background_removal_masks,
+                gen_normal,
 
-                 compute_device,
-                 model_type,
-                 net_width,
-                 net_height,
-                 match_size,
-                 boost,
-                 invert_depth,
-                 clipdepth,
-                 clipthreshold_far,
-                 clipthreshold_near,
-                 combine_output,
-                 combine_output_axis,
-                 save_depth,
-                 show_depth,
-                 show_heat,
-                 gen_stereo,
-                 stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an,
-                 stereo_divergence,
-                 stereo_fill,
-                 stereo_balance,
-                 inpaint,
-                 inpaint_vids,
-                 background_removal,
-                 save_background_removal_masks,
-                 gen_normal,
-
-                 background_removal_model,
-                 pre_depth_background_removal,
-                 vid_format,
-                 vid_ssaa
-				):
+                background_removal_model,
+                pre_depth_background_removal,
+                vid_format,
+                vid_ssaa,
+                custom_depthmap, 
+                custom_depthmap_img
+                ):
 
 				
 	# file type
@@ -1040,7 +1054,7 @@ def run_generate(depthmap_mode,
 	outputs, mesh_fi = run_depthmap(
         None, outpath, imageArr, imageNameArr,
         compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
-        background_removed_images, fnExt, vid_ssaa)
+        background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img)
 
 	return outputs, mesh_fi, plaintext_to_html('info'), ''
 
@@ -1056,20 +1070,25 @@ def on_ui_tabs():
             with gr.Column(variant='panel'):
                 with gr.Tabs(elem_id="mode_depthmap"):
                     with gr.TabItem('Single Image'):
-                        depthmap_image = gr.Image(label="Source", source="upload", interactive=True, type="pil")
+                        with gr.Row():
+                            depthmap_image = gr.Image(label="Source", source="upload", interactive=True, type="pil")
+                            with gr.Group(visible=False) as custom_depthmap_row_0:
+                                custom_depthmap_img = gr.File(label="Custom DepthMap", file_count="single", interactive=True, type="file")
+                        custom_depthmap = gr.Checkbox(label="Use custom DepthMap",value=False)
 
                     with gr.TabItem('Batch Process'):
-                        image_batch = gr.File(label="Batch Process", file_count="multiple", interactive=True, type="file")
+                        image_batch = gr.File(label="Batch Process", file_count="single", interactive=True, type="file")
 
                     with gr.TabItem('Batch from Directory'):
                         depthmap_batch_input_dir = gr.Textbox(label="Input directory", **shared.hide_dirs, placeholder="A directory on the same machine where the server is running.")
                         depthmap_batch_output_dir = gr.Textbox(label="Output directory", **shared.hide_dirs, placeholder="Leave blank to save images to the default path.")
 
+
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
 
+				# insert main panel
                 compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model = main_ui_panel(True)
 
-            #result_images, html_info_x, html_info = modules.ui.create_output_panel("depthmap", opts.outdir_extras_samples)
             with gr.Column(variant='panel'):
                 with gr.Group():
                     result_images = gr.Gallery(label='Output', show_label=False, elem_id=f"depthmap_gallery").style(grid=4)
@@ -1096,6 +1115,15 @@ def on_ui_tabs():
                         vid_dolly = gr.Checkbox(label="Dolly",value=False)
                     with gr.Row():
                         submit_vid = gr.Button('Generate Video', elem_id="depthmap_generatevideo", variant='primary')
+
+        def custom_depthmap_visibility(v):
+            return custom_depthmap_row_0.update(visible=v)
+        custom_depthmap.change(
+            fn=custom_depthmap_visibility,
+            inputs=[custom_depthmap],
+            outputs=[custom_depthmap_row_0]
+        )
+
 
         submit.click(
             fn=wrap_gradio_gpu_call(run_generate),
@@ -1136,7 +1164,9 @@ def on_ui_tabs():
                 background_removal_model,
 				pre_depth_background_removal,
 				vid_format,
-				vid_ssaa
+				vid_ssaa,
+				custom_depthmap, 
+				custom_depthmap_img
             ],
             outputs=[
                 result_images,

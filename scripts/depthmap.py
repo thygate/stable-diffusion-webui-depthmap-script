@@ -551,10 +551,15 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 						images.save_image(mask_image, path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None, suffix="_foreground_mask")
 					outimages.append(mask_image)
 
+			img_concat = np.concatenate((rgb_image, img_output2), axis=combine_output_axis)
+			if show_depth:
+				if not combine_output:
+					outimages.append(Image.fromarray(img_output))
+				else:
+					outimages.append(Image.fromarray(img_concat))
+					
 			if not skipInvertAndSave:
 				if not combine_output:
-					if show_depth:
-						outimages.append(Image.fromarray(img_output))
 					if save_depth and processed is not None:
 						# only save 16 bit single channel image when PNG format is selected
 						if opts.samples_format == "png":
@@ -569,9 +574,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 						else:
 							images.save_image(Image.fromarray(img_output2), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
 				else:
-					img_concat = np.concatenate((rgb_image, img_output2), axis=combine_output_axis)
-					if show_depth:
-						outimages.append(Image.fromarray(img_concat))
 					if save_depth and processed is not None:
 						images.save_image(Image.fromarray(img_concat), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
 					elif save_depth:

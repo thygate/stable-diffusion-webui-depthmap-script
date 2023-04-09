@@ -2083,7 +2083,7 @@ def write_ply(image,
             obj_fi.write(('# meanLoc ' + str(float(mean_loc_depth)) + '\n'))
             obj_fi.write(('# vertices ' + str(len(node_str_list)) + '\n'))
             obj_fi.write(('# faces ' + str(len(str_faces)) + '\n'))
-            
+
             pbar = tqdm.tqdm(total = len(node_str_list)+len(str_faces))
             pbar.set_description("Saving vertices")
             for v in node_str_list:

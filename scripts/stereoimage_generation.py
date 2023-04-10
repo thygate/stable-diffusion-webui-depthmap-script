@@ -2,17 +2,17 @@ from numba import njit, prange
 import numpy as np
 from PIL import Image
 
-def create_stereoimage(original_image, depthmap, divergence, mode='left-right', stereo_balance=0.0,
-                       fill_technique='polylines_sharp'):
-    """Creates a stereoscopic image.
-    An effort is made to make it look nice, but beware that the resulting image will have some distortion .
+def create_stereoimages(original_image, depthmap, divergence, modes=None, stereo_balance=0.0,
+                        fill_technique='polylines_sharp'):
+    """Creates stereoscopic images.
+    An effort is made to make them look nice, but beware that the resulting image will have some distortion .
 
     :param original_image: original image from which the 3D image (stereoimage) will be created
     :param depthmap: depthmap corresponding to the original image
     :param float divergence: the measure of 3D effect, in percentages.
       A good value will likely be somewhere in the [0.05; 10.0) interval.
-    :param str mode: how the result will look like. The default is 'left-right'
-      --- a picture for the left eye will be on the left and the picture from the right eye --- on the rigth.
+    :param list modes: how the result will look like. By default only 'left-right' is generated
+      - a picture for the left eye will be on the left and the picture from the right eye - on the rigth.
       The supported modes are: 'left-right', 'right-left', 'top-bottom', 'bottom-top', 'red-cyan-anaglyph'.
     :param float stereo_balance: has to do with how the divergence will be split among the two parts of the image,
       must be in the [-1.0; 1.0] interval.
@@ -20,25 +20,34 @@ def create_stereoimage(original_image, depthmap, divergence, mode='left-right', 
       This parameter specifies the technique that will be used to fill in the blanks in the two resulting images.
       Must be one of the following: 'none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'.
     """
+    if modes is None:
+        modes = ['left-right']
+    if not isinstance(modes, list):
+        modes = [modes]
+
     original_image = np.asarray(original_image)
     balance = (stereo_balance + 1) / 2
     left_eye = original_image if balance < 0.001 else \
-        apply_stereo_divergence(original_image, depthmap, -1 * divergence * (balance), fill_technique)
+        apply_stereo_divergence(original_image, depthmap, -1 * divergence * balance, fill_technique)
     right_eye = original_image if balance > 0.999 else \
         apply_stereo_divergence(original_image, depthmap, +1 * divergence * (1 - balance), fill_technique)
-    if mode == 'left-right':
-            result = np.hstack([left_eye, right_eye])
-    elif mode == 'right-left':
-            result = np.hstack([right_eye, left_eye])
-    elif mode == 'top-bottom':
-            result = np.vstack([left_eye, right_eye])
-    elif mode == 'bottom-top':
-            result = np.vstack([right_eye, left_eye])
-    elif mode == 'red-cyan-anaglyph':
-            result = overlap_red_cyan(left_eye, right_eye)
-    else:
-        raise Exception('Unknown mode')
-    return Image.fromarray(result)
+
+    results = []
+    for mode in modes:
+        match mode:
+            case 'left-right':
+                results.append(np.hstack([left_eye, right_eye]))
+            case 'right-left':
+                results.append(np.hstack([right_eye, left_eye]))
+            case 'top-bottom':
+                results.append(np.vstack([left_eye, right_eye]))
+            case 'bottom-top':
+                results.append(np.vstack([right_eye, left_eye]))
+            case 'red-cyan-anaglyph':
+                results.append(overlap_red_cyan(left_eye, right_eye))
+            case _:
+                raise Exception('Unknown mode')
+    return [Image.fromarray(r) for r in results]
 
 
 def apply_stereo_divergence(original_image, depth, divergence, fill_technique):

@@ -34,7 +34,9 @@ import platform
 import vispy
 import imageio
 
-sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
+import pathlib
+path_append = pathlib.Path(__file__).parent.resolve()
+sys.path.append(str(path_append))
 
 from stereoimage_generation import create_stereoimages
 

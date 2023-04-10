@@ -1825,7 +1825,7 @@ def DL_inpaint_edge(mesh,
     return mesh, info_on_pix, specific_mask_nodes, new_edge_ccs, connnect_points_ccs, np_image
 
 
-def write_ply(image,
+def write_mesh(image,
               depth,
               int_mtx,
               ply_name,
@@ -2076,13 +2076,15 @@ def write_ply(image,
         obj_name = basename + '.obj'
         print("Writing mesh file %s ..." % obj_name)
         with open(obj_name, 'w') as obj_fi:
-            obj_fi.write(('# H ' + str(int(input_mesh.graph['H'])) + '\n'))
-            obj_fi.write(('# W ' + str(int(input_mesh.graph['W'])) + '\n'))
-            obj_fi.write(('# hFov ' + str(float(input_mesh.graph['hFov'])) + '\n'))
-            obj_fi.write(('# vFov ' + str(float(input_mesh.graph['vFov'])) + '\n'))
-            obj_fi.write(('# meanLoc ' + str(float(mean_loc_depth)) + '\n'))
-            obj_fi.write(('# vertices ' + str(len(node_str_list)) + '\n'))
-            obj_fi.write(('# faces ' + str(len(str_faces)) + '\n'))
+            obj_fi.write('# depthmap-script\n')
+            obj_fi.write('# H ' + str(int(input_mesh.graph['H'])) + '\n')
+            obj_fi.write('# W ' + str(int(input_mesh.graph['W'])) + '\n')
+            obj_fi.write('# hFov ' + str(float(input_mesh.graph['hFov'])) + '\n')
+            obj_fi.write('# vFov ' + str(float(input_mesh.graph['vFov'])) + '\n')
+            obj_fi.write('# meanLoc ' + str(float(mean_loc_depth)) + '\n')
+            obj_fi.write('# vertices ' + str(len(node_str_list)) + '\n')
+            obj_fi.write('# faces ' + str(len(str_faces)) + '\n')
+            obj_fi.write('o depthmap\n')
 
             pbar = tqdm.tqdm(total = len(node_str_list)+len(str_faces))
             pbar.set_description("Saving vertices")
@@ -2185,6 +2187,76 @@ def write_ply(image,
         str_faces = np.array(str_faces)
 
         return node_str_point, node_str_color, str_faces, H, W, hFov, vFov
+
+def read_mesh(mesh_fi):
+    ext = os.path.splitext(mesh_fi)[1]
+    if ext == '.ply':
+        return read_ply(mesh_fi)
+    elif ext == '.obj':
+        return read_obj(mesh_fi)
+    else:
+        raise Exception('Unknown file format')
+
+def read_obj(mesh_fi):
+    mfile = open(mesh_fi, 'r', encoding="utf8")
+    Height = None
+    Width = None
+    hFov = None
+    vFov = None
+    mean_loc_depth = None
+
+    firstline = mfile.readline().split('\n')[0]
+    if not firstline.startswith('# depthmap-script'):
+        raise Exception('File was not generated with this extension.')
+    
+    while True:
+        line = mfile.readline().split('\n')[0]
+        if line.startswith('#'):
+            if line.split(' ')[1] == 'H':
+                Height = int(line.split(' ')[-1].split('\n')[0])
+            elif line.split(' ')[1] == 'W':
+                Width = int(line.split(' ')[-1].split('\n')[0])
+            elif line.split(' ')[1] == 'hFov':
+                hFov = float(line.split(' ')[-1].split('\n')[0])
+            elif line.split(' ')[1] == 'vFov':
+                vFov = float(line.split(' ')[-1].split('\n')[0])
+            elif line.split(' ')[1] == 'meanLoc':
+                mean_loc_depth = float(line.split(' ')[-1].split('\n')[0])
+            elif line.split(' ')[1] == 'vertices':
+                num_vertex = int(line.split(' ')[-1])
+            elif line.split(' ')[1] == 'faces':
+                num_face = int(line.split(' ')[-1])
+        # check for start of object
+        elif line.startswith('o depthmap'):
+            break
+    
+    contents = mfile.readlines()
+    mfile.close()
+
+    vertex_infos = contents[:num_vertex]
+    face_infos = contents[num_vertex:]
+
+    verts = [None] * num_vertex
+    colors = [None] * num_vertex
+    faces = [None] * num_face
+    i = 0
+    for v_info in vertex_infos:
+        str_info = [float(v) for v in v_info.split('\n')[0].split(' ')[1:]]
+        vx, vy, vz, r, g, b = str_info
+        verts[i] = [vx, vy, vz]
+        colors[i] = [r, g, b]
+        i = i + 1
+    verts = np.array(verts)
+    colors = np.array(colors)
+
+    i = 0
+    for f_info in face_infos:
+        v1, v2, v3 = [int(f) for f in f_info.split('\n')[0].split(' ')[1:]]
+        faces[i] = [v1 - 1, v2 - 1, v3 - 1]
+        i = i + 1
+    faces = np.array(faces)
+
+    return verts, colors, faces, Height, Width, hFov, vFov, mean_loc_depth
 
 def read_ply(mesh_fi):
     #bty: implement binary support (assume same endianness for now)

@@ -53,7 +53,7 @@ from pix2pix.options.test_options import TestOptions
 from pix2pix.models.pix2pix4depth_model import Pix2Pix4DepthModel
 
 # 3d-photo-inpainting imports
-from inpaint.mesh import write_ply, read_ply, output_3d_photo
+from inpaint.mesh import write_mesh, read_mesh, output_3d_photo
 from inpaint.networks import Inpaint_Color_Net, Inpaint_Depth_Net, Inpaint_Edge_Net
 from inpaint.utils import path_planning
 from inpaint.bilateral_filtering import sparse_bilateral_filtering
@@ -805,7 +805,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 			#bilat_fn = os.path.join(outpath, basename +'_bilatdepth.png')
 			#cv2.imwrite(bilat_fn, depth)
 
-			rt_info = write_ply(img,
+			rt_info = write_mesh(img,
 								depth,
 								int_mtx,
 								mesh_fi,
@@ -847,7 +847,7 @@ def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border,
 		vispy.use(app='egl')
 
 	# read ply
-	verts, colors, faces, Height, Width, hFov, vFov, mean_loc_depth = read_ply(mesh_fi)
+	verts, colors, faces, Height, Width, hFov, vFov, mean_loc_depth = read_mesh(mesh_fi)
 
 	original_w = output_w = W = Width
 	original_h = output_h = H = Height
@@ -1100,7 +1100,7 @@ def on_ui_tabs():
                     with gr.Column():
                         vid_html_info_x = gr.HTML()
                         vid_html_info = gr.HTML()
-                    fn_mesh = gr.Textbox(label="Input Mesh (.ply)", **shared.hide_dirs, placeholder="A file on the same machine where the server is running.")
+                    fn_mesh = gr.Textbox(label="Input Mesh (.ply | .obj)", **shared.hide_dirs, placeholder="A file on the same machine where the server is running.")
                     with gr.Row():
                         vid_numframes = gr.Textbox(label="Number of frames", value="300")
                         vid_fps = gr.Textbox(label="Framerate", value="40")

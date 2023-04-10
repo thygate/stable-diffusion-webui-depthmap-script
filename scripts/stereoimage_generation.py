@@ -34,19 +34,18 @@ def create_stereoimages(original_image, depthmap, divergence, modes=None, stereo
 
     results = []
     for mode in modes:
-        match mode:
-            case 'left-right':
-                results.append(np.hstack([left_eye, right_eye]))
-            case 'right-left':
-                results.append(np.hstack([right_eye, left_eye]))
-            case 'top-bottom':
-                results.append(np.vstack([left_eye, right_eye]))
-            case 'bottom-top':
-                results.append(np.vstack([right_eye, left_eye]))
-            case 'red-cyan-anaglyph':
-                results.append(overlap_red_cyan(left_eye, right_eye))
-            case _:
-                raise Exception('Unknown mode')
+        if mode == 'left-right':
+            results.append(np.hstack([left_eye, right_eye]))
+        elif mode == 'right-left':
+            results.append(np.hstack([right_eye, left_eye]))
+        elif mode == 'top-bottom':
+            results.append(np.vstack([left_eye, right_eye]))
+        elif mode == 'bottom-top':
+            results.append(np.vstack([right_eye, left_eye]))
+        elif mode == 'red-cyan-anaglyph':
+            results.append(overlap_red_cyan(left_eye, right_eye))
+        else:
+            raise Exception('Unknown mode')
     return [Image.fromarray(r) for r in results]
 
 

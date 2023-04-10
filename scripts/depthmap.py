@@ -36,7 +36,7 @@ import imageio
 
 sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
-from stereoimage_generation import apply_stereo_divergence, overlap_red_cyan
+from stereoimage_generation import create_stereoimages
 
 # midas imports
 from dmidas.dpt_depth import DPTDepthModel
@@ -103,13 +103,13 @@ def main_ui_panel(is_depth_tab):
 
 		with gr.Group():
 			with gr.Row():
-				gen_stereo = gr.Checkbox(label="Generate stereoscopic image", value=False)
+				gen_stereo = gr.Checkbox(label="Generate stereoscopic image(s)", value=False)
 				with gr.Group(visible=False) as stereo_options_row_0:
 					with gr.Row(variant="compact"):
 						stereo_mode_lr = gr.Checkbox(label="left-right", value=True)
-						stereo_mode_rl = gr.Checkbox(label="right-left", value=True)
-						stereo_mode_tb = gr.Checkbox(label="top-bottom", value=True)
-						stereo_mode_bt = gr.Checkbox(label="bottom-top", value=True)
+						stereo_mode_rl = gr.Checkbox(label="right-left", value=False)
+						stereo_mode_tb = gr.Checkbox(label="top-bottom", value=False)
+						stereo_mode_bt = gr.Checkbox(label="bottom-top", value=False)
 						stereo_mode_an = gr.Checkbox(label="red-cyan-anaglyph", value=True)
 				
 
@@ -586,44 +586,27 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 
 			if gen_stereo:
 				print("Generating stereoscopic images..")
-				
-				original_image = np.asarray(inputimages[count])
-				balance = (stereo_balance + 1) / 2
-				left_eye = original_image if balance < 0.001 else \
-					apply_stereo_divergence(original_image, img_output, -1 * stereo_divergence * (balance), stereo_fill)
-				right_eye = original_image if balance > 0.999 else \
-					apply_stereo_divergence(original_image, img_output, +1 * stereo_divergence * (1 - balance), stereo_fill)
 
-				stereoimages = []
-				stereonames = []
-				if stereo_mode_lr:
-					stereonames.append("left-right")
-					stereoimages.append(Image.fromarray(np.hstack([left_eye, right_eye])))
-				if stereo_mode_rl:
-					stereonames.append("right-left")
-					stereoimages.append(Image.fromarray(np.hstack([right_eye, left_eye])))
-				if stereo_mode_tb:
-					stereonames.append("top-bottom")
-					stereoimages.append(Image.fromarray(np.vstack([left_eye, right_eye])))
-				if stereo_mode_bt:
-					stereonames.append("bottom-top")
-					stereoimages.append(Image.fromarray(np.vstack([right_eye, left_eye])))
-				if stereo_mode_an:
-					stereonames.append("red-cyan-anaglyph")
-					stereoimages.append(Image.fromarray(overlap_red_cyan(left_eye, right_eye)))
+				stereomodes = []
+				if stereo_mode_lr: stereomodes.append("left-right")
+				if stereo_mode_rl: stereomodes.append("right-left")
+				if stereo_mode_tb: stereomodes.append("top-bottom")
+				if stereo_mode_bt: stereomodes.append("bottom-top")
+				if stereo_mode_an: stereomodes.append("red-cyan-anaglyph")
+				stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, stereomodes, stereo_balance, stereo_fill)
 
 				for c in range(0, len(stereoimages)):
 					outimages.append(stereoimages[c])
 					if processed is not None:
 						images.save_image(stereoimages[c], outpath, "", processed.all_seeds[count],
 										processed.all_prompts[count], opts.samples_format, info=info, p=processed,
-										suffix=f"_{stereonames[c]}")
+										suffix=f"_{stereomodes[c]}")
 					else:
 						# from tab
 						images.save_image(stereoimages[c], path=outpath, basename=basename, seed=None,
 										prompt=None, extension=opts.samples_format, info=info, short_filename=True,
 										no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
-										forced_filename=None, suffix=f"_{stereonames[c]}")
+										forced_filename=None, suffix=f"_{stereomodes[c]}")
 
 			if gen_normal:
 				# taken from @graemeniedermayer, hidden, for api use only, will remove in future.

@@ -277,8 +277,8 @@ def reassign_floating_island(mesh, info_on_pix, image, depth):
         lost_xs, lost_ys = np.where(label_lost_map == i)
         surr_edge_ids = {}
         for lost_x, lost_y in zip(lost_xs, lost_ys):
-            if (lost_x, lost_y) == (295, 389) or (lost_x, lost_y) == (296, 389):
-                import pdb; pdb.set_trace()
+            #if (lost_x, lost_y) == (295, 389) or (lost_x, lost_y) == (296, 389):
+            #    import pdb; pdb.set_trace()
             for ne in get_cross_nes(lost_x, lost_y):
                 if key_exist(info_on_pix, ne):
                     for info in info_on_pix[ne]:

@@ -34,9 +34,7 @@ import platform
 import vispy
 import imageio
 
-import pathlib
-path_append = pathlib.Path(__file__).parent.resolve()
-sys.path.append(str(path_append))
+sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
 from stereoimage_generation import create_stereoimages
 
@@ -60,12 +58,17 @@ from inpaint.networks import Inpaint_Color_Net, Inpaint_Depth_Net, Inpaint_Edge_
 from inpaint.utils import path_planning
 from inpaint.bilateral_filtering import sparse_bilateral_filtering
 
+# zoedepth
+from dzoedepth.models.builder import build_model
+from dzoedepth.utils.config import get_config
+from dzoedepth.utils.misc import colorize
+
 # background removal
 from rembg import new_session, remove
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.9"
+scriptname = "DepthMap v0.3.10"
 
 def main_ui_panel(is_depth_tab):
 	with gr.Blocks():
@@ -74,7 +77,8 @@ def main_ui_panel(is_depth_tab):
 			model_type = gr.Dropdown(label="Model", choices=['res101', 'dpt_beit_large_512 (midas 3.1)',
 															 'dpt_beit_large_384 (midas 3.1)',
 															 'dpt_large_384 (midas 3.0)', 'dpt_hybrid_384 (midas 3.0)',
-															 'midas_v21', 'midas_v21_small'], value='res101',
+															 'midas_v21', 'midas_v21_small', 
+															 'zoedepth_n', 'zoedepth_k', 'zoedepth_nk'], value='res101',
 									 type="index", elem_id="tabmodel_type")
 		with gr.Group():
 			with gr.Row():
@@ -267,7 +271,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return [], []
-
+	
 	print('\n%s' % scriptname)
 
 	# unload sd model
@@ -396,6 +400,27 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 					mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
 				)
 
+			# zoedepth_n
+			elif model_type == 7:
+				print("zoedepth_n\n")
+				conf = get_config("zoedepth", "infer")
+				conf.img_size = [net_width, net_height]
+				model = build_model(conf)
+
+			# zoedepth_k
+			elif model_type == 8:
+				print("zoedepth_k\n")
+				conf = get_config("zoedepth", "infer", config_version="kitti")
+				conf.img_size = [net_width, net_height]
+				model = build_model(conf)
+
+			# zoedepth_nk
+			elif model_type == 9:
+				print("zoedepth_nk\n")
+				conf = get_config("zoedepth_nk", "infer")
+				conf.img_size = [net_width, net_height]
+				model = build_model(conf)
+
 
 			# load merge network if boost enabled
 			if boost:
@@ -416,7 +441,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			model.eval()
 		
 			# optimize
-			if device == torch.device("cuda"):
+			if device == torch.device("cuda") and model_type < 7:
 				model = model.to(memory_format=torch.channels_last)  
 				if not cmd_opts.no_half and model_type != 0 and not boost:
 					model = model.half()
@@ -477,6 +502,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				if not boost:
 					if model_type == 0:
 						prediction = estimateleres(img, model, net_width, net_height)
+					elif model_type >= 7:
+						prediction = estimatezoedepth(inputimages[count], model, net_width, net_height)
 					else:
 						prediction = estimatemidas(img, model, net_width, net_height, resize_mode, normalization)
 				else:
@@ -499,7 +526,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			img_output = out.astype("uint16")
 
 			# invert depth map
-			if invert_depth ^ (model_type == 0 and not skipInvertAndSave):
+			if invert_depth ^ (((model_type == 0) or (model_type >= 7)) and not skipInvertAndSave):
 				img_output = cv2.bitwise_not(img_output)
 
 			# apply depth clip and renormalize if enabled
@@ -582,8 +609,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 						# from tab
 						images.save_image(Image.fromarray(img_concat), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
 			if show_heat:
-				colormap = plt.get_cmap('inferno')
-				heatmap = (colormap(img_output2[:,:,0] / 256.0) * 2**16).astype(np.uint16)[:,:,:3]
+				heatmap = colorize(img_output, cmap='inferno')
 				outimages.append(heatmap)
 
 			if gen_stereo:
@@ -1227,6 +1253,17 @@ def download_file(filename, url):
 	if not os.path.exists(filename):
 		raise RuntimeError('Download failed. Try again later or manually download the file to that location.')
 
+def estimatezoedepth(img, model, w, h):
+	#x = transforms.ToTensor()(img).unsqueeze(0)
+	#x = x.type(torch.float32)
+	#x.to(device)
+	#prediction = model.infer(x)
+	model.core.prep.resizer._Resize__width = w
+	model.core.prep.resizer._Resize__height = h
+	prediction = model.infer_pil(img)
+
+	return prediction
+
 def scale_torch(img):
 	"""
 	Scale the image and output it in torch.tensor.
@@ -1454,6 +1491,9 @@ def doubleestimate(img, size1, size2, pix2pixsize, model, net_type, pix2pixmodel
 def singleestimate(img, msize, model, net_type):
 	if net_type == 0:
 		return estimateleres(img, model, msize, msize)
+	elif net_type >= 7:
+		# np to PIL
+		return estimatezoedepth(Image.fromarray(np.uint8(img * 255)).convert('RGB'), model, msize, msize)
 	else:
 		return estimatemidasBoost(img, model, msize, msize)
 

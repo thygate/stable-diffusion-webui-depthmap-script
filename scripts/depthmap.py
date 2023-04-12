@@ -507,7 +507,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				# resize if not same size as input
 				if dimg.width != inputimages[count].width or dimg.height != inputimages[count].height:
 					dimg = dimg.resize((inputimages[count].width, inputimages[count].height), Image.Resampling.LANCZOS)
-				if dimg.mode == 'I' or dimg.mode == 'P':
+				if dimg.mode == 'I' or dimg.mode == 'P' or dimg.mode == 'L':
 					prediction = np.asarray(dimg, dtype="float")
 				else:
 					prediction = np.asarray(dimg, dtype="float")[:,:,0]

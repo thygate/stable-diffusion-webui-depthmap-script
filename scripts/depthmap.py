@@ -290,6 +290,9 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 	shared.sd_model.cond_stage_model.to(devices.cpu)
 	shared.sd_model.first_stage_model.to(devices.cpu)
 
+	meshsimple_fi = None
+	mesh_fi = None
+
 	# init torch device
 	global device
 	if compute_device == 0:
@@ -665,7 +668,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				outimages.append(Image.fromarray(normal))
 
 			# gen mesh
-			meshsimple_fi = None
 			if gen_mesh:
 				print(f"\nGenerating (occluded) mesh ..")
 
@@ -700,7 +702,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 		shared.sd_model.cond_stage_model.to(devices.device)
 		shared.sd_model.first_stage_model.to(devices.device)
 
-	mesh_fi = None
+	
 	try:
 		if inpaint:
 			# unload sd model
@@ -2028,3 +2030,4 @@ def save_mesh_obj(fn, vertices, colors, triangles):
 	# 		obj_fi.write(f"f {a} {b} {c}\n")
 
 	# 	obj_fi.close()
+	

@@ -1144,7 +1144,7 @@ def on_ui_tabs():
                         custom_depthmap = gr.Checkbox(label="Use custom DepthMap",value=False)
 
                     with gr.TabItem('Batch Process'):
-                        image_batch = gr.File(label="Batch Process", file_count="single", interactive=True, type="file")
+                        image_batch = gr.File(label="Batch Process", file_count="multiple", interactive=True, type="file")
 
                     with gr.TabItem('Batch from Directory'):
                         depthmap_batch_input_dir = gr.Textbox(label="Input directory", **shared.hide_dirs, placeholder="A directory on the same machine where the server is running.")
@@ -1281,6 +1281,7 @@ def on_ui_tabs():
 
 script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_ui_tabs(on_ui_tabs)
+
 
 def batched_background_removal(inimages, model_name):
 	print('creating background masks')

@@ -202,7 +202,7 @@ def generate_face(mesh, info_on_pix, config):
     H, W = mesh.graph['H'], mesh.graph['W']
     str_faces = []
     num_node = len(mesh.nodes)
-    ply_flag = config.get('save_ply')
+    ply_flag = config.get('save_ply') or config.get('save_obj')
     def out_fmt(input, cur_id_b, cur_id_self, cur_id_a, ply_flag):
         if ply_flag is True:
             input.append(' '.join(['3', cur_id_b, cur_id_self, cur_id_a]) + '\n')
@@ -2013,7 +2013,7 @@ def write_mesh(image,
     background_canvas = np.zeros((input_mesh.graph['H'],
                                   input_mesh.graph['W'],
                                   3))
-    ply_flag = config.get('save_ply')
+    ply_flag = config.get('save_ply') or config.get('save_obj')
     if ply_flag is True:
         node_str_list = []
     else:
@@ -2071,46 +2071,9 @@ def write_mesh(image,
     pbar.update(1)
     pbar.close()
 
-    if config['save_obj'] is True:
-        basename = os.path.splitext(ply_name)[0]
-        obj_name = basename + '.obj'
-        print("Writing mesh file %s ..." % obj_name)
-        with open(obj_name, 'w') as obj_fi:
-            obj_fi.write('# depthmap-script\n')
-            obj_fi.write('# H ' + str(int(input_mesh.graph['H'])) + '\n')
-            obj_fi.write('# W ' + str(int(input_mesh.graph['W'])) + '\n')
-            obj_fi.write('# hFov ' + str(float(input_mesh.graph['hFov'])) + '\n')
-            obj_fi.write('# vFov ' + str(float(input_mesh.graph['vFov'])) + '\n')
-            obj_fi.write('# meanLoc ' + str(float(mean_loc_depth)) + '\n')
-            obj_fi.write('# vertices ' + str(len(node_str_list)) + '\n')
-            obj_fi.write('# faces ' + str(len(str_faces)) + '\n')
-            obj_fi.write('o depthmap\n')
-
-            pbar = tqdm.tqdm(total = len(node_str_list)+len(str_faces))
-            pbar.set_description("Saving vertices")
-            for v in node_str_list:
-                x, y, z, r, g, b, a = v.split(' ')
-                x = float(x)
-                y = float(y)
-                z = float(z)
-                r = float(r) / 255.0
-                g = float(g) / 255.0
-                b = float(b) / 255.0
-                obj_fi.write(f"v {x:.8f} {y:.8f} {z:.8f} {r:.4f} {g:.4f} {b:.4f}\n")
-                pbar.update(1)
-
-            pbar.set_description("Saving faces")
-            for face in str_faces:
-                n, a, b, c = face.split(' ')
-                a = int(a) + 1
-                b = int(b) + 1
-                c = int(c) + 1
-                obj_fi.write(f"f {a} {b} {c}\n")
-                pbar.update(1)
-            pbar.close()
-            obj_fi.close()
-
     if config['save_ply'] is True:
+        basename = os.path.splitext(ply_name)[0]
+        ply_name = basename + '.ply'
         print("Writing mesh file %s ..." % ply_name)
         #bty: implement binary ply 
         if config['ply_fmt'] == "bin":
@@ -2175,8 +2138,50 @@ def write_mesh(image,
                 ply_fi.writelines(node_str_list)
                 ply_fi.writelines(str_faces)
             ply_fi.close()
-        return input_mesh
-    else:
+        
+    
+    if config['save_obj'] is True:
+        basename = os.path.splitext(ply_name)[0]
+        obj_name = basename + '.obj'
+        print("Writing mesh file %s ..." % obj_name)
+        with open(obj_name, 'w') as obj_fi:
+            obj_fi.write('# depthmap-script\n')
+            obj_fi.write('# H ' + str(int(input_mesh.graph['H'])) + '\n')
+            obj_fi.write('# W ' + str(int(input_mesh.graph['W'])) + '\n')
+            obj_fi.write('# hFov ' + str(float(input_mesh.graph['hFov'])) + '\n')
+            obj_fi.write('# vFov ' + str(float(input_mesh.graph['vFov'])) + '\n')
+            obj_fi.write('# meanLoc ' + str(float(mean_loc_depth)) + '\n')
+            obj_fi.write('# vertices ' + str(len(node_str_list)) + '\n')
+            obj_fi.write('# faces ' + str(len(str_faces)) + '\n')
+            obj_fi.write('o depthmap\n')
+
+            pbar = tqdm.tqdm(total = len(node_str_list)+len(str_faces))
+            pbar.set_description("Saving vertices")
+            for v in node_str_list:
+                x, y, z, r, g, b, a = v.split(' ')
+                x = float(x)
+                y = float(y)
+                z = float(z)
+                r = float(r) / 255.0
+                g = float(g) / 255.0
+                b = float(b) / 255.0
+                obj_fi.write(f"v {x:.8f} {y:.8f} {z:.8f} {r:.4f} {g:.4f} {b:.4f}\n")
+                pbar.update(1)
+
+            pbar.set_description("Saving faces")
+            for face in str_faces:
+                n, a, b, c = face.split(' ')
+                a = int(a) + 1
+                b = int(b) + 1
+                c = int(c) + 1
+                obj_fi.write(f"f {a} {b} {c}\n")
+                pbar.update(1)
+            pbar.close()
+            obj_fi.close()
+
+    return input_mesh
+    
+    if config['save_obj'] is False and config['save_ply'] is False:
         H = int(input_mesh.graph['H'])
         W = int(input_mesh.graph['W'])
         hFov = input_mesh.graph['hFov']
@@ -2207,7 +2212,7 @@ def read_obj(mesh_fi):
 
     firstline = mfile.readline().split('\n')[0]
     if not firstline.startswith('# depthmap-script'):
-        raise Exception('File was not generated with this extension.')
+        raise Exception('This requires a 3D inpainted mesh generated by this extension.')
     
     while True:
         line = mfile.readline().split('\n')[0]

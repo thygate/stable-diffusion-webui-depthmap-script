@@ -6,6 +6,9 @@ if not launch.is_installed("timm"): #0.6.7
 
 if not launch.is_installed("matplotlib"):
     launch.run_pip("install matplotlib", "matplotlib requirement for depthmap script")
+
+if not launch.is_installed("trimesh"):
+    launch.run_pip("install trimesh", "requirements for depthmap script")
     
 if not launch.is_installed("numba"):
     launch.run_pip("install numba", "numba requirement for depthmap script")

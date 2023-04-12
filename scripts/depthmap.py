@@ -32,7 +32,8 @@ import skimage.measure
 import copy
 import platform
 import vispy
-import imageio
+import trimesh
+import tempfile
 
 sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
@@ -62,13 +63,14 @@ from inpaint.bilateral_filtering import sparse_bilateral_filtering
 from dzoedepth.models.builder import build_model
 from dzoedepth.utils.config import get_config
 from dzoedepth.utils.misc import colorize
+from dzoedepth.utils.geometry import depth_to_points, create_triangles
 
 # background removal
 from rembg import new_session, remove
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.10"
+scriptname = "DepthMap v0.3.11"
 
 def main_ui_panel(is_depth_tab):
 	with gr.Blocks():
@@ -78,7 +80,7 @@ def main_ui_panel(is_depth_tab):
 															 'dpt_beit_large_384 (midas 3.1)',
 															 'dpt_large_384 (midas 3.0)', 'dpt_hybrid_384 (midas 3.0)',
 															 'midas_v21', 'midas_v21_small', 
-															 'zoedepth_n', 'zoedepth_k', 'zoedepth_nk'], value='res101',
+															 'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk'], value='res101',
 									 type="index", elem_id="tabmodel_type")
 		with gr.Group():
 			with gr.Row():
@@ -111,13 +113,8 @@ def main_ui_panel(is_depth_tab):
 			with gr.Row():
 				gen_stereo = gr.Checkbox(label="Generate stereoscopic image(s)", value=False)
 				with gr.Group(visible=False) as stereo_options_row_0:
-					with gr.Row(variant="compact"):
-						stereo_mode_lr = gr.Checkbox(label="left-right", value=True)
-						stereo_mode_rl = gr.Checkbox(label="right-left", value=False)
-						stereo_mode_tb = gr.Checkbox(label="top-bottom", value=False)
-						stereo_mode_bt = gr.Checkbox(label="bottom-top", value=False)
-						stereo_mode_an = gr.Checkbox(label="red-cyan-anaglyph", value=True)
-				
+					with gr.Row():
+						stereo_modes = gr.CheckboxGroup(["left-right", "right-left", "top-bottom", "bottom-top", "red-cyan-anaglyph"], label="Output", value=["left-right","red-cyan-anaglyph"])
 
 			with gr.Row(visible=False) as stereo_options_row_1:
 				stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)',
@@ -130,9 +127,16 @@ def main_ui_panel(is_depth_tab):
 				stereo_balance = gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes',
 										   value=0.0)
 
+		with gr.Group():
+			with gr.Row():
+				gen_mesh = gr.Checkbox(label="Generate simple 3D mesh. (Fast, accurate only with ZoeDepth models and no boost, no custom maps)", value=False, visible=True)
+			with gr.Row(visible=False) as mesh_options_row_0:
+				mesh_occlude = gr.Checkbox(label="Remove occluded edges", value=True, visible=True)
+				mesh_spherical = gr.Checkbox(label="Equirectangular projection", value=False, visible=True)
+
 		with gr.Group(visible=is_depth_tab):
 			with gr.Row():
-				inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow)", value=False, visible=is_depth_tab)
+				inpaint = gr.Checkbox(label="Generate 3D inpainted mesh. (Sloooow, required for generating videos)", value=False, visible=is_depth_tab)
 			with gr.Row(visible=False) as inpaint_options_row_0:
 				inpaint_vids = gr.Checkbox(label="Generate 4 demo videos with 3D inpainted mesh.", value=False, visible=is_depth_tab)
 
@@ -197,6 +201,14 @@ def main_ui_panel(is_depth_tab):
 			outputs=[stereo_options_row_0, stereo_options_row_1, stereo_options_row_2]
 		)
 
+		def mesh_options_visibility(v):
+			return mesh_options_row_0.update(visible=v)
+		gen_mesh.change(
+			fn=mesh_options_visibility,
+			inputs=[gen_mesh],
+			outputs=[mesh_options_row_0]
+		)
+
 		def inpaint_options_visibility(v):
 			return inpaint_options_row_0.update(visible=v)
 		inpaint.change(
@@ -214,7 +226,7 @@ def main_ui_panel(is_depth_tab):
 			outputs=[bgrem_options_row_1, bgrem_options_row_2]
 		)
 
-	return [compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,   pre_depth_background_removal, background_removal_model]
+	return [compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model, gen_mesh, mesh_occlude, mesh_spherical]
 
 
 class Script(scripts.Script):
@@ -231,7 +243,7 @@ class Script(scripts.Script):
 
 	# run from script in txt2img or img2img
 	def run(self, p,
-			compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,  pre_depth_background_removal, background_removal_model
+			compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model, gen_mesh, mesh_occlude, mesh_spherical
 			):
 
 		# sd process 
@@ -255,10 +267,10 @@ class Script(scripts.Script):
 			else:
 				background_removed_images = batched_background_removal(inputimages, background_removal_model)			
 
-		newmaps, mesh_fi = run_depthmap(processed, p.outpath_samples, inputimages, None,
+		newmaps, mesh_fi, meshsimple_fi = run_depthmap(processed, p.outpath_samples, inputimages, None,
                                         compute_device, model_type,
-                                        net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
-                                        background_removed_images, "mp4", 0, False, None, False)
+                                        net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+                                        background_removed_images, "mp4", 0, False, None, False, gen_mesh, mesh_occlude, mesh_spherical )
 		
 		for img in newmaps:
 			processed.images.append(img)
@@ -266,8 +278,8 @@ class Script(scripts.Script):
 		return processed
 
 def run_depthmap(processed, outpath, inputimages, inputnames,
-                 compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
-                 background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img, depthmap_batch_reuse):
+                 compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+                 background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img, depthmap_batch_reuse, gen_mesh, mesh_occlude, mesh_spherical):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return [], []
@@ -615,12 +627,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			if gen_stereo:
 				print("Generating stereoscopic images..")
 
-				stereomodes = []
-				if stereo_mode_lr: stereomodes.append("left-right")
-				if stereo_mode_rl: stereomodes.append("right-left")
-				if stereo_mode_tb: stereomodes.append("top-bottom")
-				if stereo_mode_bt: stereomodes.append("bottom-top")
-				if stereo_mode_an: stereomodes.append("red-cyan-anaglyph")
+				stereomodes = stereo_modes
 				stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, stereomodes, stereo_balance, stereo_fill)
 
 				for c in range(0, len(stereoimages)):
@@ -657,7 +664,21 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				
 				outimages.append(Image.fromarray(normal))
 
+			# gen mesh
+			meshsimple_fi = None
+			if gen_mesh:
+				print(f"\nGenerating (occluded) mesh ..")
 
+				meshsimple_fi = get_uniquefn(outpath, basename, 'obj')
+				meshsimple_fi = os.path.join(outpath, meshsimple_fi + '_simple.obj')
+
+				# try to map outputs other than zoe to sensible values 
+				depthi = prediction
+				#if not ((model_type == 0) or (model_type >= 7)):
+				#	depthi = np.bitwise_not(depthi)
+
+				vertices, colors, faces = create_mesh(inputimages[count], depthi, keep_edges=not mesh_occlude, spherical=mesh_spherical)
+				save_mesh_obj(meshsimple_fi, vertices, colors, faces)
 
 		print("Done.")
 
@@ -679,7 +700,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 		shared.sd_model.cond_stage_model.to(devices.device)
 		shared.sd_model.first_stage_model.to(devices.device)
 
-	mesh_fi = ''
+	mesh_fi = None
 	try:
 		if inpaint:
 			# unload sd model
@@ -694,7 +715,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 		shared.sd_model.first_stage_model.to(devices.device)
 		print("All done.")
 
-	return outimages, mesh_fi
+	return outimages, mesh_fi, meshsimple_fi
 
 @njit(parallel=True)
 def clipdepthmap(img, clipthreshold_far, clipthreshold_near):
@@ -716,6 +737,20 @@ def clipdepthmap(img, clipthreshold_far, clipthreshold_near):
 				clipped_img[x,y] = ((clipped_img[x,y] + min) / drange * 65535)
 
 	return clipped_img
+
+def get_uniquefn(outpath, basename, ext):
+	# unique filename
+	basecount = get_next_sequence_number(outpath, basename)
+	if basecount > 0: basecount = basecount - 1
+	fullfn = None
+	for i in range(500):
+		fn = f"{basecount + i:05}" if basename == '' else f"{basename}-{basecount + i:04}"
+		fullfn = os.path.join(outpath, f"{fn}.{ext}")
+		if not os.path.exists(fullfn):
+			break
+	basename = Path(fullfn).stem
+	
+	return basename
 
 def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa, inpaint_vids):
 	try:
@@ -768,13 +803,15 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 		config['depth_edge_dilate'] = 10
 		config['depth_edge_dilate_2'] = 5
 		config['largest_size'] = 512
-		config['repeat_inpaint_edge'] = True	
-		config['save_ply'] = True
+		config['repeat_inpaint_edge'] = True
 		config['ply_fmt'] = "bin"
 
-		config['save_obj'] = False
-		if hasattr(opts, 'depthmap_script_save_obj') and opts.depthmap_script_save_obj:
-			config['save_obj'] = True
+		config['save_ply'] = False
+		if hasattr(opts, 'depthmap_script_save_ply') and opts.depthmap_script_save_ply:
+			config['save_ply'] = True
+
+		config['save_obj'] = True
+		
 
 		if device == torch.device("cpu"):
 			config["gpu_ids"] = -1
@@ -789,18 +826,8 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 					p = Path(inputnames[count])
 					basename = p.stem
 
-			# unique filename
-			basecount = get_next_sequence_number(outpath, basename)
-			if basecount > 0: basecount = basecount - 1
-			fullfn = None
-			for i in range(500):
-				fn = f"{basecount + i:05}" if basename == '' else f"{basename}-{basecount + i:04}"
-				fullfn = os.path.join(outpath, f"{fn}.ply")
-				if not os.path.exists(fullfn):
-					break
-			basename = Path(fullfn).stem
-			# mesh filename
-			mesh_fi = os.path.join(outpath, basename +'.ply')
+			basename = get_uniquefn(outpath, basename, 'obj')
+			mesh_fi = os.path.join(outpath, basename + '.obj')
 
 			print(f"\nGenerating inpainted mesh .. (go make some coffee) ..")
 
@@ -1011,7 +1038,7 @@ def run_generate(depthmap_mode,
                 show_depth,
                 show_heat,
                 gen_stereo,
-                stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an,
+                stereo_modes,
                 stereo_divergence,
                 stereo_fill,
                 stereo_balance,
@@ -1027,7 +1054,8 @@ def run_generate(depthmap_mode,
                 vid_ssaa,
                 custom_depthmap, 
                 custom_depthmap_img,
-                depthmap_batch_reuse
+                depthmap_batch_reuse,
+                gen_mesh, mesh_occlude, mesh_spherical
                 ):
 
 				
@@ -1077,17 +1105,28 @@ def run_generate(depthmap_mode,
 		else:
 			background_removed_images = batched_background_removal(imageArr, background_removal_model)
 
-	outputs, mesh_fi = run_depthmap(
+	outputs, mesh_fi, meshsimple_fi = run_depthmap(
         None, outpath, imageArr, imageNameArr,
-        compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
-        background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img, depthmap_batch_reuse)
+        compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+        background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img, depthmap_batch_reuse, gen_mesh, mesh_occlude, mesh_spherical)
 
-	return outputs, mesh_fi, plaintext_to_html('info'), ''
+	# use inpainted 3d mesh to show in 3d model output when enabled in settings
+	if hasattr(opts, 'depthmap_script_show_3d_inpaint') and opts.depthmap_script_show_3d_inpaint and mesh_fi != None and len(mesh_fi) > 0:
+			meshsimple_fi = mesh_fi
+
+	# don't show 3dmodel when disabled in settings
+	if hasattr(opts, 'depthmap_script_show_3d') and not opts.depthmap_script_show_3d:
+			meshsimple_fi = None
+
+	return outputs, mesh_fi, meshsimple_fi, plaintext_to_html('info'), ''
 
 def on_ui_settings():
     section = ('depthmap-script', "Depthmap extension")
-    shared.opts.add_option("depthmap_script_boost_rmax", shared.OptionInfo(1600, "Maximum wholesize for boost", section=section))
-    shared.opts.add_option("depthmap_script_save_obj", shared.OptionInfo(False, "Save additional Wavefront OBJ file with 3D inpainted PLY mesh.", section=section))
+    shared.opts.add_option("depthmap_script_boost_rmax", shared.OptionInfo(1600, "Maximum wholesize for boost (Rmax)", section=section))
+    shared.opts.add_option("depthmap_script_save_ply", shared.OptionInfo(False, "Save additional PLY file with 3D inpainted mesh.", section=section))
+    shared.opts.add_option("depthmap_script_show_3d", shared.OptionInfo(True, "Enable showing 3D Meshes in output tab. (Experimental)", section=section))
+    shared.opts.add_option("depthmap_script_show_3d_inpaint", shared.OptionInfo(True, "Also show 3D Inpainted Mesh in 3D Mesh output tab. (Experimental)", section=section))
+    shared.opts.add_option("depthmap_script_mesh_maxsize", shared.OptionInfo(1024, "Max size for generating simple mesh.", section=section))
 
 def on_ui_tabs():
     with gr.Blocks(analytics_enabled=False) as depthmap_interface:
@@ -1113,34 +1152,45 @@ def on_ui_tabs():
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
 
 				# insert main panel
-                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model = main_ui_panel(True)
+                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model, gen_mesh, mesh_occlude, mesh_spherical = main_ui_panel(True)
 
             with gr.Column(variant='panel'):
-                with gr.Group():
-                    result_images = gr.Gallery(label='Output', show_label=False, elem_id=f"depthmap_gallery").style(grid=4)
-                with gr.Column():
-                    html_info_x = gr.HTML()
-                    html_info = gr.HTML()
+                with gr.Tabs(elem_id="mode_depthmap_output"):
+                    with gr.TabItem('Depth Output'):
 
-                # generate video
-                with gr.Accordion("Generate video from inpainted mesh.", open=False):
-                    depth_vid = gr.Video(interactive=False)
-                    with gr.Column():
-                        vid_html_info_x = gr.HTML()
-                        vid_html_info = gr.HTML()
-                    fn_mesh = gr.Textbox(label="Input Mesh (.ply | .obj)", **shared.hide_dirs, placeholder="A file on the same machine where the server is running.")
-                    with gr.Row():
-                        vid_numframes = gr.Textbox(label="Number of frames", value="300")
-                        vid_fps = gr.Textbox(label="Framerate", value="40")
-                        vid_format = gr.Dropdown(label="Format", choices=['mp4', 'webm'], value='mp4', type="index", elem_id="video_format")
-                        vid_ssaa = gr.Dropdown(label="SSAA", choices=['1', '2', '3', '4'], value='3', type="index", elem_id="video_ssaa")
-                    with gr.Row():
-                        vid_traj = gr.Dropdown(label="Trajectory", choices=['straight-line', 'double-straight-line', 'circle'], value='double-straight-line', type="index", elem_id="video_trajectory")
-                        vid_shift = gr.Textbox(label="Translate: x, y, z", value="-0.015, 0.0, -0.05")
-                        vid_border = gr.Textbox(label="Crop: top, left, bottom, right", value="0.03, 0.03, 0.05, 0.03")
-                        vid_dolly = gr.Checkbox(label="Dolly",value=False)
-                    with gr.Row():
-                        submit_vid = gr.Button('Generate Video', elem_id="depthmap_generatevideo", variant='primary')
+                        with gr.Group():
+                            result_images = gr.Gallery(label='Output', show_label=False, elem_id=f"depthmap_gallery").style(grid=4)
+                        with gr.Column():
+                            html_info_x = gr.HTML()
+                            html_info = gr.HTML()
+
+                    with gr.TabItem('3D Mesh'):
+                        with gr.Group():
+                            result_depthmesh = gr.Model3D(label="3d Mesh", clear_color=[1.0, 1.0, 1.0, 1.0])
+    
+                    with gr.TabItem('Generate video'):
+                        # generate video
+                        with gr.Group():
+                            with gr.Row():
+                                gr.Markdown("Generate video from inpainted(!) mesh.")
+                            with gr.Row():
+                                depth_vid = gr.Video(interactive=False)
+                            with gr.Column():
+                                vid_html_info_x = gr.HTML()
+                                vid_html_info = gr.HTML()
+                                fn_mesh = gr.Textbox(label="Input Mesh (.ply | .obj)", **shared.hide_dirs, placeholder="A file on the same machine where the server is running.")
+                            with gr.Row():
+                                vid_numframes = gr.Textbox(label="Number of frames", value="300")
+                                vid_fps = gr.Textbox(label="Framerate", value="40")
+                                vid_format = gr.Dropdown(label="Format", choices=['mp4', 'webm'], value='mp4', type="index", elem_id="video_format")
+                                vid_ssaa = gr.Dropdown(label="SSAA", choices=['1', '2', '3', '4'], value='3', type="index", elem_id="video_ssaa")
+                            with gr.Row():
+                                vid_traj = gr.Dropdown(label="Trajectory", choices=['straight-line', 'double-straight-line', 'circle'], value='double-straight-line', type="index", elem_id="video_trajectory")
+                                vid_shift = gr.Textbox(label="Translate: x, y, z", value="-0.015, 0.0, -0.05")
+                                vid_border = gr.Textbox(label="Crop: top, left, bottom, right", value="0.03, 0.03, 0.05, 0.03")
+                                vid_dolly = gr.Checkbox(label="Dolly", value=False, elem_classes="smalltxt")
+                            with gr.Row():
+                                submit_vid = gr.Button('Generate Video', elem_id="depthmap_generatevideo", variant='primary')
 
         def custom_depthmap_visibility(v):
             return custom_depthmap_row_0.update(visible=v)
@@ -1177,7 +1227,7 @@ def on_ui_tabs():
 				show_depth, 
 				show_heat,
 				gen_stereo,
-				stereo_mode_lr, stereo_mode_rl, stereo_mode_tb, stereo_mode_bt, stereo_mode_an,
+				stereo_modes,
 				stereo_divergence,
 				stereo_fill,
 				stereo_balance,
@@ -1193,11 +1243,13 @@ def on_ui_tabs():
 				vid_ssaa,
 				custom_depthmap, 
 				custom_depthmap_img,
-				depthmap_batch_reuse
+				depthmap_batch_reuse,
+				gen_mesh, mesh_occlude, mesh_spherical
             ],
             outputs=[
                 result_images,
 				fn_mesh,
+				result_depthmesh,
                 html_info_x,
                 html_info
             ]
@@ -1877,3 +1929,102 @@ def estimateboost(img, model, model_type, pix2pixmodel):
 
 	# output
 	return cv2.resize(imageandpatchs.estimation_updated_image, (input_resolution[1], input_resolution[0]), interpolation=cv2.INTER_CUBIC)
+
+def pano_depth_to_world_points(depth):
+    """
+    360 depth to world points
+    given 2D depth is an equirectangular projection of a spherical image
+    Treat depth as radius
+    longitude : -pi to pi
+    latitude : -pi/2 to pi/2
+    """
+
+    # Convert depth to radius
+    radius = depth.flatten()
+
+    lon = np.linspace(-np.pi, np.pi, depth.shape[1])
+    lat = np.linspace(-np.pi/2, np.pi/2, depth.shape[0])
+
+    lon, lat = np.meshgrid(lon, lat)
+    lon = lon.flatten()
+    lat = lat.flatten()
+
+    # Convert to cartesian coordinates
+    x = radius * np.cos(lat) * np.cos(lon)
+    y = radius * np.cos(lat) * np.sin(lon)
+    z = radius * np.sin(lat)
+
+    pts3d = np.stack([x, y, z], axis=1)
+
+    return pts3d
+
+def depth_edges_mask(depth):
+    """Returns a mask of edges in the depth map.
+    Args:
+    depth: 2D numpy array of shape (H, W) with dtype float32.
+    Returns:
+    mask: 2D numpy array of shape (H, W) with dtype bool.
+    """
+    # Compute the x and y gradients of the depth map.
+    depth_dx, depth_dy = np.gradient(depth)
+    # Compute the gradient magnitude.
+    depth_grad = np.sqrt(depth_dx ** 2 + depth_dy ** 2)
+    # Compute the edge mask.
+    mask = depth_grad > 0.05
+    return mask
+
+def create_mesh(image, depth, keep_edges=False, spherical=False):
+	maxsize = 1024
+	if hasattr(opts, 'depthmap_script_mesh_maxsize'):
+		maxsize = opts.depthmap_script_mesh_maxsize
+
+	# limit the size of the input image
+	image.thumbnail((maxsize, maxsize))  
+
+	if not spherical:
+		pts3d = depth_to_points(depth[None])
+	else:
+		pts3d = pano_depth_to_world_points(depth)
+
+	pts3d = pts3d.reshape(-1, 3)
+
+	verts = pts3d.reshape(-1, 3)
+	image = np.array(image)
+	if keep_edges:
+		triangles = create_triangles(image.shape[0], image.shape[1])
+	else:
+		triangles = create_triangles(image.shape[0], image.shape[1], mask=~depth_edges_mask(depth))
+	colors = image.reshape(-1, 3)
+
+	return verts, colors, triangles
+
+def save_mesh_obj(fn, vertices, colors, triangles):
+		
+		mesh = trimesh.Trimesh(vertices=vertices, faces=triangles, vertex_colors=colors)
+		#glb_file = tempfile.NamedTemporaryFile(suffix='.obj', delete=False)
+		#glb_path = glb_file.name
+		mesh.export(fn)
+
+	# with open(fn, 'w') as obj_fi:
+	# 	obj_fi.write('# depthmap-script\n')
+	# 	obj_fi.write('# vertices ' + str(len(vertices)) + '\n')
+	# 	obj_fi.write('# faces ' + str(len(triangles)) + '\n')
+	# 	obj_fi.write('o depthmap\n')
+
+	# 	for i, v in enumerate(vertices):
+	# 		x, y, z = v
+	# 		r, g, b = colors[i]
+	# 		r = r / 255.0
+	# 		g = g / 255.0
+	# 		b = b / 255.0
+	# 		obj_fi.write(f"v {x:.8f} {y:.8f} {z:.8f} {r:.4f} {g:.4f} {b:.4f}\n")
+	# 		i = i + 1
+
+	# 	for face in triangles:
+	# 		a, b, c = face
+	# 		a = a + 1
+	# 		b = b + 1
+	# 		c = c + 1
+	# 		obj_fi.write(f"f {a} {b} {c}\n")
+
+	# 	obj_fi.close()

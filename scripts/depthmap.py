@@ -76,6 +76,11 @@ global video_mesh_data, video_mesh_fn
 video_mesh_data = None
 video_mesh_fn = None
 
+global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type
+depthmap_model_depth = None
+depthmap_model_pix2pix = None
+depthmap_model_type = None
+
 def main_ui_panel(is_depth_tab):
 	with gr.Blocks():
 		with gr.Row():
@@ -313,9 +318,17 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 	os.makedirs(model_dir, exist_ok=True)
 	os.makedirs('./models/pix2pix', exist_ok=True)
 
+	global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type
+	loadmodels = True
+	if hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels:
+		loadmodels = False
+		if depthmap_model_type != model_type or depthmap_model_depth == None:
+			del depthmap_model_depth
+			loadmodels = True
+
 	outimages = []
 	try:
-		if not (custom_depthmap and custom_depthmap_img != None):
+		if loadmodels and not (custom_depthmap and custom_depthmap_img != None):
 			print("Loading model weights from ", end=" ")
 
 			#"res101"
@@ -440,9 +453,9 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				conf.img_size = [net_width, net_height]
 				model = build_model(conf)
 
-
-			# load merge network if boost enabled
-			if boost:
+			pix2pixmodel = None
+			# load merge network if boost enabled or keepmodels enabled
+			if boost or (hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels):
 				pix2pixmodel_path = './models/pix2pix/latest_net_G.pth'
 				if not os.path.exists(pix2pixmodel_path):
 					download_file(pix2pixmodel_path,"https://sfu.ca/~yagiz/CVPR21/latest_net_G.pth")
@@ -466,6 +479,17 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 					model = model.half()
 
 			model.to(device)
+
+			depthmap_model_depth = model
+			depthmap_model_pix2pix = pix2pixmodel
+			depthmap_model_type = model_type
+
+		if not loadmodels:
+			model = depthmap_model_depth
+			pix2pixmodel = depthmap_model_pix2pix
+			if device == torch.device("cuda"):
+				model = model.to(device)
+
 
 		print("Computing depthmap(s) ..")
 		inpaint_imgs = []
@@ -695,10 +719,13 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			print(e)
 
 	finally:
-		if 'model' in locals():
-			del model
-		if boost and 'pix2pixmodel' in locals():
-			del pix2pixmodel
+		if not (hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels):
+			if 'model' in locals():
+				del model
+			if boost and 'pix2pixmodel' in locals():
+				del pix2pixmodel
+		else:
+			model.to(devices.cpu)
 
 		gc.collect()
 		devices.torch_gc()
@@ -1132,8 +1159,19 @@ def run_generate(depthmap_mode,
 
 	return outputs, mesh_fi, meshsimple_fi, plaintext_to_html('info'), ''
 
+def unload_models(model, log: bool = True):
+	global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type
+	depthmap_model_type = -1
+	del depthmap_model_depth
+	del depthmap_model_pix2pix
+	depthmap_model_depth = None
+	depthmap_model_pix2pix = None
+	gc.collect()
+	devices.torch_gc()
+
 def on_ui_settings():
     section = ('depthmap-script', "Depthmap extension")
+    shared.opts.add_option("depthmap_script_keepmodels", shared.OptionInfo(False, "Keep depth models loaded.", section=section))
     shared.opts.add_option("depthmap_script_boost_rmax", shared.OptionInfo(1600, "Maximum wholesize for boost (Rmax)", section=section))
     shared.opts.add_option("depthmap_script_save_ply", shared.OptionInfo(False, "Save additional PLY file with 3D inpainted mesh.", section=section))
     shared.opts.add_option("depthmap_script_show_3d", shared.OptionInfo(True, "Enable showing 3D Meshes in output tab. (Experimental)", section=section))
@@ -1165,6 +1203,8 @@ def on_ui_tabs():
 
 				# insert main panel
                 compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model, gen_mesh, mesh_occlude, mesh_spherical = main_ui_panel(True)
+
+                unloadmodels = gr.Button('Unload models', elem_id="depthmap_unloadmodels")
 
             with gr.Column(variant='panel'):
                 with gr.Tabs(elem_id="mode_depthmap_output"):
@@ -1212,6 +1252,11 @@ def on_ui_tabs():
             outputs=[custom_depthmap_row_0]
         )
 
+        unloadmodels.click(
+            fn=unload_models,
+            inputs=[],
+            outputs=[]
+        )
 
         submit.click(
             fn=wrap_gradio_gpu_call(run_generate),

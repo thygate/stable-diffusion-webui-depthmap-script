@@ -33,7 +33,6 @@ import copy
 import platform
 import vispy
 import trimesh
-import tempfile
 
 sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
@@ -70,7 +69,8 @@ from rembg import new_session, remove
 
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap v0.3.11"
+scriptname = "DepthMap"
+scriptversion = "v0.3.11"
 
 global video_mesh_data, video_mesh_fn
 video_mesh_data = None
@@ -293,7 +293,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return [], []
 	
-	print('\n%s' % scriptname)
+	print(f"\n{scriptname} {scriptversion}")
 
 	# unload sd model
 	shared.sd_model.cond_stage_model.to(devices.cpu)

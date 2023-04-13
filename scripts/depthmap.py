@@ -72,6 +72,10 @@ whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
 scriptname = "DepthMap v0.3.11"
 
+global video_mesh_data, video_mesh_fn
+video_mesh_data = None
+video_mesh_fn = None
+
 def main_ui_panel(is_depth_tab):
 	with gr.Blocks():
 		with gr.Row():
@@ -904,7 +908,13 @@ def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border,
 		vispy.use(app='egl')
 
 	# read ply
-	verts, colors, faces, Height, Width, hFov, vFov, mean_loc_depth = read_mesh(mesh_fi)
+	global video_mesh_data, video_mesh_fn
+	if video_mesh_fn == None or video_mesh_fn != mesh_fi:
+		del video_mesh_data
+		video_mesh_fn = mesh_fi
+		video_mesh_data = read_mesh(mesh_fi)
+		
+	verts, colors, faces, Height, Width, hFov, vFov, mean_loc_depth = video_mesh_data
 
 	original_w = output_w = W = Width
 	original_h = output_h = H = Height
@@ -1138,7 +1148,7 @@ def on_ui_tabs():
                 with gr.Tabs(elem_id="mode_depthmap"):
                     with gr.TabItem('Single Image'):
                         with gr.Row():
-                            depthmap_image = gr.Image(label="Source", source="upload", interactive=True, type="pil")
+                            depthmap_image = gr.Image(label="Source", source="upload", interactive=True, type="pil", elem_id="depthmap_input_image")
                             with gr.Group(visible=False) as custom_depthmap_row_0:
                                 custom_depthmap_img = gr.File(label="Custom DepthMap", file_count="single", interactive=True, type="file")
                         custom_depthmap = gr.Checkbox(label="Use custom DepthMap",value=False)

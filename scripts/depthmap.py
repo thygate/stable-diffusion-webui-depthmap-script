@@ -1176,7 +1176,7 @@ def on_ui_settings():
     shared.opts.add_option("depthmap_script_save_ply", shared.OptionInfo(False, "Save additional PLY file with 3D inpainted mesh.", section=section))
     shared.opts.add_option("depthmap_script_show_3d", shared.OptionInfo(True, "Enable showing 3D Meshes in output tab. (Experimental)", section=section))
     shared.opts.add_option("depthmap_script_show_3d_inpaint", shared.OptionInfo(True, "Also show 3D Inpainted Mesh in 3D Mesh output tab. (Experimental)", section=section))
-    shared.opts.add_option("depthmap_script_mesh_maxsize", shared.OptionInfo(1024, "Max size for generating simple mesh.", section=section))
+    shared.opts.add_option("depthmap_script_mesh_maxsize", shared.OptionInfo(2048, "Max size for generating simple mesh.", section=section))
 
 def on_ui_tabs():
     with gr.Blocks(analytics_enabled=False) as depthmap_interface:

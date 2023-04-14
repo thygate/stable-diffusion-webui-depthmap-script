@@ -19,6 +19,7 @@ from operator import getitem
 from tqdm import trange
 from functools import reduce
 from skimage.transform import resize
+from trimesh import transformations
 
 import sys
 import torch, gc
@@ -33,6 +34,7 @@ import copy
 import platform
 import vispy
 import trimesh
+import math
 
 sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
@@ -727,8 +729,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 					# offset
 					depthi = depthi + 1
 
-				vertices, colors, faces = create_mesh(inputimages[count], depthi, keep_edges=not mesh_occlude, spherical=mesh_spherical)
-				save_mesh_obj(meshsimple_fi, vertices, colors, faces)
+				mesh = create_mesh(inputimages[count], depthi, keep_edges=not mesh_occlude, spherical=mesh_spherical)
+				save_mesh_obj(meshsimple_fi, mesh)
 
 		print("Done.")
 
@@ -2086,34 +2088,17 @@ def create_mesh(image, depth, keep_edges=False, spherical=False):
 		triangles = create_triangles(image.shape[0], image.shape[1], mask=~depth_edges_mask(depth))
 	colors = image.reshape(-1, 3)
 
-	return verts, colors, triangles
+	mesh = trimesh.Trimesh(vertices=verts, faces=triangles, vertex_colors=colors)
 
-def save_mesh_obj(fn, vertices, colors, triangles):
-		
-		mesh = trimesh.Trimesh(vertices=vertices, faces=triangles, vertex_colors=colors)
+	# rotate 90deg over X when spherical
+	if spherical:
+		angle = math.pi / 2
+		direction = [1, 0, 0]
+		center = [0, 0, 0]
+		rot_matrix = transformations.rotation_matrix(angle, direction, center)
+		mesh.apply_transform(rot_matrix)
+
+	return mesh
+
+def save_mesh_obj(fn, mesh):
 		mesh.export(fn)
-
-	# with open(fn, 'w') as obj_fi:
-	# 	obj_fi.write('# depthmap-script\n')
-	# 	obj_fi.write('# vertices ' + str(len(vertices)) + '\n')
-	# 	obj_fi.write('# faces ' + str(len(triangles)) + '\n')
-	# 	obj_fi.write('o depthmap\n')
-
-	# 	for i, v in enumerate(vertices):
-	# 		x, y, z = v
-	# 		r, g, b = colors[i]
-	# 		r = r / 255.0
-	# 		g = g / 255.0
-	# 		b = b / 255.0
-	# 		obj_fi.write(f"v {x:.8f} {y:.8f} {z:.8f} {r:.4f} {g:.4f} {b:.4f}\n")
-	# 		i = i + 1
-
-	# 	for face in triangles:
-	# 		a, b, c = face
-	# 		a = a + 1
-	# 		b = b + 1
-	# 		c = c + 1
-	# 		obj_fi.write(f"f {a} {b} {c}\n")
-
-	# 	obj_fi.close()
-	

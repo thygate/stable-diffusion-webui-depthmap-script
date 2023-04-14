@@ -76,10 +76,11 @@ global video_mesh_data, video_mesh_fn
 video_mesh_data = None
 video_mesh_fn = None
 
-global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type
+global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type, depthmap_deviceidx
 depthmap_model_depth = None
 depthmap_model_pix2pix = None
 depthmap_model_type = None
+depthmap_deviceidx = None
 
 def main_ui_panel(is_depth_tab):
 	with gr.Blocks():
@@ -321,11 +322,11 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 	os.makedirs(model_dir, exist_ok=True)
 	os.makedirs('./models/pix2pix', exist_ok=True)
 
-	global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type
+	global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type, depthmap_device_idx
 	loadmodels = True
 	if hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels:
 		loadmodels = False
-		if depthmap_model_type != model_type or depthmap_model_depth == None:
+		if depthmap_model_type != model_type or depthmap_model_depth == None or depthmap_device_idx != compute_device:
 			del depthmap_model_depth
 			depthmap_model_depth = None
 			loadmodels = True
@@ -487,6 +488,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			depthmap_model_depth = model
 			depthmap_model_pix2pix = pix2pixmodel
 			depthmap_model_type = model_type
+			depthmap_device_idx = compute_device
 
 		if not loadmodels:
 			model = depthmap_model_depth
@@ -710,7 +712,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				# try to map output to sensible values for non zoedepth models, boost, or custom maps
 				if model_type < 7 or boost or (custom_depthmap and custom_depthmap_img != None):
 					# invert if midas
-					if model_type > 0 or custom_depthmap:
+					if model_type > 0 or ((custom_depthmap and custom_depthmap_img != None) and not invert_depth):
 						depthi = depth_max - depthi + depth_min
 						depth_max = depthi.max()
 						depth_min = depthi.min()
@@ -1189,6 +1191,9 @@ def unload_models():
 	gc.collect()
 	devices.torch_gc()
 
+def clear_mesh():
+	return None
+
 def on_ui_settings():
     section = ('depthmap-script', "Depthmap extension")
     shared.opts.add_option("depthmap_script_keepmodels", shared.OptionInfo(False, "Keep depth models loaded.", section=section))
@@ -1239,6 +1244,7 @@ def on_ui_tabs():
                     with gr.TabItem('3D Mesh'):
                         with gr.Group():
                             result_depthmesh = gr.Model3D(label="3d Mesh", clear_color=[1.0, 1.0, 1.0, 1.0])
+                            clearmesh = gr.Button('Clear')
     
                     with gr.TabItem('Generate video'):
                         # generate video
@@ -1276,6 +1282,12 @@ def on_ui_tabs():
             fn=unload_models,
             inputs=[],
             outputs=[]
+        )
+	
+        clearmesh.click(
+            fn=clear_mesh,
+            inputs=[],
+            outputs=[result_depthmesh]
         )
 
         submit.click(

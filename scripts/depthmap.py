@@ -302,6 +302,9 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 	meshsimple_fi = None
 	mesh_fi = None
 
+	resize_mode = "minimal"
+	normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
 	# init torch device
 	global device
 	if compute_device == 0:
@@ -324,6 +327,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 		loadmodels = False
 		if depthmap_model_type != model_type or depthmap_model_depth == None:
 			del depthmap_model_depth
+			depthmap_model_depth = None
 			loadmodels = True
 
 	outimages = []
@@ -702,10 +706,24 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				meshsimple_fi = get_uniquefn(outpath, basename, 'obj')
 				meshsimple_fi = os.path.join(outpath, meshsimple_fi + '_simple.obj')
 
-				# try to map outputs other than zoe to sensible values 
 				depthi = prediction
-				#if not ((model_type == 0) or (model_type >= 7)):
-				#	depthi = np.bitwise_not(depthi)
+				# try to map output to sensible values for non zoedepth models, boost, or custom maps
+				if model_type < 7 or boost or (custom_depthmap and custom_depthmap_img != None):
+					# invert if midas
+					if model_type > 0 or custom_depthmap:
+						depthi = depth_max - depthi + depth_min
+						depth_max = depthi.max()
+						depth_min = depthi.min()
+					# make positive
+					if depth_min < 0:
+						depthi = depthi - depth_min
+						depth_max = depthi.max()
+						depth_min = depthi.min()
+					# scale down 
+					if depthi.max() > 10:
+						depthi = 4 * (depthi - depth_min) / (depth_max - depth_min)
+					# offset
+					depthi = depthi + 1
 
 				vertices, colors, faces = create_mesh(inputimages[count], depthi, keep_edges=not mesh_occlude, spherical=mesh_spherical)
 				save_mesh_obj(meshsimple_fi, vertices, colors, faces)
@@ -725,7 +743,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			if boost and 'pix2pixmodel' in locals():
 				del pix2pixmodel
 		else:
-			model.to(devices.cpu)
+			if 'model' in locals():
+				model.to(devices.cpu)
 
 		gc.collect()
 		devices.torch_gc()
@@ -1160,7 +1179,7 @@ def run_generate(depthmap_mode,
 
 	return outputs, mesh_fi, meshsimple_fi, plaintext_to_html('info'), ''
 
-def unload_models(model, log: bool = True):
+def unload_models():
 	global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type
 	depthmap_model_type = -1
 	del depthmap_model_depth
@@ -2060,8 +2079,6 @@ def create_mesh(image, depth, keep_edges=False, spherical=False):
 def save_mesh_obj(fn, vertices, colors, triangles):
 		
 		mesh = trimesh.Trimesh(vertices=vertices, faces=triangles, vertex_colors=colors)
-		#glb_file = tempfile.NamedTemporaryFile(suffix='.obj', delete=False)
-		#glb_path = glb_file.name
 		mesh.export(fn)
 
 	# with open(fn, 'w') as obj_fi:

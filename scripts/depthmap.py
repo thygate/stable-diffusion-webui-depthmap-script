@@ -539,7 +539,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				if batchdepthfn != None:
 					custom_depthmap_img = batchdepthfn
 				# use custom depthmap
-				dimg = Image.open(custom_depthmap_img)
+				dimg = Image.open(os.path.abspath(custom_depthmap_img.name))
 				# resize if not same size as input
 				if dimg.width != inputimages[count].width or dimg.height != inputimages[count].height:
 					dimg = dimg.resize((inputimages[count].width, inputimages[count].height), Image.Resampling.LANCZOS)
@@ -1135,7 +1135,7 @@ def run_generate(depthmap_mode,
 	if depthmap_mode == 1:
 		#convert file to pillow image
 		for img in image_batch:
-			image = Image.open(img)
+			image = Image.open(os.path.abspath(img.name))
 			imageArr.append(image)
 			imageNameArr.append(os.path.splitext(img.orig_name)[0])
 	elif depthmap_mode == 2:

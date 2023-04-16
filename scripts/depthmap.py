@@ -1246,7 +1246,9 @@ def on_ui_tabs():
                     with gr.TabItem('3D Mesh'):
                         with gr.Group():
                             result_depthmesh = gr.Model3D(label="3d Mesh", clear_color=[1.0, 1.0, 1.0, 1.0])
-                            clearmesh = gr.Button('Clear')
+                            with gr.Row():
+                                #loadmesh = gr.Button('Load')
+                                clearmesh = gr.Button('Clear')
     
                     with gr.TabItem('Generate video'):
                         # generate video

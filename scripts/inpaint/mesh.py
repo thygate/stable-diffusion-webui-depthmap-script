@@ -2509,7 +2509,8 @@ def output_3d_photo(verts, colors, faces, Height, Width, hFov, vFov, tgt_poses, 
                 o_b = int(H_c * config['crop_border'][2])
                 o_r = int(W_c * config['crop_border'][3])
                 img = img[o_t:H_c-o_b, o_l:W_c-o_r]
-                img = cv2.resize(img, (W_c, H_c), interpolation=cv2.INTER_CUBIC)
+                #bty: fix crop size
+                #img = cv2.resize(img, (W_c, H_c), interpolation=cv2.INTER_CUBIC)
 
             """
             img = cv2.resize(img, (int(img.shape[1] / init_factor), int(img.shape[0] / init_factor)), interpolation=cv2.INTER_CUBIC)

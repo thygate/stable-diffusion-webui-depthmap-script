@@ -517,7 +517,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				if inputnames[count] is not None:
 					p = Path(inputnames[count])
 					basename = p.stem
-					if depthmap_batch_reuse:
+					if depthmap_batch_reuse and outpath != "outputs/extras-images":
 						batchdepthfn = os.path.join(outpath, basename + '-0000.' + opts.samples_format)
 						if not os.path.isfile(batchdepthfn):
 							batchdepthfn = None

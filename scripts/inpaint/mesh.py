@@ -271,7 +271,7 @@ def reassign_floating_island(mesh, info_on_pix, image, depth):
     _, label_lost_map = cv2.connectedComponents(lost_map.astype(np.uint8), connectivity=4)
     mask = np.zeros((H, W))
     mask[bord_up:bord_down, bord_left:bord_right] = 1
-    label_lost_map = (label_lost_map * mask).astype(np.int)
+    label_lost_map = (label_lost_map * mask).astype(int)
 
     for i in range(1, label_lost_map.max()+1):
         lost_xs, lost_ys = np.where(label_lost_map == i)
@@ -966,8 +966,8 @@ def context_and_holes(mesh, edge_ccs, config, specific_edge_id, specific_edge_lo
     mask_ccs = copy.deepcopy(edge_ccs)
     forbidden_len = 3
     forbidden_map = np.ones((mesh.graph['H'] - forbidden_len, mesh.graph['W'] - forbidden_len))
-    forbidden_map = np.pad(forbidden_map, ((forbidden_len, forbidden_len), (forbidden_len, forbidden_len)), mode='constant').astype(np.bool)
-    cur_tmp_mask_map = np.zeros_like(forbidden_map).astype(np.bool)
+    forbidden_map = np.pad(forbidden_map, ((forbidden_len, forbidden_len), (forbidden_len, forbidden_len)), mode='constant').astype(bool)
+    cur_tmp_mask_map = np.zeros_like(forbidden_map).astype(bool)
     #passive_background = 10 if 10 is not None else background_thickness
     #passive_context = 1 if 1 is not None else context_thickness
     passive_background = 10 #if 10 is not None else background_thickness
@@ -988,7 +988,7 @@ def context_and_holes(mesh, edge_ccs, config, specific_edge_id, specific_edge_lo
                 tmp_mask_nodes = copy.deepcopy(mask_ccs[edge_id])
                 tmp_intersect_nodes = []
                 tmp_intersect_context_nodes = []
-                mask_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=np.bool)
+                mask_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=bool)
                 context_depth = np.zeros((mesh.graph['H'], mesh.graph['W']))
                 comp_cnt_depth = np.zeros((mesh.graph['H'], mesh.graph['W']))
                 connect_map = np.zeros((mesh.graph['H'], mesh.graph['W']))
@@ -1015,7 +1015,7 @@ def context_and_holes(mesh, edge_ccs, config, specific_edge_id, specific_edge_lo
                                 connect_map[xx[0], xx[1]] = xx[2]
                 tmp_context_nodes = [*context_ccs[edge_id]]
                 tmp_erode.append([*context_ccs[edge_id]])
-                context_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=np.bool)
+                context_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=bool)
                 if (context_map.astype(np.uint8) * mask_map.astype(np.uint8)).max() > 0:
                     import pdb; pdb.set_trace()
                 for node in tmp_context_nodes:
@@ -1025,14 +1025,14 @@ def context_and_holes(mesh, edge_ccs, config, specific_edge_id, specific_edge_lo
                 if (context_map.astype(np.uint8) * mask_map.astype(np.uint8)).max() > 0:
                     import pdb; pdb.set_trace()
                 tmp_intouched_nodes = [*intouched_ccs[edge_id]]
-                intouched_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=np.bool)
+                intouched_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=bool)
                 for node in tmp_intouched_nodes: intouched_map[node[0], node[1]] = True
                 intouched_map[mask_map == True] = False
                 tmp_redundant_nodes = set()
                 tmp_noncont_nodes = set()
-                noncont_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=np.bool)
-                intersect_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=np.bool)
-                intersect_context_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=np.bool)
+                noncont_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=bool)
+                intersect_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=bool)
+                intersect_context_map = np.zeros((mesh.graph['H'], mesh.graph['W']), dtype=bool)
             if i > passive_background and inpaint_iter == 0:
                 new_tmp_intersect_nodes = None
                 new_tmp_intersect_nodes = []
@@ -1311,9 +1311,9 @@ def context_and_holes(mesh, edge_ccs, config, specific_edge_id, specific_edge_lo
                     tmp_context_nodes = copy.deepcopy(ecnt_cc)
                     tmp_invalid_context_nodes = copy.deepcopy(invalid_extend_edge_ccs[ecnt_id])
                     tmp_mask_nodes = copy.deepcopy(accomp_extend_context_ccs[ecnt_id])
-                    tmp_context_map = np.zeros((mesh.graph['H'], mesh.graph['W'])).astype(np.bool)
-                    tmp_mask_map = np.zeros((mesh.graph['H'], mesh.graph['W'])).astype(np.bool)
-                    tmp_invalid_context_map = np.zeros((mesh.graph['H'], mesh.graph['W'])).astype(np.bool)
+                    tmp_context_map = np.zeros((mesh.graph['H'], mesh.graph['W'])).astype(bool)
+                    tmp_mask_map = np.zeros((mesh.graph['H'], mesh.graph['W'])).astype(bool)
+                    tmp_invalid_context_map = np.zeros((mesh.graph['H'], mesh.graph['W'])).astype(bool)
                     for node in tmp_mask_nodes:
                         tmp_mask_map[node[0], node[1]] = True
                     for node in context_ccs[ecnt_id]:

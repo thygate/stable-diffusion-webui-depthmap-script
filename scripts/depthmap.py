@@ -539,7 +539,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				if batchdepthfn != None:
 					custom_depthmap_img = batchdepthfn
 				# use custom depthmap
-				dimg = Image.open(os.path.abspath(custom_depthmap_img.name))
+				dimg = Image.open(os.path.abspath(custom_depthmap_img))
 				# resize if not same size as input
 				if dimg.width != inputimages[count].width or dimg.height != inputimages[count].height:
 					dimg = dimg.resize((inputimages[count].width, inputimages[count].height), Image.Resampling.LANCZOS)

@@ -405,9 +405,9 @@ def extrapolate(global_mesh,
     fpath_ids = fpath_ids[1:] if fpath_ids.shape[0] > 0 and fpath_ids[0] == -1 else []
     fpath_real_id_map = np.zeros_like(global_fpath_map) - 1
     for fpath_id in fpath_ids:
-        fpath_real_id = np.unique(((global_fpath_map == fpath_id).astype(np.int) * (other_edge_with_id + 1)) - 1)
+        fpath_real_id = np.unique(((global_fpath_map == fpath_id).astype(int) * (other_edge_with_id + 1)) - 1)
         fpath_real_id = fpath_real_id[1:] if fpath_real_id.shape[0] > 0 and fpath_real_id[0] == -1 else []
-        fpath_real_id = fpath_real_id.astype(np.int)
+        fpath_real_id = fpath_real_id.astype(int)
         fpath_real_id = np.bincount(fpath_real_id).argmax()
         fpath_real_id_map[global_fpath_map == fpath_id] = fpath_real_id
     nxs, nys = np.where((fpath_map > -1))

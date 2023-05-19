@@ -1,0 +1,19 @@
+Since commit 110549b2 this extension bundles some code from other repositories.
+This was done to prevent possible upstream breakage and allow fixing breakage quicker.
+This file provides information about the original location of the code.
+*** Some of the bundled code was already modified. ***
+
+dmidas
+https://github.com/isl-org/MiDaS/tree/master/midas/
+
+dzoedepth
+https://github.com/isl-org/ZoeDepth/tree/main/zoedepth/
+
+inpaint
+https://github.com/vt-vl-lab/3d-photo-inpainting/
+
+lib
+https://github.com/aim-uofa/AdelaiDepth/tree/main/LeReS/Minist_Test/lib/
+
+pix2pix
+https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/

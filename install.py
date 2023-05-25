@@ -15,11 +15,12 @@ def ensure(module_name, min_version=None):
     if launch.is_installed(module_name):
         if min_version is None or Version(importlib_metadata.version(module_name)) >= Version(min_version):
             return
-    cmd = f'install "{module_name}>={min_version}"' if min_version is not None else f'install {module_name}'
-    msg = f'{module_name} {min_version + " " if min_version is not None else ""}requirement for depthmap script'
+    requirement = f'{module_name}>={min_version}' if min_version is not None else module_name
+    cmd = f'install "{requirement}"'
+    msg = f'{requirement} requirement for depthmap script'
     launch.run_pip(cmd, msg)
 
-if not launch.is_installed("timm"): #0.6.7
+if not launch.is_installed("timm"): #0.6.7  #  For midas
     launch.run_pip('install --force-reinstall "timm==0.6.12"', "timm requirement for depthmap script")
 
 ensure('matplotlib')

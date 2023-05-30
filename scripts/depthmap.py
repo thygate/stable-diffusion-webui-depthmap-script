@@ -35,6 +35,7 @@ import platform
 import vispy
 import trimesh
 import math
+import subprocess
 
 sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
 
@@ -83,6 +84,15 @@ depthmap_model_depth = None
 depthmap_model_pix2pix = None
 depthmap_model_type = None
 depthmap_deviceidx = None
+
+def get_commit_hash():
+	try:
+		hash = subprocess.check_output([os.environ.get('GIT', "git"), "rev-parse", "HEAD"], shell=False, encoding='utf8').strip()
+		hash = hash[0:8]
+		return hash
+	except Exception:
+		return "<none>"
+commit_hash = get_commit_hash()
 
 def main_ui_panel(is_depth_tab):
 	with gr.Blocks():
@@ -296,7 +306,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return [], []
 	
-	print(f"\n{scriptname} {scriptversion}")
+	print(f"\n{scriptname} {scriptversion} ({commit_hash})")
 
 	# unload sd model
 	shared.sd_model.cond_stage_model.to(devices.cpu)
@@ -510,17 +520,22 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 
 			# filename
 			basename = 'depthmap'
-			batchdepthfn = None
-			# filenames in batch mode
-			if inputnames is not None:
+
+			# figuring out the name of custom DepthMap
+			custom_depthmap_fn = None  # None means that DepthMap should be computed
+			# find filename if in the single image mode
+			if custom_depthmap and custom_depthmap_img is not None:
+				custom_depthmap_fn = custom_depthmap_img.name
+			# find filename if in batch mode
+			if inputnames is not None and depthmap_batch_reuse:
 				save_depth = True
 				if inputnames[count] is not None:
 					p = Path(inputnames[count])
 					basename = p.stem
-					if depthmap_batch_reuse and outpath != opts.outdir_extras_samples:
-						batchdepthfn = os.path.join(outpath, basename + '-0000.' + opts.samples_format)
-						if not os.path.isfile(batchdepthfn):
-							batchdepthfn = None
+					if outpath != opts.outdir_extras_samples:
+						custom_depthmap_fn = os.path.join(outpath, basename + '-0000.' + opts.samples_format)
+						if not os.path.isfile(custom_depthmap_fn):
+							custom_depthmap_fn = None
 
 			# override net size
 			if (match_size):
@@ -535,11 +550,9 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			img = cv2.cvtColor(np.asarray(inputimages[count]), cv2.COLOR_BGR2RGB) / 255.0
 
 			skipInvertAndSave = False
-			if (custom_depthmap and custom_depthmap_img != None) or batchdepthfn != None:
-				if batchdepthfn != None:
-					custom_depthmap_img = batchdepthfn
+			if custom_depthmap_fn is not None:
 				# use custom depthmap
-				dimg = Image.open(os.path.abspath(custom_depthmap_img.name))
+				dimg = Image.open(os.path.abspath(custom_depthmap_fn))
 				# resize if not same size as input
 				if dimg.width != inputimages[count].width or dimg.height != inputimages[count].height:
 					dimg = dimg.resize((inputimages[count].width, inputimages[count].height), Image.Resampling.LANCZOS)

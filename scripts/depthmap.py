@@ -34,10 +34,12 @@ import copy
 import platform
 import vispy
 import trimesh
+import os
 import math
 import subprocess
 
-sys.path.append('extensions/stable-diffusion-webui-depthmap-script/scripts')
+script_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(script_dir)
 
 from stereoimage_generation import create_stereoimages
 

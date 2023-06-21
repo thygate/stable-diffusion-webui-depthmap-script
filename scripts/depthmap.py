@@ -181,6 +181,18 @@ def main_ui_panel(is_depth_tab):
 		gen_normal = gr.Checkbox(label="Generate Normalmap (hidden! api only)", value=False, visible=False)
 
 
+		# Invert_depthmap must not be used with gen_stereo - otherwise stereo images look super-wrong
+		gen_stereo.change(
+			fn=lambda a, b: False if b else a,
+			inputs=[invert_depth, gen_stereo],
+			outputs=[invert_depth]
+		)
+		gen_stereo.change(
+			fn=lambda a, b: invert_depth.update(interactive = not b),
+			inputs=[invert_depth, gen_stereo],
+			outputs=[invert_depth]
+		)
+
 		clipthreshold_far.change(
 			fn=lambda a, b: a if b < a else b,
 			inputs=[clipthreshold_far, clipthreshold_near],

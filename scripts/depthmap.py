@@ -79,7 +79,7 @@ from rembg import new_session, remove
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
 scriptname = "DepthMap"
-scriptversion = "v0.3.11"
+scriptversion = "v0.3.12"
 
 global video_mesh_data, video_mesh_fn
 video_mesh_data = None
@@ -676,14 +676,20 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 					if save_depth and processed is not None:
 						# only save 16 bit single channel image when PNG format is selected
 						if opts.samples_format == "png":
-							images.save_image(Image.fromarray(img_output), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
+							try:
+								images.save_image(Image.fromarray(img_output), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
+							except ValueError as ve:
+								if not 'image has wrong mode' in str(ve): raise ve
 						else:
 							images.save_image(Image.fromarray(img_output2), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
 					elif save_depth:
 						# from depth tab
 						# only save 16 bit single channel image when PNG format is selected
 						if opts.samples_format == "png":
-							images.save_image(Image.fromarray(img_output), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
+							try:
+								images.save_image(Image.fromarray(img_output), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
+							except ValueError as ve:
+								if not 'image has wrong mode' in str(ve): raise ve
 						else:
 							images.save_image(Image.fromarray(img_output2), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
 				else:

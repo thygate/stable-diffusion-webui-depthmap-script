@@ -38,10 +38,14 @@ import os
 import math
 import subprocess
 
+import pathlib
+import os
 script_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(script_dir)
+extension_dir = pathlib.Path(script_dir).parent
+sys.path.append(extension_dir)
 
-from stereoimage_generation import create_stereoimages
+
+from scripts.stereoimage_generation import create_stereoimages
 
 # midas imports
 from dmidas.dpt_depth import DPTDepthModel

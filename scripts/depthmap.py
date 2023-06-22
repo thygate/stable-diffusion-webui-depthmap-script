@@ -370,8 +370,13 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			if model_type == 0: 
 				model_path = f"{model_dir}/res101.pth"
 				print(model_path)
-				if not os.path.exists(model_path):
-					download_file(model_path,"https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download")
+				ensure_file_downloaded(
+					model_path,
+					["https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download",
+					 "https://huggingface.co/lllyasviel/Annotators/resolve/5bc80eec2b4fddbb/res101.pth",
+					 ],
+					"1d696b2ef3e8336b057d0c15bc82d2fecef821bfebe5ef9d7671a5ec5dde520b")
+				ensure_file_downloaded(model_path, "https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download")
 				if compute_device == 0:
 					checkpoint = torch.load(model_path)
 				else:
@@ -385,8 +390,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			if model_type == 1: 
 				model_path = f"{model_dir}/dpt_beit_large_512.pt"
 				print(model_path)
-				if not os.path.exists(model_path):
-					download_file(model_path,"https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_512.pt")
+				ensure_file_downloaded(model_path, "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_512.pt")
 				model = DPTDepthModel(
 					path=model_path,
 					backbone="beitl16_512",
@@ -400,8 +404,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			if model_type == 2: 
 				model_path = f"{model_dir}/dpt_beit_large_384.pt"
 				print(model_path)
-				if not os.path.exists(model_path):
-					download_file(model_path,"https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_384.pt")
+				ensure_file_downloaded(model_path, "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_384.pt")
 				model = DPTDepthModel(
 					path=model_path,
 					backbone="beitl16_384",
@@ -415,8 +418,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			if model_type == 3: 
 				model_path = f"{model_dir}/dpt_large-midas-2f21e586.pt"
 				print(model_path)
-				if not os.path.exists(model_path):
-					download_file(model_path,"https://github.com/intel-isl/DPT/releases/download/1_0/dpt_large-midas-2f21e586.pt")
+				ensure_file_downloaded(model_path, "https://github.com/intel-isl/DPT/releases/download/1_0/dpt_large-midas-2f21e586.pt")
 				model = DPTDepthModel(
 					path=model_path,
 					backbone="vitl16_384",
@@ -430,8 +432,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			elif model_type == 4: 
 				model_path = f"{model_dir}/dpt_hybrid-midas-501f0c75.pt"
 				print(model_path)
-				if not os.path.exists(model_path):
-					download_file(model_path,"https://github.com/intel-isl/DPT/releases/download/1_0/dpt_hybrid-midas-501f0c75.pt")
+				ensure_file_downloaded(model_path,"https://github.com/intel-isl/DPT/releases/download/1_0/dpt_hybrid-midas-501f0c75.pt")
 				model = DPTDepthModel(
 					path=model_path,
 					backbone="vitb_rn50_384",
@@ -445,8 +446,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			elif model_type == 5: 
 				model_path = f"{model_dir}/midas_v21-f6b98070.pt"
 				print(model_path)
-				if not os.path.exists(model_path):
-					download_file(model_path,"https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21-f6b98070.pt")
+				ensure_file_downloaded(model_path,"https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21-f6b98070.pt")
 				model = MidasNet(model_path, non_negative=True)
 				net_w, net_h = 384, 384
 				resize_mode="upper_bound"
@@ -458,8 +458,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			elif model_type == 6: 
 				model_path = f"{model_dir}/midas_v21_small-70d6b9c8.pt"
 				print(model_path)
-				if not os.path.exists(model_path):
-					download_file(model_path,"https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21_small-70d6b9c8.pt")
+				ensure_file_downloaded(model_path,"https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21_small-70d6b9c8.pt")
 				model = MidasNet_small(model_path, features=64, backbone="efficientnet_lite3", exportable=True, non_negative=True, blocks={'expand': True})
 				net_w, net_h = 256, 256
 				resize_mode="upper_bound"
@@ -491,9 +490,12 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 			pix2pixmodel = None
 			# load merge network if boost enabled or keepmodels enabled
 			if boost or (hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels):
-				pix2pixmodel_path = './models/pix2pix/latest_net_G.pth'
-				if not os.path.exists(pix2pixmodel_path):
-					download_file(pix2pixmodel_path,"https://sfu.ca/~yagiz/CVPR21/latest_net_G.pth")
+				# sfu.ca unfortunately is not very reliable, we use a mirror just in case
+				ensure_file_downloaded(
+					'./models/pix2pix/latest_net_G.pth',
+					["https://huggingface.co/lllyasviel/Annotators/blob/9a7d84251d487d11/latest_net_G.pth",
+					"https://sfu.ca/~yagiz/CVPR21/latest_net_G.pth"],
+					'50ec735d74ed6499562d898f41b49343e521808b8dae589aa3c2f5c9ac9f7462')
 				opt = TestOptions().parse()
 				if compute_device == 1:
 					opt.gpu_ids = [] # cpu mode
@@ -849,12 +851,9 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 		# create paths to model if not present
 		os.makedirs('./models/3dphoto/', exist_ok=True)
 
-		if not os.path.exists(edgemodel_path):
-			download_file(edgemodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/edge-model.pth")
-		if not os.path.exists(depthmodel_path):
-			download_file(depthmodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/depth-model.pth")
-		if not os.path.exists(colormodel_path):
-			download_file(colormodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/color-model.pth")
+		ensure_file_downloaded(edgemodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/edge-model.pth")
+		ensure_file_downloaded(depthmodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/depth-model.pth")
+		ensure_file_downloaded(colormodel_path,"https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/color-model.pth")
 		
 		print("Loading edge model ..")
 		depth_edge_model = Inpaint_Edge_Net(init_weights=True)
@@ -1423,12 +1422,22 @@ def batched_background_removal(inimages, model_name):
 	del background_removal_session
 	return outimages
 
-def download_file(filename, url):
-	print("Downloading", url, "to", filename)
-	torch.hub.download_url_to_file(url, filename)
-	# check if file exists
-	if not os.path.exists(filename):
-		raise RuntimeError('Download failed. Try again later or manually download the file to that location.')
+def ensure_file_downloaded(filename, url, sha256_hash_prefix=None):
+	# Do not check the hash every time - it is somewhat time-consuming
+	if os.path.exists(filename):
+		return
+
+	if type(url) is not list:
+		url = [url]
+	for cur_url in url:
+		try:
+			print("Downloading", cur_url, "to", filename)
+			torch.hub.download_url_to_file(cur_url, filename, sha256_hash_prefix)
+			if os.path.exists(filename):
+				return  # The correct model was downloaded, no need to try more
+		except:
+			pass
+	raise RuntimeError('Download failed. Try again later or manually download the file to that location.')
 
 def estimatezoedepth(img, model, w, h):
 	#x = transforms.ToTensor()(img).unsqueeze(0)

@@ -28,7 +28,7 @@ ensure('matplotlib')
 ensure('trimesh')
 
 ensure('numba', '0.57.0')
-ensure('vispy')
+ensure('vispy', '0.13.0')
 
 ensure('rembg')
 

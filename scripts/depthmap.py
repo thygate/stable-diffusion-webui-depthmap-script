@@ -317,6 +317,16 @@ class Script(scripts.Script):
 
 		return processed
 
+def unload_sd_model():
+	if shared.sd_model is not None:
+		shared.sd_model.cond_stage_model.to(devices.cpu)
+		shared.sd_model.first_stage_model.to(devices.cpu)
+
+def reload_sd_model():
+	if shared.sd_model is not None:
+		shared.sd_model.cond_stage_model.to(devices.device)
+		shared.sd_model.first_stage_model.to(devices.device)
+
 def run_depthmap(processed, outpath, inputimages, inputnames,
                  compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
                  background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img, depthmap_batch_reuse, gen_mesh, mesh_occlude, mesh_spherical):
@@ -326,9 +336,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 	
 	print(f"\n{scriptname} {scriptversion} ({commit_hash})")
 
-	# unload sd model
-	shared.sd_model.cond_stage_model.to(devices.cpu)
-	shared.sd_model.first_stage_model.to(devices.cpu)
+	unload_sd_model()
 
 	meshsimple_fi = None
 	mesh_fi = None
@@ -791,23 +799,14 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 
 		gc.collect()
 		devices.torch_gc()
-		# reload sd model
-		shared.sd_model.cond_stage_model.to(devices.device)
-		shared.sd_model.first_stage_model.to(devices.device)
-
-	
+		reload_sd_model()
 	try:
 		if inpaint:
-			# unload sd model
-			shared.sd_model.cond_stage_model.to(devices.cpu)
-			shared.sd_model.first_stage_model.to(devices.cpu)
-
+			unload_sd_model()
 			mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, fnExt, vid_ssaa, inpaint_vids)
 	
 	finally:
-		# reload sd model
-		shared.sd_model.cond_stage_model.to(devices.device)
-		shared.sd_model.first_stage_model.to(devices.device)
+		reload_sd_model()
 		print("All done.")
 
 	return outimages, mesh_fi, meshsimple_fi

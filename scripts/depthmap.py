@@ -147,6 +147,8 @@ def main_ui_panel(is_depth_tab):
 			with gr.Row(visible=False) as stereo_options_row_1:
 				stereo_divergence = gr.Slider(minimum=0.05, maximum=10.005, step=0.01, label='Divergence (3D effect)',
 											  value=2.5)
+				stereo_separation = gr.Slider(minimum=-5.0, maximum=5.0, step=0.01, label='Separation (moves images apart)',
+											  value=0.0)
 			with gr.Row(visible=False) as stereo_options_row_2:
 				stereo_fill = gr.Dropdown(label="Gap fill technique",
 										  choices=['none', 'naive', 'naive_interpolating', 'polylines_soft',
@@ -266,7 +268,7 @@ def main_ui_panel(is_depth_tab):
 			outputs=[bgrem_options_row_1, bgrem_options_row_2]
 		)
 
-	return [compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model, gen_mesh, mesh_occlude, mesh_spherical]
+	return [compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_separation, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model, gen_mesh, mesh_occlude, mesh_spherical]
 
 
 class Script(scripts.Script):
@@ -283,7 +285,7 @@ class Script(scripts.Script):
 
 	# run from script in txt2img or img2img
 	def run(self, p,
-			compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model, gen_mesh, mesh_occlude, mesh_spherical
+			compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_separation, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model, gen_mesh, mesh_occlude, mesh_spherical
 			):
 
 		# sd process 
@@ -309,7 +311,7 @@ class Script(scripts.Script):
 
 		newmaps, mesh_fi, meshsimple_fi = run_depthmap(processed, p.outpath_samples, inputimages, None,
                                         compute_device, model_type,
-                                        net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+                                        net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_separation, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
                                         background_removed_images, "mp4", 0, False, None, False, gen_mesh, mesh_occlude, mesh_spherical )
 		
 		for img in newmaps:
@@ -328,7 +330,7 @@ def reload_sd_model():
 		shared.sd_model.first_stage_model.to(devices.device)
 
 def run_depthmap(processed, outpath, inputimages, inputnames,
-                 compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+                 compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_separation, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
                  background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img, depthmap_batch_reuse, gen_mesh, mesh_occlude, mesh_spherical):
 
 	if len(inputimages) == 0 or inputimages[0] == None:
@@ -687,7 +689,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 							try:
 								images.save_image(Image.fromarray(img_output), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
 							except ValueError as ve:
-								if not 'image has wrong mode' in str(ve): raise ve
+								if not ('image has wrong mode' in str(ve) or 'cannot write mode I;16 as JPEG' in str(ve)): raise ve
 						else:
 							images.save_image(Image.fromarray(img_output2), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
 					elif save_depth:
@@ -697,7 +699,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 							try:
 								images.save_image(Image.fromarray(img_output), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
 							except ValueError as ve:
-								if not 'image has wrong mode' in str(ve): raise ve
+								if not ('image has wrong mode' in str(ve) or 'cannot write mode I;16 as JPEG' in str(ve)): raise ve
 						else:
 							images.save_image(Image.fromarray(img_output2), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
 				else:
@@ -714,7 +716,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 				print("Generating stereoscopic images..")
 
 				stereomodes = stereo_modes
-				stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, stereomodes, stereo_balance, stereo_fill)
+				stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, stereo_separation, stereomodes, stereo_balance, stereo_fill)
 
 				for c in range(0, len(stereoimages)):
 					outimages.append(stereoimages[c])
@@ -1138,6 +1140,7 @@ def run_generate(depthmap_mode,
                 gen_stereo,
                 stereo_modes,
                 stereo_divergence,
+				stereo_separation,
                 stereo_fill,
                 stereo_balance,
                 inpaint,
@@ -1205,7 +1208,7 @@ def run_generate(depthmap_mode,
 
 	outputs, mesh_fi, meshsimple_fi = run_depthmap(
         None, outpath, imageArr, imageNameArr,
-        compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
+        compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_separation, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal,
         background_removed_images, fnExt, vid_ssaa, custom_depthmap, custom_depthmap_img, depthmap_batch_reuse, gen_mesh, mesh_occlude, mesh_spherical)
 
 	# use inpainted 3d mesh to show in 3d model output when enabled in settings
@@ -1264,7 +1267,7 @@ def on_ui_tabs():
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
 
 				# insert main panel
-                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model, gen_mesh, mesh_occlude, mesh_spherical = main_ui_panel(True)
+                compute_device, model_type, net_width, net_height, match_size, boost, invert_depth, clipdepth, clipthreshold_far, clipthreshold_near, combine_output, combine_output_axis, save_depth, show_depth, show_heat, gen_stereo, stereo_modes, stereo_divergence, stereo_separation, stereo_fill, stereo_balance, inpaint, inpaint_vids, background_removal, save_background_removal_masks, gen_normal, pre_depth_background_removal, background_removal_model, gen_mesh, mesh_occlude, mesh_spherical = main_ui_panel(True)
 
                 unloadmodels = gr.Button('Unload models', elem_id="depthmap_unloadmodels")
 
@@ -1357,6 +1360,7 @@ def on_ui_tabs():
 				gen_stereo,
 				stereo_modes,
 				stereo_divergence,
+				stereo_separation,
 				stereo_fill,
 				stereo_balance,
 				inpaint,

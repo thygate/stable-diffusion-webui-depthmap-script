@@ -37,12 +37,17 @@ import trimesh
 import os
 import math
 import subprocess
-
+import traceback
 import pathlib
 import os
-script_dir = os.path.dirname(os.path.realpath(__file__))
-extension_dir = pathlib.Path(script_dir).parent
-sys.path.append(extension_dir)
+
+# Not sure if this is needed
+try:
+	script_dir = os.path.dirname(os.path.realpath(__file__))
+	extension_dir = pathlib.Path(script_dir).parent
+	sys.path.append(extension_dir)
+except:
+	sys.path.append('extensions/stable-diffusion-webui-depthmap-script')
 
 
 from scripts.stereoimage_generation import create_stereoimages
@@ -91,14 +96,21 @@ depthmap_model_pix2pix = None
 depthmap_model_type = None
 depthmap_deviceidx = None
 
+commit_hash = None  # TODO: understand why it would spam to stderr if changed to ... = get_commit_hash()
 def get_commit_hash():
-	try:
-		hash = subprocess.check_output([os.environ.get('GIT', "git"), "rev-parse", "HEAD"], shell=False, encoding='utf8').strip()
-		hash = hash[0:8]
-		return hash
-	except Exception:
-		return "<none>"
-commit_hash = get_commit_hash()
+	global commit_hash
+	if commit_hash is None:
+		try:
+			commit_hash = subprocess.check_output(
+				[os.environ.get('GIT', "git"), "rev-parse", "HEAD"],
+				cwd=pathlib.Path.cwd().joinpath('extensions/stable-diffusion-webui-depthmap-script/'),
+				shell=False,
+				stderr=subprocess.DEVNULL,
+				encoding='utf8').strip()[0:8]
+		except Exception:
+			commit_hash = "<none>"
+	return commit_hash
+
 
 def main_ui_panel(is_depth_tab):
 	with gr.Blocks():
@@ -335,8 +347,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 
 	if len(inputimages) == 0 or inputimages[0] == None:
 		return [], []
-	
-	print(f"\n{scriptname} {scriptversion} ({commit_hash})")
+
+	print(f"\n{scriptname} {scriptversion} ({get_commit_hash()})")
 
 	unload_sd_model()
 
@@ -688,8 +700,10 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 						if opts.samples_format == "png":
 							try:
 								images.save_image(Image.fromarray(img_output), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
-							except ValueError as ve:
-								if not ('image has wrong mode' in str(ve) or 'cannot write mode I;16 as JPEG' in str(ve)): raise ve
+							except Exception as ve:
+								if not ('image has wrong mode' in str(ve) or 'I;16' in str(ve)): raise ve
+								print('Catched exception: image has wrong mode!')
+								traceback.print_exc()
 						else:
 							images.save_image(Image.fromarray(img_output2), outpath, "", processed.all_seeds[count], processed.all_prompts[count], opts.samples_format, info=info, p=processed, suffix="_depth")
 					elif save_depth:
@@ -698,8 +712,10 @@ def run_depthmap(processed, outpath, inputimages, inputnames,
 						if opts.samples_format == "png":
 							try:
 								images.save_image(Image.fromarray(img_output), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
-							except ValueError as ve:
-								if not ('image has wrong mode' in str(ve) or 'cannot write mode I;16 as JPEG' in str(ve)): raise ve
+							except Exception as ve:
+								if not ('image has wrong mode' in str(ve) or 'I;16' in str(ve)): raise ve
+								print('Catched exception: image has wrong mode!')
+								traceback.print_exc()
 						else:
 							images.save_image(Image.fromarray(img_output2), path=outpath, basename=basename, seed=None, prompt=None, extension=opts.samples_format, info=info, short_filename=True,no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None, forced_filename=None)
 				else:

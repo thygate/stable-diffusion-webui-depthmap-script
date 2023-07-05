@@ -2,6 +2,8 @@ import launch
 import platform
 import sys
 
+# TODO: some dependencies apparently being reinstalled on every run. Investigate and fix.
+
 if sys.version_info < (3, 8):
     launch.run_pip("install importlib-metadata", "importlib-metadata for depthmap script")
     import importlib_metadata

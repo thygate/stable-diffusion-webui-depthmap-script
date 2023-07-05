@@ -5,7 +5,8 @@ from PIL import Image
 def create_stereoimages(original_image, depthmap, divergence, separation=0.0, modes=None, stereo_balance=0.0,
                         fill_technique='polylines_sharp'):
     """Creates stereoscopic images.
-    An effort is made to make them look nice, but beware that the resulting image will have some distortion .
+    An effort is made to make them look nice, but beware that the resulting image will have some distortion.
+    The correctness was not rigurously tested.
 
     :param original_image: original image from which the 3D image (stereoimage) will be created
     :param depthmap: depthmap corresponding to the original image. White = near, black = far.

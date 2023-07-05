@@ -49,6 +49,17 @@ try:
 except:
 	sys.path.append('extensions/stable-diffusion-webui-depthmap-script')
 
+# Ugly workaround to fix gradio tempfile issue
+def ensure_gradio_temp_directory():
+	try:
+		import tempfile
+		path = os.path.join(tempfile.gettempdir(), 'gradio')
+		if not (os.path.exists(path)):
+			os.mkdir(path)
+	except Exception as e:
+		traceback.print_exc()
+ensure_gradio_temp_directory()
+
 
 from scripts.stereoimage_generation import create_stereoimages
 

@@ -159,9 +159,9 @@ def main_ui_panel(is_depth_tab):
 
         with gr.Group():
             with gr.Row():
-                inp += "combine_output", gr.Checkbox(label="Combine into one image", value=False)
+                inp += "combine_output", gr.Checkbox(label="Combine input and corresponding depthmap into one image", value=False)
                 inp += "combine_output_axis", gr.Radio(label="Combine axis", choices=['Vertical', 'Horizontal'],
-                                                       value='Horizontal', type="index")
+                                                       value='Horizontal', type="index", visible=False)
             with gr.Row():
                 inp += "save_depth", gr.Checkbox(label="Save DepthMap", value=True)
                 inp += "show_depth", gr.Checkbox(label="Show DepthMap", value=True)
@@ -211,6 +211,7 @@ def main_ui_panel(is_depth_tab):
                     gr.HTML("More options can be found in the Generate video tab")
 
         with gr.Group():
+            # TODO: it should be clear from the UI that the background removal does not use the model selected above
             with gr.Row():
                 inp += "background_removal", gr.Checkbox(label="Remove background", value=False)
             with gr.Row(visible=False) as bgrem_options_row_1:
@@ -238,6 +239,12 @@ def main_ui_panel(is_depth_tab):
             fn=lambda a: options_depend_on_match_size.update(visible=not a),
             inputs=[inp['match_size']],
             outputs=[options_depend_on_match_size]
+        )
+
+        inp['combine_output'].change(
+            fn=lambda v: inp['combine_output_axis'].update(visible=v),
+            inputs=[inp['combine_output']],
+            outputs=[inp['combine_output_axis']]
         )
 
         inp['clipdepth'].change(
@@ -272,25 +279,20 @@ def main_ui_panel(is_depth_tab):
             return stereo_options_row_0.update(visible=v), \
                 stereo_options_row_1.update(visible=v), \
                 stereo_options_row_2.update(visible=v)
-
         inp['gen_stereo'].change(
             fn=stereo_options_visibility,
             inputs=[inp['gen_stereo']],
             outputs=[stereo_options_row_0, stereo_options_row_1, stereo_options_row_2]
         )
 
-        def mesh_options_visibility(v):
-            return mesh_options_row_0.update(visible=v)
-
         inp['gen_mesh'].change(
-            fn=mesh_options_visibility,
+            fn=lambda v: mesh_options_row_0.update(visible=v),
             inputs=[inp['gen_mesh']],
             outputs=[mesh_options_row_0]
         )
 
         def inpaint_options_visibility(v):
             return inpaint_options_row_0.update(visible=v)
-
         inp['inpaint'].change(
             fn=inpaint_options_visibility,
             inputs=[inp['inpaint']],
@@ -300,7 +302,6 @@ def main_ui_panel(is_depth_tab):
         def background_removal_options_visibility(v):
             return bgrem_options_row_1.update(visible=v), \
                 bgrem_options_row_2.update(visible=v)
-
         inp['background_removal'].change(
             fn=background_removal_options_visibility,
             inputs=[inp['background_removal']],
@@ -340,8 +341,22 @@ class Script(scripts.Script):
                 continue
             inputimages.append(processed.images[count])
 
-        outimages, mesh_fi, meshsimple_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, inp)
-        for img in outimages:
+        show_images, save_images, mesh_fi, meshsimple_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, inp)
+
+        for input_i, imgs in enumerate(save_images):
+            # get generation parameters
+            if hasattr(processed, 'all_prompts') and opts.enable_pnginfo:
+                info = create_infotext(processed, processed.all_prompts, processed.all_seeds, processed.all_subseeds, "", 0, input_i)
+            else:
+                info = None
+
+            for image_type, image in list(imgs.items()):
+                images.save_image(image, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
+                                  prompt=processed.all_prompts[input_i], extension=opts.samples_format, info=info,
+                                  p=processed,
+                                  suffix=f"_{image_type}")
+
+        for img in show_images:
             processed.images.append(img)
 
         return processed
@@ -399,8 +414,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
     custom_depthmap_img = inp["custom_depthmap_img"] if "custom_depthmap_img" in inp else None
     depthmap_batch_reuse = inp["depthmap_batch_reuse"] if "depthmap_batch_reuse" in inp else True
 
-    # TODO: run_depthmap should not save outputs nor assign filenames, it should be done by a wrapper.
-    #  Rationale: allowing webui-independent (stand-alone) wrapers
+    # TODO: run_depthmap should not generate or save meshes, since these do not use generated depthmaps.
+    #  Rationale: allowing webui-independent (stand-alone) wrappers.
     print(f"\n{scriptname} {scriptversion} ({get_commit_hash()})")
 
     unload_sd_model()
@@ -449,11 +464,10 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
             depthmap_model_depth = None
             loadmodels = True
 
-    outimages = []
     try:
         if loadmodels and not (custom_depthmap and custom_depthmap_img != None):
             # TODO: loading model should be separated into a function that would return the model
-            #  and the parameters needed for this. The rest of the run_depthmap should depend on what specific model
+            #  and the parameters needed. The rest of the run_depthmap should not depend on what specific model
             #  is actually used for the generation.
             print("Loading model weights from ", end=" ")
 
@@ -627,10 +641,18 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
                 model = model.to(device)
 
         print("Computing depthmap(s) ..")
+        numimages = len(inputimages)
+        # Images that are meant to be shown in a GUI (if any)
+        show_images = []
+        # Images that should be saved as an array of dictionaries.
+        # Every array element corresponds to particular input image.
+        # Dictionary keys are types of images that were derived from the input image.
+        save_images = [{} for _ in range(numimages)]
+        # TODO: ???
         inpaint_imgs = []
+        # TODO: ???
         inpaint_depths = []
         # iterate over input (generated) images
-        numimages = len(inputimages)
         for count in trange(0, numimages):
 
             print('\n')
@@ -668,6 +690,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
             img = cv2.cvtColor(np.asarray(inputimages[count]), cv2.COLOR_BGR2RGB) / 255.0
 
             skipInvertAndSave = False
+            # TODO: custom depthmaps should be supplied in the same way as "custom depthmap" in single image mode
             if custom_depthmap_fn is not None:
                 # use custom depthmap
                 dimg = Image.open(os.path.abspath(custom_depthmap_fn))
@@ -727,13 +750,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
                 inpaint_imgs.append(inputimages[count])
                 inpaint_depths.append(img_output)
 
-            # get generation parameters
-            if processed is not None and hasattr(processed, 'all_prompts') and opts.enable_pnginfo:
-                info = create_infotext(processed, processed.all_prompts, processed.all_seeds, processed.all_subseeds,
-                                       "", 0, count)
-            else:
-                info = None
-
             rgb_image = inputimages[count]
 
             # applying background masks after depth
@@ -748,111 +764,47 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
 
                 img_output[bg_mask] = far_value * far_value  # 255*255 or 0*0
 
-                # should this be optional
-                if (processed is not None):
-                    images.save_image(background_removed_image, outpath, "", processed.all_seeds[count],
-                                      processed.all_prompts[count], opts.samples_format, info=info, p=processed,
-                                      suffix="_background_removed")
-                else:
-                    images.save_image(background_removed_image, path=outpath, basename=basename, seed=None, prompt=None,
-                                      extension=opts.samples_format, info=info, short_filename=True, no_prompt=True,
-                                      grid=False, pnginfo_section_name="extras", existing_info=None,
-                                      forced_filename=None, suffix="_background_removed")
-                outimages.append(background_removed_image)
+                # saving should be optional
+                save_images[count]['background_removed'] = background_removed_image
+                show_images.append(background_removed_image)
+
                 if save_background_removal_masks:
                     bg_array = (1 - bg_mask.astype('int8')) * 255
                     mask_array = np.stack((bg_array, bg_array, bg_array, bg_array), axis=2)
                     mask_image = Image.fromarray(mask_array.astype(np.uint8))
-                    if (processed is not None):
-                        images.save_image(mask_image, outpath, "", processed.all_seeds[count],
-                                          processed.all_prompts[count], opts.samples_format, info=info, p=processed,
-                                          suffix="_foreground_mask")
-                    else:
-                        images.save_image(mask_image, path=outpath, basename=basename, seed=None, prompt=None,
-                                          extension=opts.samples_format, info=info, short_filename=True, no_prompt=True,
-                                          grid=False, pnginfo_section_name="extras", existing_info=None,
-                                          forced_filename=None, suffix="_foreground_mask")
-                    outimages.append(mask_image)
 
-            img_concat = np.concatenate((rgb_image, img_output2), axis=combine_output_axis)
+                    # saving should be optional
+                    save_images[count]['foreground_mask'] = mask_image
+                    show_images.append(mask_image)
+
+            img_concat = Image.fromarray(np.concatenate((rgb_image, img_output2), axis=combine_output_axis))
             if show_depth:
                 if not combine_output:
-                    outimages.append(Image.fromarray(img_output))
+                    show_images.append(Image.fromarray(img_output))
                 else:
-                    outimages.append(Image.fromarray(img_concat))
+                    show_images.append(img_concat)
+            if not skipInvertAndSave:  # TODO: skipInvertAndSave is not intuitive
+                if save_depth:
+                    if combine_output:
+                        save_images[count]['concat_depth'] = img_concat
+                    else:
+                        save_images[count]['depth'] = Image.fromarray(img_output)
 
-            if not skipInvertAndSave:
-                if not combine_output:
-                    if save_depth and processed is not None:
-                        # only save 16 bit single channel image when PNG format is selected
-                        if opts.samples_format == "png":
-                            try:
-                                images.save_image(Image.fromarray(img_output), outpath, "", processed.all_seeds[count],
-                                                  processed.all_prompts[count], opts.samples_format, info=info,
-                                                  p=processed, suffix="_depth")
-                            except Exception as ve:
-                                if not ('image has wrong mode' in str(ve) or 'I;16' in str(ve)): raise ve
-                                print('Catched exception: image has wrong mode!')
-                                traceback.print_exc()
-                        else:
-                            images.save_image(Image.fromarray(img_output2), outpath, "", processed.all_seeds[count],
-                                              processed.all_prompts[count], opts.samples_format, info=info, p=processed,
-                                              suffix="_depth")
-                    elif save_depth:
-                        # from depth tab
-                        # only save 16 bit single channel image when PNG format is selected
-                        if opts.samples_format == "png":
-                            try:
-                                images.save_image(Image.fromarray(img_output), path=outpath, basename=basename,
-                                                  seed=None, prompt=None, extension=opts.samples_format, info=info,
-                                                  short_filename=True, no_prompt=True, grid=False,
-                                                  pnginfo_section_name="extras", existing_info=None,
-                                                  forced_filename=None)
-                            except Exception as ve:
-                                if not ('image has wrong mode' in str(ve) or 'I;16' in str(ve)): raise ve
-                                print('Catched exception: image has wrong mode!')
-                                traceback.print_exc()
-                        else:
-                            images.save_image(Image.fromarray(img_output2), path=outpath, basename=basename, seed=None,
-                                              prompt=None, extension=opts.samples_format, info=info,
-                                              short_filename=True, no_prompt=True, grid=False,
-                                              pnginfo_section_name="extras", existing_info=None, forced_filename=None)
-                else:
-                    if save_depth and processed is not None:
-                        images.save_image(Image.fromarray(img_concat), outpath, "", processed.all_seeds[count],
-                                          processed.all_prompts[count], opts.samples_format, info=info, p=processed,
-                                          suffix="_depth")
-                    elif save_depth:
-                        # from tab
-                        images.save_image(Image.fromarray(img_concat), path=outpath, basename=basename, seed=None,
-                                          prompt=None, extension=opts.samples_format, info=info, short_filename=True,
-                                          no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
-                                          forced_filename=None)
             if show_heat:
                 heatmap = colorize(img_output, cmap='inferno')
-                outimages.append(heatmap)
+                show_images.append(heatmap)
 
             if gen_stereo:
                 print("Generating stereoscopic images..")
 
                 stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, stereo_separation,
                                                    stereo_modes, stereo_balance, stereo_fill)
-
                 for c in range(0, len(stereoimages)):
-                    outimages.append(stereoimages[c])
-                    if processed is not None:
-                        images.save_image(stereoimages[c], outpath, "", processed.all_seeds[count],
-                                          processed.all_prompts[count], opts.samples_format, info=info, p=processed,
-                                          suffix=f"_{stereo_modes[c]}")
-                    else:
-                        # from tab
-                        images.save_image(stereoimages[c], path=outpath, basename=basename, seed=None,
-                                          prompt=None, extension=opts.samples_format, info=info, short_filename=True,
-                                          no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
-                                          forced_filename=None, suffix=f"_{stereo_modes[c]}")
+                    show_images.append(stereoimages[c])
+                    save_images[count][stereo_modes[c]] = stereoimages[c]
 
-            if gen_normal:
-                # taken from @graemeniedermayer, hidden, for api use only, will remove in future.
+            if gen_normal:  # TODO: should be moved into a separate file when redesigned
+                # taken from @graemeniedermayer
                 # take gradients
                 zx = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 1, 0, ksize=3)
                 zy = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 0, 1, ksize=3)
@@ -870,7 +822,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
                 normal *= 255
                 normal = normal.astype(np.uint8)
 
-                outimages.append(Image.fromarray(normal))
+                show_images.append(Image.fromarray(normal))
 
             # gen mesh
             if gen_mesh:
@@ -930,7 +882,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
         reload_sd_model()
         print("All done.")
 
-    return outimages, mesh_fi, meshsimple_fi
+    return show_images, save_images, mesh_fi, meshsimple_fi
 
 
 @njit(parallel=True)
@@ -956,7 +908,7 @@ def clipdepthmap(img, clipthreshold_far, clipthreshold_near):
 
 
 def get_uniquefn(outpath, basename, ext):
-    # unique filename
+    # Inefficient and may fail, maybe use unbounded binary search?
     basecount = get_next_sequence_number(outpath, basename)
     if basecount > 0: basecount = basecount - 1
     fullfn = None
@@ -1256,11 +1208,12 @@ def run_generate(*inputs):
     image_batch = inputs['image_batch']
     depthmap_input_image = inputs['depthmap_input_image']
     depthmap_batch_output_dir = inputs['depthmap_batch_output_dir']
+    depthmap_batch_reuse = inputs['depthmap_batch_reuse']
 
     inputimages = []
     # Also keep track of original file names
     inputnames = []
-    outimages = []
+    show_images = []
 
     if depthmap_mode == '0':  # Single image
         inputimages.append(depthmap_input_image)
@@ -1274,7 +1227,7 @@ def run_generate(*inputs):
     elif depthmap_mode == '2':  # Batch from Directory
         assert not shared.cmd_opts.hide_ui_dir_config, '--hide-ui-dir-config option must be disabled'
         if depthmap_batch_input_dir == '':
-            return outimages, "Please select an input directory.", ''
+            return show_images, "Please select an input directory.", ''
         image_list = shared.listfiles(depthmap_batch_input_dir)
         for img in image_list:
             try:
@@ -1289,7 +1242,21 @@ def run_generate(*inputs):
     else:
         outpath = opts.outdir_samples or opts.outdir_extras_samples
 
-    outimages, mesh_fi, meshsimple_fi = run_depthmap(None, outpath, inputimages, inputnames, inputs)
+    show_images, save_images, mesh_fi, meshsimple_fi = run_depthmap(None, outpath, inputimages, inputnames, inputs)
+
+    # Saving images
+    for input_i, imgs in enumerate(save_images):
+        basename = 'depthmap'
+        if depthmap_batch_reuse and depthmap_mode == '2':
+            if inputnames[input_i] is not None:
+                basename = Path(inputnames[input_i]).stem
+        info = None
+
+        for image_type, image in list(imgs.items()):
+            images.save_image(image, path=outpath, basename=basename, seed=None,
+                              prompt=None, extension=opts.samples_format, info=info, short_filename=True,
+                              no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
+                              forced_filename=None, suffix=f"_{image_type}")
 
     # use inpainted 3d mesh to show in 3d model output when enabled in settings
     if hasattr(opts, 'depthmap_script_show_3d_inpaint') and opts.depthmap_script_show_3d_inpaint and mesh_fi != None and len(mesh_fi) > 0:
@@ -1298,7 +1265,7 @@ def run_generate(*inputs):
     if hasattr(opts, 'depthmap_script_show_3d') and not opts.depthmap_script_show_3d:
             meshsimple_fi = None
 
-    return outimages, mesh_fi, meshsimple_fi, plaintext_to_html('info'), ''
+    return show_images, mesh_fi, meshsimple_fi, plaintext_to_html('info'), ''
 
 
 def unload_models():
@@ -1315,7 +1282,7 @@ def unload_models():
 def clear_mesh():
     return None
 
-
+# TODO: some of them may be put into the main ui pane
 def on_ui_settings():
     section = ('depthmap-script', "Depthmap extension")
     shared.opts.add_option("depthmap_script_keepmodels",

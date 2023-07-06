@@ -28,6 +28,8 @@ def create_stereoimages(original_image, depthmap, divergence, separation=0.0, mo
         modes = ['left-right']
     if not isinstance(modes, list):
         modes = [modes]
+    if len(modes) == 0:
+        return []
 
     original_image = np.asarray(original_image)
     balance = (stereo_balance + 1) / 2

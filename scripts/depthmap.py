@@ -200,14 +200,15 @@ def main_ui_panel(is_depth_tab):
                 inp += "mesh_occlude", gr.Checkbox(label="Remove occluded edges", value=True, visible=True)
                 inp += "mesh_spherical", gr.Checkbox(label="Equirectangular projection", value=False, visible=True)
 
-        with gr.Group(visible=is_depth_tab):
-            with gr.Row():
-                inp += "inpaint", gr.Checkbox(
-                    label="Generate 3D inpainted mesh. (Sloooow, required for generating videos)", value=False,
-                    visible=is_depth_tab)
-            with gr.Row(visible=False) as inpaint_options_row_0:
-                inp += "inpaint_vids", gr.Checkbox(label="Generate 4 demo videos with 3D inpainted mesh.", value=False,
-                                                   visible=is_depth_tab)
+        if is_depth_tab:
+            with gr.Group():
+                with gr.Row():
+                    inp += "inpaint", gr.Checkbox(
+                        label="Generate 3D inpainted mesh. (Sloooow, required for generating videos)", value=False)
+                with gr.Group(visible=False) as inpaint_options_row_0:
+                    inp += "inpaint_vids", gr.Checkbox(
+                        label="Generate 4 demo videos with 3D inpainted mesh.", value=False)
+                    gr.HTML("More options can be found in the Generate video tab")
 
         with gr.Group():
             with gr.Row():
@@ -408,8 +409,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp, background_re
     custom_depthmap = inp["custom_depthmap"] if "custom_depthmap" in inp else "False"
     custom_depthmap_img = inp["custom_depthmap_img"] if "custom_depthmap_img" in inp else None
     depthmap_batch_reuse = inp["depthmap_batch_reuse"] if "depthmap_batch_reuse" in inp else True
-    fnExt = inp["fnExt"] if "fnExt" in inp else "mp4"
-    vid_ssaa = inp["vid_ssaa"] if "vid_ssaa" in inp else 0
 
     print(f"\n{scriptname} {scriptversion} ({get_commit_hash()})")
 
@@ -923,7 +922,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp, background_re
     try:
         if inpaint:
             unload_sd_model()
-            mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, fnExt, vid_ssaa, inpaint_vids)
+            mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, inpaint_vids, 1, "mp4")
     finally:
         reload_sd_model()
         print("All done.")
@@ -968,7 +967,7 @@ def get_uniquefn(outpath, basename, ext):
     return basename
 
 
-def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa, inpaint_vids):
+def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, inpaint_vids, vid_ssaa, vid_format):
     mesh_fi = ''
     try:
         print("Running 3D Photo Inpainting .. ")
@@ -1094,7 +1093,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
                                    [0.00, 0.00, -0.015, -0.015],
                                    [0.00, 0.00, -0.015, -0.00],
                                    [-0.05, -0.05, -0.05, -0.05],
-                                   ['dolly-zoom-in', 'zoom-in', 'circle', 'swing'], False, fnExt, vid_ssaa)
+                                   ['dolly-zoom-in', 'zoom-in', 'circle', 'swing'], False, vid_format, vid_ssaa)
 
             devices.torch_gc()
 
@@ -1111,7 +1110,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, fnExt, vid_ssaa
 
 
 def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border, traj_types, x_shift_range,
-                       y_shift_range, z_shift_range, video_postfix, vid_dolly, fnExt, vid_ssaa):
+                       y_shift_range, z_shift_range, video_postfix, vid_dolly, vid_format, vid_ssaa):
     if platform.system() == 'Windows':
         vispy.use(app='PyQt5')
     elif platform.system() == 'Darwin':
@@ -1190,7 +1189,7 @@ def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border,
                                                           videos_poses, video_basename, original_h, original_w,
                                                           border=border, depth=None, normal_canvas=normal_canvas,
                                                           all_canvas=all_canvas,
-                                                          mean_loc_depth=mean_loc_depth, dolly=vid_dolly, fnExt=fnExt)
+                                                          mean_loc_depth=mean_loc_depth, dolly=vid_dolly, fnExt=vid_format)
     return fn_saved
 
 
@@ -1199,10 +1198,7 @@ def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_bord
     if len(fn_mesh) == 0 or not os.path.exists(fn_mesh):
         raise Exception("Could not open mesh.")
 
-    # file type
-    fnExt = "mp4" if vid_format == 0 else "webm"
-
-    vid_ssaa = vid_ssaa + 1
+    vid_ssaa = int(vid_ssaa)
 
     # traj type
     if vid_traj == 0:
@@ -1235,7 +1231,7 @@ def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_bord
     fullfn = None
     for i in range(500):
         fn = f"{basecount + i:05}" if basename == '' else f"{basename}-{basecount + i:04}"
-        fullfn = os.path.join(outpath, f"{fn}_." + fnExt)
+        fullfn = os.path.join(outpath, f"{fn}_." + vid_format)
         if not os.path.exists(fullfn):
             break
     basename = Path(fullfn).stem
@@ -1244,7 +1240,7 @@ def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_bord
     print("Loading mesh ..")
 
     fn_saved = run_3dphoto_videos(fn_mesh, basename, outpath, num_frames, num_fps, crop_border, vid_traj, x_shift_range,
-                                  y_shift_range, z_shift_range, [''], dolly, fnExt, vid_ssaa)
+                                  y_shift_range, z_shift_range, [''], dolly, vid_format, vid_ssaa)
 
     return fn_saved[-1], fn_saved[-1], ''
 
@@ -1262,11 +1258,6 @@ def run_generate(*inputs):
     # Also keep track of original file names
     imageNameArr = []
     outputs = []
-
-    # TODO: this should not be here
-    # file type
-    inputs['fnExt'] = "mp4" if inputs['vid_format'] == 0 else "webm"
-    inputs['vid_ssaa'] = inputs['vid_ssaa'] + 1
 
     if depthmap_mode == '0':  # Single image
         imageArr.append(depthmap_input_image)
@@ -1383,7 +1374,7 @@ def on_ui_tabs():
                                            label="Skip generation and use (edited/custom) depthmaps in output directory when a file exists.",
                                            value=True)
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
-                inp += main_ui_panel(True)
+                inp += main_ui_panel(True)  # Main panel is inserted here
                 unloadmodels = gr.Button('Unload models', elem_id="depthmap_unloadmodels")
 
             with gr.Column(variant='panel'):
@@ -1417,8 +1408,8 @@ def on_ui_tabs():
                             with gr.Row():
                                 vid_numframes = gr.Textbox(label="Number of frames", value="300")
                                 vid_fps = gr.Textbox(label="Framerate", value="40")
-                                inp += 'vid_format', gr.Dropdown(label="Format", choices=['mp4', 'webm'], value='mp4', type="index", elem_id="video_format")
-                                inp += 'vid_ssaa', gr.Dropdown(label="SSAA", choices=['1', '2', '3', '4'], value='3', type="index", elem_id="video_ssaa")
+                                vid_format = gr.Dropdown(label="Format", choices=['mp4', 'webm'], value='mp4', type="value", elem_id="video_format")
+                                vid_ssaa = gr.Dropdown(label="SSAA", choices=['1', '2', '3', '4'], value='3', type="value", elem_id="video_ssaa")
                             with gr.Row():
                                 vid_traj = gr.Dropdown(label="Trajectory", choices=['straight-line', 'double-straight-line', 'circle'], value='double-straight-line', type="index", elem_id="video_trajectory")
                                 vid_shift = gr.Textbox(label="Translate: x, y, z", value="-0.015, 0.0, -0.05")
@@ -1475,8 +1466,8 @@ def on_ui_tabs():
                 vid_shift,
                 vid_border,
                 vid_dolly,
-                inp['vid_format'],
-                inp['vid_ssaa']
+                vid_format,
+                vid_ssaa
             ],
             outputs=[
                 depth_vid,

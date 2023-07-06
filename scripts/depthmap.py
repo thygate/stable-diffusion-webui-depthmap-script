@@ -1,40 +1,36 @@
 # Author: thygate
 # https://github.com/thygate/stable-diffusion-webui-depthmap-script
 
-import modules.scripts as scripts
-import gradio as gr
+from operator import getitem
+from pathlib import Path
 
-from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_gradio_call
-from modules.ui import plaintext_to_html
-from modules import processing, images, shared, sd_samplers, devices
-from modules.processing import create_infotext, process_images, Processed
-from modules.shared import opts, cmd_opts, state, Options
-from modules import script_callbacks
-from modules.images import get_next_sequence_number
+import gradio as gr
+from PIL import Image
 from numba import njit, prange
 from torchvision.transforms import Compose, transforms
-from PIL import Image
-from pathlib import Path
-from operator import getitem
-from tqdm import trange
-from functools import reduce
-from skimage.transform import resize
-from trimesh import transformations
+
+import modules.scripts as scripts
+from modules import processing, images, shared, devices
+from modules import script_callbacks
+from modules.call_queue import wrap_gradio_gpu_call
+from modules.images import get_next_sequence_number
+from modules.processing import create_infotext
+from modules.shared import opts, cmd_opts
+from modules.ui import plaintext_to_html
+
+try:
+    from tqdm import trange
+except:
+    from builtins import range as trange
 
 import sys
 import torch, gc
-import torch.nn as nn
 import cv2
 import os.path
-import contextlib
-import matplotlib.pyplot as plt
 import numpy as np
 import skimage.measure
 import copy
 import platform
-import vispy
-import trimesh
-import os
 import math
 import subprocess
 import traceback
@@ -90,9 +86,7 @@ from dzoedepth.utils.config import get_config
 from dzoedepth.utils.misc import colorize
 from dzoedepth.utils.geometry import depth_to_points, create_triangles
 
-# background removal
-from rembg import new_session, remove
-
+# TODO: next two should not be here
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
 scriptname = "DepthMap"
@@ -109,8 +103,6 @@ depthmap_model_type = None
 depthmap_deviceidx = None
 
 commit_hash = None  # TODO: understand why it would spam to stderr if changed to ... = get_commit_hash()
-
-
 def get_commit_hash():
     global commit_hash
     if commit_hash is None:
@@ -467,7 +459,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
     try:
         if loadmodels and not (custom_depthmap and custom_depthmap_img != None):
             # TODO: loading model should be separated into a function that would return the model
-            #  and the parameters needed. The rest of the run_depthmap should not depend on what specific model
+            #  and the parameters (or maybe even functions) needed.
+            #  The rest of the run_depthmap should not depend on what specific model
             #  is actually used for the generation.
             print("Loading model weights from ", end=" ")
 
@@ -1066,6 +1059,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, inpaint_vids, v
 
 def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border, traj_types, x_shift_range,
                        y_shift_range, z_shift_range, video_postfix, vid_dolly, vid_format, vid_ssaa):
+    import vispy
     if platform.system() == 'Windows':
         vispy.use(app='PyQt5')
     elif platform.system() == 'Darwin':
@@ -1445,6 +1439,7 @@ script_callbacks.on_ui_tabs(on_ui_tabs)
 # TODO: code borrowed from the internet to be marked as such and to reside in separate files
 
 def batched_background_removal(inimages, model_name):
+    from rembg import new_session, remove
     print('creating background masks')
     outimages = []
 
@@ -1531,6 +1526,7 @@ def estimateleres(img, model, w, h):
 
 
 def estimatemidas(img, model, w, h, resize_mode, normalization):
+    import contextlib
     # init transform
     transform = Compose(
         [
@@ -2176,6 +2172,7 @@ def depth_edges_mask(depth):
 
 
 def create_mesh(image, depth, keep_edges=False, spherical=False):
+    import trimesh
     maxsize = 1024
     if hasattr(opts, 'depthmap_script_mesh_maxsize'):
         maxsize = opts.depthmap_script_mesh_maxsize
@@ -2205,7 +2202,7 @@ def create_mesh(image, depth, keep_edges=False, spherical=False):
         angle = math.pi / 2
         direction = [1, 0, 0]
         center = [0, 0, 0]
-        rot_matrix = transformations.rotation_matrix(angle, direction, center)
+        rot_matrix = trimesh.transformations.rotation_matrix(angle, direction, center)
         mesh.apply_transform(rot_matrix)
 
     return mesh

@@ -340,19 +340,8 @@ class Script(scripts.Script):
                 continue
             inputimages.append(processed.images[count])
 
-        # TODO: this should not be here
-        # remove on base image before depth calculation
-        background_removed_images = []
-        if inp['background_removal']:
-            if inp['pre_depth_background_removal']:
-                inputimages = batched_background_removal(inputimages, inp['background_removal_model'])
-                background_removed_images = inputimages
-            else:
-                background_removed_images = batched_background_removal(inputimages, inp['background_removal_model'])
-
-        newmaps, mesh_fi, meshsimple_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, inp,
-                                                       background_removed_images)
-        for img in newmaps:
+        outimages, mesh_fi, meshsimple_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, inp)
+        for img in outimages:
             processed.images.append(img)
 
         return processed
@@ -370,7 +359,7 @@ def reload_sd_model():
         shared.sd_model.first_stage_model.to(devices.device)
 
 
-def run_depthmap(processed, outpath, inputimages, inputnames, inp, background_removed_images):
+def run_depthmap(processed, outpath, inputimages, inputnames, inp):
     if len(inputimages) == 0 or inputimages[0] is None:
         return [], []
 
@@ -410,9 +399,21 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp, background_re
     custom_depthmap_img = inp["custom_depthmap_img"] if "custom_depthmap_img" in inp else None
     depthmap_batch_reuse = inp["depthmap_batch_reuse"] if "depthmap_batch_reuse" in inp else True
 
+    # TODO: run_depthmap should not save outputs nor assign filenames, it should be done by a wrapper.
+    #  Rationale: allowing webui-independent (stand-alone) wrapers
     print(f"\n{scriptname} {scriptversion} ({get_commit_hash()})")
 
     unload_sd_model()
+
+    # TODO: this still should not be here
+    background_removed_images = []
+    # remove on base image before depth calculation
+    if background_removal:
+        if pre_depth_background_removal:
+            inputimages = batched_background_removal(inputimages, background_removal_model)
+            background_removed_images = inputimages
+        else:
+            background_removed_images = batched_background_removal(inputimages, background_removal_model)
 
     meshsimple_fi = None
     mesh_fi = None
@@ -422,8 +423,11 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp, background_re
 
     # init torch device
     global device
+    if depthmap_compute_device == 'GPU' and not torch.cuda.is_available():
+        print('WARNING: Cuda device was not found, cpu will be used')
+        depthmap_compute_device = 'CPU'
     if depthmap_compute_device == 'GPU':
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda")
     else:
         device = torch.device("cpu")
     print("device: %s" % device)
@@ -831,22 +835,21 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp, background_re
             if gen_stereo:
                 print("Generating stereoscopic images..")
 
-                stereomodes = stereo_modes
                 stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, stereo_separation,
-                                                   stereomodes, stereo_balance, stereo_fill)
+                                                   stereo_modes, stereo_balance, stereo_fill)
 
                 for c in range(0, len(stereoimages)):
                     outimages.append(stereoimages[c])
                     if processed is not None:
                         images.save_image(stereoimages[c], outpath, "", processed.all_seeds[count],
                                           processed.all_prompts[count], opts.samples_format, info=info, p=processed,
-                                          suffix=f"_{stereomodes[c]}")
+                                          suffix=f"_{stereo_modes[c]}")
                     else:
                         # from tab
                         images.save_image(stereoimages[c], path=outpath, basename=basename, seed=None,
                                           prompt=None, extension=opts.samples_format, info=info, short_filename=True,
                                           no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
-                                          forced_filename=None, suffix=f"_{stereomodes[c]}")
+                                          forced_filename=None, suffix=f"_{stereo_modes[c]}")
 
             if gen_normal:
                 # taken from @graemeniedermayer, hidden, for api use only, will remove in future.
@@ -1254,30 +1257,30 @@ def run_generate(*inputs):
     depthmap_input_image = inputs['depthmap_input_image']
     depthmap_batch_output_dir = inputs['depthmap_batch_output_dir']
 
-    imageArr = []
+    inputimages = []
     # Also keep track of original file names
-    imageNameArr = []
-    outputs = []
+    inputnames = []
+    outimages = []
 
     if depthmap_mode == '0':  # Single image
-        imageArr.append(depthmap_input_image)
-        imageNameArr.append(None)
+        inputimages.append(depthmap_input_image)
+        inputnames.append(None)
     if depthmap_mode == '1':  # Batch Process
         # convert files to pillow images
         for img in image_batch:
             image = Image.open(os.path.abspath(img.name))
-            imageArr.append(image)
-            imageNameArr.append(os.path.splitext(img.orig_name)[0])
+            inputimages.append(image)
+            inputnames.append(os.path.splitext(img.orig_name)[0])
     elif depthmap_mode == '2':  # Batch from Directory
         assert not shared.cmd_opts.hide_ui_dir_config, '--hide-ui-dir-config option must be disabled'
         if depthmap_batch_input_dir == '':
-            return outputs, "Please select an input directory.", ''
+            return outimages, "Please select an input directory.", ''
         image_list = shared.listfiles(depthmap_batch_input_dir)
         for img in image_list:
             try:
                 image = Image.open(img)
-                imageArr.append(image)
-                imageNameArr.append(img)
+                inputimages.append(image)
+                inputnames.append(img)
             except Exception:
                 print(f'Failed to load {img}, ignoring.')
 
@@ -1286,26 +1289,16 @@ def run_generate(*inputs):
     else:
         outpath = opts.outdir_samples or opts.outdir_extras_samples
 
-    # TODO: this should not be here
-    background_removed_images = []
-    if inputs['background_removal']:
-        if inputs['pre_depth_background_removal']:
-            imageArr = batched_background_removal(imageArr, inputs['background_removal_model'])
-            background_removed_images = imageArr
-        else:
-            background_removed_images = batched_background_removal(imageArr, inputs['background_removal_model'])
-    outputs, mesh_fi, meshsimple_fi = run_depthmap(None, outpath, imageArr, imageNameArr, inputs,
-                                                   background_removed_images)
+    outimages, mesh_fi, meshsimple_fi = run_depthmap(None, outpath, inputimages, inputnames, inputs)
 
     # use inpainted 3d mesh to show in 3d model output when enabled in settings
     if hasattr(opts, 'depthmap_script_show_3d_inpaint') and opts.depthmap_script_show_3d_inpaint and mesh_fi != None and len(mesh_fi) > 0:
             meshsimple_fi = mesh_fi
-
-    # don't show 3dmodel when disabled in settings
+    # however, don't show 3dmodel when disabled in settings
     if hasattr(opts, 'depthmap_script_show_3d') and not opts.depthmap_script_show_3d:
             meshsimple_fi = None
 
-    return outputs, mesh_fi, meshsimple_fi, plaintext_to_html('info'), ''
+    return outimages, mesh_fi, meshsimple_fi, plaintext_to_html('info'), ''
 
 
 def unload_models():

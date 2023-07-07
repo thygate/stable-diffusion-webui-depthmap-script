@@ -118,6 +118,15 @@ def get_commit_hash():
     return commit_hash
 
 
+def convert_i16_to_rgb(image, like):
+    # three channel, 8 bits per channel image
+    output = np.zeros_like(like)
+    output[:, :, 0] = image / 256.0
+    output[:, :, 1] = image / 256.0
+    output[:, :, 2] = image / 256.0
+    return output
+
+
 def main_ui_panel(is_depth_tab):
     inp = GradioComponentBundle()
     # TODO: Greater visual separation
@@ -344,7 +353,7 @@ class Script(scripts.Script):
                 continue
             inputimages.append(processed.images[count])
 
-        generated_images, mesh_fi, meshsimple_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, inputs)
+        generated_images, mesh_fi, meshsimple_fi = run_depthmap(p.outpath_samples, inputimages, None, None, inputs)
 
         for input_i, imgs in enumerate(generated_images):
             # get generation parameters
@@ -355,10 +364,15 @@ class Script(scripts.Script):
             for image_type, image in list(imgs.items()):
                 processed.images.append(image)
                 if inputs["save_outputs"]:
-                    images.save_image(image, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
+                    try:
+                        images.save_image(image, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
                                   prompt=processed.all_prompts[input_i], extension=opts.samples_format, info=info,
                                   p=processed,
                                   suffix=f"_{image_type}")
+                    except Exception as e:
+                        if not ('image has wrong mode' in str(e) or 'I;16' in str(e)): raise e
+                        print('Catched exception: image has wrong mode!')
+                        traceback.print_exc()
         return processed
 
 
@@ -374,9 +388,12 @@ def reload_sd_model():
         shared.sd_model.first_stage_model.to(devices.device)
 
 
-def run_depthmap(processed, outpath, inputimages, inputnames, inp):
+def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
     if len(inputimages) == 0 or inputimages[0] is None:
-        return [], []
+        return [], '', ''
+    if len(inputdepthmaps) == 0:
+        inputdepthmaps = [None for _ in range(len(inputimages))]
+    inputdepthmaps_complete = all([x is not None for x in inputdepthmaps])
 
     background_removal = inp["background_removal"]
     background_removal_model = inp["background_removal_model"]
@@ -409,10 +426,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
     stereo_modes = inp["stereo_modes"]
     stereo_separation = inp["stereo_separation"]
 
-    custom_depthmap = inp["custom_depthmap"] if "custom_depthmap" in inp else False
-    custom_depthmap_img = inp["custom_depthmap_img"] if "custom_depthmap_img" in inp else None
-    depthmap_batch_reuse = inp["depthmap_batch_reuse"] if "depthmap_batch_reuse" in inp else True
-
     # TODO: run_depthmap should not generate or save meshes, since these do not use generated depthmaps.
     #  Rationale: allowing webui-independent (stand-alone) wrappers.
     print(f"\n{scriptname} {scriptversion} ({get_commit_hash()})")
@@ -428,9 +441,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
             background_removed_images = inputimages
         else:
             background_removed_images = batched_background_removal(inputimages, background_removal_model)
-
-    meshsimple_fi = None
-    mesh_fi = None
 
     resize_mode = "minimal"
     normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
@@ -455,7 +465,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
     os.makedirs('./models/pix2pix', exist_ok=True)
 
     global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type, depthmap_device_idx
-    loadmodels = True
+    loadmodels = True  # TODO: loadmodels is not intuitive
     if hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels:
         loadmodels = False
         if depthmap_model_type != model_type or depthmap_model_depth == None or depthmap_device_idx != depthmap_compute_device:
@@ -464,7 +474,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
             loadmodels = True
 
     try:
-        if loadmodels and not (custom_depthmap and custom_depthmap_img != None):
+        if loadmodels and not inputdepthmaps_complete:
             # TODO: loading model should be separated into a function that would return the model
             #  and the parameters (or maybe even functions) needed.
             #  The rest of the run_depthmap should not depend on what specific model
@@ -645,10 +655,12 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
         # Every array element corresponds to particular input image.
         # Dictionary keys are types of images that were derived from the input image.
         generated_images = [{} for _ in range(numimages)]
+
         # TODO: ???
+        meshsimple_fi = None
         inpaint_imgs = []
-        # TODO: ???
         inpaint_depths = []
+
         # iterate over input (generated) images
         for count in trange(0, numimages):
 
@@ -657,25 +669,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
             # filename
             basename = 'depthmap'
 
-            # TODO: this should not use heuristics to figure out the mode, mode should ideally be abstracted away.
-            #  By the way, this is probably broken
-            # figuring out the name of custom DepthMap
-            custom_depthmap_fn = None  # None means that DepthMap should be computed
-            # find filename if in the single image mode
-            if custom_depthmap and custom_depthmap_img is not None:
-                custom_depthmap_fn = custom_depthmap_img.name
-            # find filename if in batch mode
-            if inputnames is not None and depthmap_batch_reuse:
-                if inputnames[count] is not None:
-                    p = Path(inputnames[count])
-                    basename = p.stem
-                    if outpath != opts.outdir_extras_samples:
-                        custom_depthmap_fn = os.path.join(outpath, basename + '-0000.' + opts.samples_format)
-                        if not os.path.isfile(custom_depthmap_fn):
-                            custom_depthmap_fn = None
-
             # override net size
-            if (match_size):
+            if match_size:
                 net_width, net_height = inputimages[count].width, inputimages[count].height
 
             # Convert single channel input (PIL) images to rgb
@@ -687,10 +682,9 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
             img = cv2.cvtColor(np.asarray(inputimages[count]), cv2.COLOR_BGR2RGB) / 255.0
 
             skipInvertAndSave = False
-            # TODO: custom depthmaps should be supplied in the same way as "custom depthmap" in single image mode
-            if custom_depthmap_fn is not None:
+            if inputdepthmaps is not None and inputdepthmaps[count] is not None:
                 # use custom depthmap
-                dimg = Image.open(os.path.abspath(custom_depthmap_fn))
+                dimg = inputdepthmaps[count]
                 # resize if not same size as input
                 if dimg.width != inputimages[count].width or dimg.height != inputimages[count].height:
                     dimg = dimg.resize((inputimages[count].width, inputimages[count].height), Image.Resampling.LANCZOS)
@@ -736,12 +730,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
                 img_output = clipdepthmap(img_output, clipthreshold_far, clipthreshold_near)
                 # img_output = cv2.blur(img_output, (3, 3))
 
-            # three channel, 8 bits per channel image
-            img_output2 = np.zeros_like(inputimages[count])
-            img_output2[:, :, 0] = img_output / 256.0
-            img_output2[:, :, 1] = img_output / 256.0
-            img_output2[:, :, 2] = img_output / 256.0
-
             # if 3dinpainting, store maps for processing in second pass
             if inpaint:
                 inpaint_imgs.append(inputimages[count])
@@ -773,7 +761,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
             if not skipInvertAndSave:  # TODO: skipInvertAndSave is not intuitive
                 if output_depth:
                     if combine_output:
-                        img_concat = Image.fromarray(np.concatenate((rgb_image, img_output2), axis=combine_output_axis))
+                        img_concat = Image.fromarray(np.concatenate(
+                            (rgb_image, convert_i16_to_rgb(img_output, rgb_image)), axis=combine_output_axis))
                         generated_images[count]['concat_depth'] = img_concat
                     else:
                         generated_images[count]['depth'] = Image.fromarray(img_output)
@@ -819,9 +808,9 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
 
                 depthi = prediction
                 # try to map output to sensible values for non zoedepth models, boost, or custom maps
-                if model_type < 7 or boost or (custom_depthmap and custom_depthmap_img != None):
+                if model_type < 7 or boost or inputdepthmaps_complete:
                     # invert if midas
-                    if model_type > 0 or ((custom_depthmap and custom_depthmap_img != None) and not invert_depth):
+                    if model_type > 0 or (inputdepthmaps_complete and not invert_depth):
                         depthi = depth_max - depthi + depth_min
                         depth_max = depthi.max()
                         depth_min = depthi.min()
@@ -860,13 +849,15 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
         gc.collect()
         devices.torch_gc()
         reload_sd_model()
-    try:
-        if inpaint:
+
+    mesh_fi = None
+    if inpaint:
+        try:
             unload_sd_model()
             mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, inpaint_vids, 1, "mp4")
-    finally:
-        reload_sd_model()
-        print("All done.")
+        finally:
+            reload_sd_model()  # Do not reload twice
+            print("All done.")
 
     return generated_images, mesh_fi, meshsimple_fi
 
@@ -1196,15 +1187,27 @@ def run_generate(*inputs):
     depthmap_input_image = inputs['depthmap_input_image']
     depthmap_batch_output_dir = inputs['depthmap_batch_output_dir']
     depthmap_batch_reuse = inputs['depthmap_batch_reuse']
+    custom_depthmap = inputs['custom_depthmap']
+    custom_depthmap_img = inputs['custom_depthmap_img']
 
     inputimages = []
+    # Allow supplying custom depthmaps
+    inputdepthmaps = []
     # Also keep track of original file names
     inputnames = []
-    show_images = []
+
+    if depthmap_mode == '2' and depthmap_batch_output_dir != '':
+        outpath = depthmap_batch_output_dir
+    else:
+        outpath = opts.outdir_samples or opts.outdir_extras_samples
 
     if depthmap_mode == '0':  # Single image
         inputimages.append(depthmap_input_image)
         inputnames.append(None)
+        if custom_depthmap:
+            inputdepthmaps.append(custom_depthmap_img)
+        else:
+            inputdepthmaps.append(None)
     if depthmap_mode == '1':  # Batch Process
         # convert files to pillow images
         for img in image_batch:
@@ -1214,39 +1217,58 @@ def run_generate(*inputs):
     elif depthmap_mode == '2':  # Batch from Directory
         assert not shared.cmd_opts.hide_ui_dir_config, '--hide-ui-dir-config option must be disabled'
         if depthmap_batch_input_dir == '':
-            return show_images, "Please select an input directory.", ''
+            return [], "Please select an input directory.", ""
+        if depthmap_batch_input_dir == depthmap_batch_output_dir:
+            return [], "Please pick different directories for batch processing.", ""
         image_list = shared.listfiles(depthmap_batch_input_dir)
-        for img in image_list:
+        for path in image_list:
             try:
-                image = Image.open(img)
-                inputimages.append(image)
-                inputnames.append(img)
+                inputimages.append(Image.open(path))
+                inputnames.append(path)
+
+                custom_depthmap = None
+                if depthmap_batch_reuse:
+                    basename = Path(path).stem
+                    # Custom names are not used in samples directory
+                    if outpath != opts.outdir_extras_samples:
+                        # Possible filenames that the custom depthmaps may have
+                        name_candidates = [f'{basename}-0000_depth.{opts.samples_format}',  # current format
+                                           f'{basename}-0000.{opts.samples_format}',  # old format
+                                           f'{basename}.png',  # human-intuitive format
+                                           f'{Path(path).name}']  # human-intuitive format (worse)
+                        for fn_cand in name_candidates:
+                            path_cand = os.path.join(outpath, fn_cand)
+                            if os.path.isfile(path_cand):
+                                custom_depthmap = Image.open(os.path.abspath(path_cand))
+                                break
+                inputdepthmaps.append(custom_depthmap)
             except Exception:
-                print(f'Failed to load {img}, ignoring.')
+                print(f'Failed to load {path}, ignoring.')
+        inputdepthmaps_n = len([1 for x in inputdepthmaps if x is not None])
+        print(f'{len(inputimages)} images will be processed, {inputdepthmaps_n} existing depthmaps will be reused')
 
-    if depthmap_mode == '2' and depthmap_batch_output_dir != '':
-        outpath = depthmap_batch_output_dir
-    else:
-        outpath = opts.outdir_samples or opts.outdir_extras_samples
-
-    save_images, mesh_fi, meshsimple_fi = run_depthmap(None, outpath, inputimages, inputnames, inputs)
+    save_images, mesh_fi, meshsimple_fi = run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inputs)
     show_images = []
 
     # Saving images
     for input_i, imgs in enumerate(save_images):
         basename = 'depthmap'
-        if depthmap_batch_reuse and depthmap_mode == '2':
-            if inputnames[input_i] is not None:
-                basename = Path(inputnames[input_i]).stem
+        if depthmap_mode == '2' and inputnames[input_i] is not None and outpath != opts.outdir_extras_samples:
+            basename = Path(inputnames[input_i]).stem
         info = None
 
         for image_type, image in list(imgs.items()):
             show_images += [image]
             if inputs["save_outputs"]:
-                images.save_image(image, path=outpath, basename=basename, seed=None,
+                try:
+                    images.save_image(image, path=outpath, basename=basename, seed=None,
                               prompt=None, extension=opts.samples_format, info=info, short_filename=True,
                               no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
                               forced_filename=None, suffix=f"_{image_type}")
+                except Exception as e:
+                    if not ('image has wrong mode' in str(e) or 'I;16' in str(e)): raise e
+                    print('Catched exception: image has wrong mode!')
+                    traceback.print_exc()
 
     # use inpainted 3d mesh to show in 3d model output when enabled in settings
     if hasattr(opts, 'depthmap_script_show_3d_inpaint') and opts.depthmap_script_show_3d_inpaint and mesh_fi != None and len(mesh_fi) > 0:
@@ -1320,8 +1342,9 @@ def on_ui_tabs():
                         inp += gr.Textbox(elem_id="depthmap_batch_output_dir", label="Output directory",
                                           **shared.hide_dirs,
                                           placeholder="Leave blank to save images to the default path.")
+                        gr.HTML("Files in the output directory may be overwritten")
                         inp += gr.Checkbox(elem_id="depthmap_batch_reuse",
-                                           label="Skip generation and use (edited/custom) depthmaps in output directory when a file exists.",
+                                           label="Skip generation and use (edited/custom) depthmaps in output directory when a file already exists.",
                                            value=True)
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
                 inp += main_ui_panel(True)  # Main panel is inserted here

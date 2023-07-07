@@ -90,7 +90,7 @@ from dzoedepth.utils.geometry import depth_to_points, create_triangles
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
 scriptname = "DepthMap"
-scriptversion = "v0.3.12"
+scriptversion = "v0.3.13"
 
 global video_mesh_data, video_mesh_fn
 video_mesh_data = None
@@ -120,6 +120,7 @@ def get_commit_hash():
 
 def main_ui_panel(is_depth_tab):
     inp = GradioComponentBundle()
+    # TODO: Greater visual separation
     with gr.Blocks():
         with gr.Row():
             inp += 'compute_device', gr.Radio(label="Compute on", choices=['GPU', 'CPU'], value='GPU')
@@ -135,52 +136,57 @@ def main_ui_panel(is_depth_tab):
         with gr.Group():
             with gr.Row():
                 inp += 'boost', gr.Checkbox(label="BOOST (multi-resolution merging)", value=True)
-                inp += 'invert_depth', gr.Checkbox(label="Invert DepthMap (black=near, white=far)", value=False)
-            with gr.Group(visible=False) as options_depend_on_boost:
-                inp += 'match_size', gr.Checkbox(label="Match input size", value=False)
-                with gr.Row() as options_depend_on_match_size:
-                    inp += 'net_width', gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
-                    inp += 'net_height', gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
+                with gr.Group(visible=False) as options_depend_on_boost:
+                    inp += 'match_size', gr.Checkbox(label="Match net size to input size", value=False)
+            with gr.Row(visible=False) as options_depend_on_match_size:
+                inp += 'net_width', gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
+                inp += 'net_height', gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
 
         with gr.Group():
             with gr.Row():
-                inp += 'clipdepth', gr.Checkbox(label="Clip and renormalize", value=False)
+                inp += "save_outputs", gr.Checkbox(label="Save Outputs", value=True)  # 50% of width
+                with gr.Group():  # 50% of width
+                    inp += "output_depth", gr.Checkbox(label="Output DepthMap", value=True)
+                    inp += "invert_depth", gr.Checkbox(label="Invert (black=near, white=far)", value=False)
+            with gr.Row() as options_depend_on_output_depth_1:
+                inp += "combine_output", gr.Checkbox(
+                    label="Combine input and depthmap into one image", value=False)
+                inp += "combine_output_axis", gr.Radio(label="Combine axis", choices=['Vertical', 'Horizontal'],
+                                                       value='Horizontal', type="index", visible=False)
+        with gr.Group():
+            with gr.Row():
+                inp += 'clipdepth', gr.Checkbox(label="Clip and renormalize DepthMap", value=False)
             with gr.Row(visible=False) as clip_options_row_1:
                 inp += "clipthreshold_far", gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
                 inp += "clipthreshold_near", gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
 
         with gr.Group():
             with gr.Row():
-                inp += "combine_output", gr.Checkbox(label="Combine input and corresponding depthmap into one image", value=False)
-                inp += "combine_output_axis", gr.Radio(label="Combine axis", choices=['Vertical', 'Horizontal'],
-                                                       value='Horizontal', type="index", visible=False)
-            with gr.Row():
-                inp += "save_depth", gr.Checkbox(label="Save DepthMap", value=True)
-                inp += "show_depth", gr.Checkbox(label="Show DepthMap", value=True)
-                inp += "show_heat", gr.Checkbox(label="Show HeatMap", value=False)
+                inp += "show_heat", gr.Checkbox(label="Generate HeatMap", value=False)
+                # gr.Checkbox(label="Generate NormalMap", value=False)  # TODO: this is a fake door
 
         with gr.Group():
             with gr.Row():
                 inp += "gen_stereo", gr.Checkbox(label="Generate stereoscopic image(s)", value=False)
-                with gr.Group(visible=False) as stereo_options_row_0:
+            with gr.Group(visible=False) as stereo_options:
+                with gr.Row():
                     with gr.Row():
                         inp += "stereo_modes", gr.CheckboxGroup(
                             ["left-right", "right-left", "top-bottom", "bottom-top", "red-cyan-anaglyph"],
                             label="Output", value=["left-right", "red-cyan-anaglyph"])
-
-            with gr.Row(visible=False) as stereo_options_row_1:
-                inp += "stereo_divergence", gr.Slider(minimum=0.05, maximum=10.005, step=0.01,
-                                                      label='Divergence (3D effect)',
-                                                      value=2.5)
-                inp += "stereo_separation", gr.Slider(minimum=-5.0, maximum=5.0, step=0.01,
-                                                      label='Separation (moves images apart)',
-                                                      value=0.0)
-            with gr.Row(visible=False) as stereo_options_row_2:
-                inp += "stereo_fill", gr.Dropdown(label="Gap fill technique",
-                                                  choices=['none', 'naive', 'naive_interpolating', 'polylines_soft',
-                                                           'polylines_sharp'], value='polylines_sharp', type="value")
-                inp += "stereo_balance", gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes',
-                                                   value=0.0)
+                with gr.Row():
+                    inp += "stereo_divergence", gr.Slider(minimum=0.05, maximum=10.005, step=0.01,
+                                                          label='Divergence (3D effect)',
+                                                          value=2.5)
+                    inp += "stereo_separation", gr.Slider(minimum=-5.0, maximum=5.0, step=0.01,
+                                                          label='Separation (moves images apart)',
+                                                          value=0.0)
+                with gr.Row():
+                    inp += "stereo_fill", gr.Dropdown(label="Gap fill technique",
+                                                      choices=['none', 'naive', 'naive_interpolating', 'polylines_soft',
+                                                               'polylines_sharp'], value='polylines_sharp', type="value")
+                    inp += "stereo_balance", gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes',
+                                                       value=0.0)
 
         with gr.Group():
             with gr.Row():
@@ -200,7 +206,7 @@ def main_ui_panel(is_depth_tab):
                 with gr.Group(visible=False) as inpaint_options_row_0:
                     inp += "inpaint_vids", gr.Checkbox(
                         label="Generate 4 demo videos with 3D inpainted mesh.", value=False)
-                    gr.HTML("More options can be found in the Generate video tab")
+                    gr.HTML("More options for generating video can be found in the Generate video tab")
 
         with gr.Group():
             # TODO: it should be clear from the UI that the background removal does not use the model selected above
@@ -223,14 +229,20 @@ def main_ui_panel(is_depth_tab):
         inp += "gen_normal", gr.Checkbox(label="Generate Normalmap (hidden! api only)", value=False, visible=False)
 
         inp['boost'].change(
-            fn=lambda a: options_depend_on_boost.update(visible=not a),
-            inputs=[inp['boost']],
-            outputs=[options_depend_on_boost]
+            fn=lambda a, b: (options_depend_on_boost.update(visible=not a), options_depend_on_match_size.update(visible=not a and not b)),
+            inputs=[inp['boost'], inp['match_size']],
+            outputs=[options_depend_on_boost, options_depend_on_match_size]
         )
         inp['match_size'].change(
-            fn=lambda a: options_depend_on_match_size.update(visible=not a),
-            inputs=[inp['match_size']],
+            fn=lambda a, b: options_depend_on_match_size.update(visible=not a and not b),
+            inputs=[inp['boost'], inp['match_size']],
             outputs=[options_depend_on_match_size]
+        )
+
+        inp['output_depth'].change(
+            fn=lambda a: (inp['invert_depth'].update(visible=a), options_depend_on_output_depth_1.update(visible=a)),
+            inputs=[inp['output_depth']],
+            outputs=[inp['invert_depth'], options_depend_on_output_depth_1]
         )
 
         inp['combine_output'].change(
@@ -268,13 +280,11 @@ def main_ui_panel(is_depth_tab):
         )
 
         def stereo_options_visibility(v):
-            return stereo_options_row_0.update(visible=v), \
-                stereo_options_row_1.update(visible=v), \
-                stereo_options_row_2.update(visible=v)
+            return stereo_options.update(visible=v)
         inp['gen_stereo'].change(
             fn=stereo_options_visibility,
             inputs=[inp['gen_stereo']],
-            outputs=[stereo_options_row_0, stereo_options_row_1, stereo_options_row_2]
+            outputs=[stereo_options]
         )
 
         inp['gen_mesh'].change(
@@ -285,11 +295,12 @@ def main_ui_panel(is_depth_tab):
 
         def inpaint_options_visibility(v):
             return inpaint_options_row_0.update(visible=v)
-        inp['inpaint'].change(
-            fn=inpaint_options_visibility,
-            inputs=[inp['inpaint']],
-            outputs=[inpaint_options_row_0]
-        )
+        if is_depth_tab:
+            inp['inpaint'].change(
+                fn=inpaint_options_visibility,
+                inputs=[inp['inpaint']],
+                outputs=[inpaint_options_row_0]
+            )
 
         def background_removal_options_visibility(v):
             return bgrem_options_row_1.update(visible=v), \
@@ -320,7 +331,7 @@ class Script(scripts.Script):
 
     # run from script in txt2img or img2img
     def run(self, p, *inputs):
-        inp = GradioComponentBundle.enkey_to_dict(inputs)
+        inputs = GradioComponentBundle.enkey_to_dict(inputs)
 
         # sd process
         processed = processing.process_images(p)
@@ -333,24 +344,21 @@ class Script(scripts.Script):
                 continue
             inputimages.append(processed.images[count])
 
-        show_images, save_images, mesh_fi, meshsimple_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, inp)
+        generated_images, mesh_fi, meshsimple_fi = run_depthmap(processed, p.outpath_samples, inputimages, None, inputs)
 
-        for input_i, imgs in enumerate(save_images):
+        for input_i, imgs in enumerate(generated_images):
             # get generation parameters
             if hasattr(processed, 'all_prompts') and opts.enable_pnginfo:
                 info = create_infotext(processed, processed.all_prompts, processed.all_seeds, processed.all_subseeds, "", 0, input_i)
             else:
                 info = None
-
             for image_type, image in list(imgs.items()):
-                images.save_image(image, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
+                processed.images.append(image)
+                if inputs["save_outputs"]:
+                    images.save_image(image, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
                                   prompt=processed.all_prompts[input_i], extension=opts.samples_format, info=info,
                                   p=processed,
                                   suffix=f"_{image_type}")
-
-        for img in show_images:
-            processed.images.append(img)
-
         return processed
 
 
@@ -380,7 +388,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
     combine_output_axis = inp["combine_output_axis"]
     depthmap_compute_device = inp["compute_device"]
     gen_mesh = inp["gen_mesh"]
-    gen_normal = inp["gen_normal"]
+    gen_normal = inp["gen_normal"] if "gen_normal" in inp else False
     gen_stereo = inp["gen_stereo"]
     inpaint = inp["inpaint"]
     inpaint_vids = inp["inpaint_vids"]
@@ -393,8 +401,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
     net_width = inp["net_width"]
     pre_depth_background_removal = inp["pre_depth_background_removal"]
     save_background_removal_masks = inp["save_background_removal_masks"]
-    save_depth = inp["save_depth"]
-    show_depth = inp["show_depth"]
+    output_depth = inp["output_depth"]
     show_heat = inp["show_heat"]
     stereo_balance = inp["stereo_balance"]
     stereo_divergence = inp["stereo_divergence"]
@@ -402,7 +409,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
     stereo_modes = inp["stereo_modes"]
     stereo_separation = inp["stereo_separation"]
 
-    custom_depthmap = inp["custom_depthmap"] if "custom_depthmap" in inp else "False"
+    custom_depthmap = inp["custom_depthmap"] if "custom_depthmap" in inp else False
     custom_depthmap_img = inp["custom_depthmap_img"] if "custom_depthmap_img" in inp else None
     depthmap_batch_reuse = inp["depthmap_batch_reuse"] if "depthmap_batch_reuse" in inp else True
 
@@ -474,7 +481,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
                      "https://huggingface.co/lllyasviel/Annotators/resolve/5bc80eec2b4fddbb/res101.pth",
                      ],
                     "1d696b2ef3e8336b057d0c15bc82d2fecef821bfebe5ef9d7671a5ec5dde520b")
-                ensure_file_downloaded(model_path, "https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download")
                 if depthmap_compute_device == 'GPU':
                     checkpoint = torch.load(model_path)
                 else:
@@ -598,7 +604,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
                 # sfu.ca unfortunately is not very reliable, we use a mirror just in case
                 ensure_file_downloaded(
                     './models/pix2pix/latest_net_G.pth',
-                    ["https://huggingface.co/lllyasviel/Annotators/blob/9a7d84251d487d11/latest_net_G.pth",
+                    ["https://huggingface.co/lllyasviel/Annotators/resolve/9a7d84251d487d11/latest_net_G.pth",
                      "https://sfu.ca/~yagiz/CVPR21/latest_net_G.pth"],
                     '50ec735d74ed6499562d898f41b49343e521808b8dae589aa3c2f5c9ac9f7462')
                 opt = TestOptions().parse()
@@ -635,12 +641,10 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
 
         print("Computing depthmap(s) ..")
         numimages = len(inputimages)
-        # Images that are meant to be shown in a GUI (if any)
-        show_images = []
-        # Images that should be saved as an array of dictionaries.
+        # Images that will be returned.
         # Every array element corresponds to particular input image.
         # Dictionary keys are types of images that were derived from the input image.
-        save_images = [{} for _ in range(numimages)]
+        generated_images = [{} for _ in range(numimages)]
         # TODO: ???
         inpaint_imgs = []
         # TODO: ???
@@ -653,7 +657,8 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
             # filename
             basename = 'depthmap'
 
-            # TODO: this should not use heuristics to figure out the mode, mode should ideally be abstracted away
+            # TODO: this should not use heuristics to figure out the mode, mode should ideally be abstracted away.
+            #  By the way, this is probably broken
             # figuring out the name of custom DepthMap
             custom_depthmap_fn = None  # None means that DepthMap should be computed
             # find filename if in the single image mode
@@ -661,7 +666,6 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
                 custom_depthmap_fn = custom_depthmap_img.name
             # find filename if in batch mode
             if inputnames is not None and depthmap_batch_reuse:
-                save_depth = True
                 if inputnames[count] is not None:
                     p = Path(inputnames[count])
                     basename = p.stem
@@ -757,44 +761,33 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
 
                 img_output[bg_mask] = far_value * far_value  # 255*255 or 0*0
 
-                # saving should be optional
-                save_images[count]['background_removed'] = background_removed_image
-                show_images.append(background_removed_image)
+                generated_images[count]['background_removed'] = background_removed_image
 
                 if save_background_removal_masks:
                     bg_array = (1 - bg_mask.astype('int8')) * 255
                     mask_array = np.stack((bg_array, bg_array, bg_array, bg_array), axis=2)
                     mask_image = Image.fromarray(mask_array.astype(np.uint8))
 
-                    # saving should be optional
-                    save_images[count]['foreground_mask'] = mask_image
-                    show_images.append(mask_image)
+                    generated_images[count]['foreground_mask'] = mask_image
 
-            img_concat = Image.fromarray(np.concatenate((rgb_image, img_output2), axis=combine_output_axis))
-            if show_depth:
-                if not combine_output:
-                    show_images.append(Image.fromarray(img_output))
-                else:
-                    show_images.append(img_concat)
             if not skipInvertAndSave:  # TODO: skipInvertAndSave is not intuitive
-                if save_depth:
+                if output_depth:
                     if combine_output:
-                        save_images[count]['concat_depth'] = img_concat
+                        img_concat = Image.fromarray(np.concatenate((rgb_image, img_output2), axis=combine_output_axis))
+                        generated_images[count]['concat_depth'] = img_concat
                     else:
-                        save_images[count]['depth'] = Image.fromarray(img_output)
+                        generated_images[count]['depth'] = Image.fromarray(img_output)
 
             if show_heat:
                 heatmap = colorize(img_output, cmap='inferno')
-                show_images.append(heatmap)
+                generated_images[count]['heatmap'] = heatmap
 
             if gen_stereo:
                 print("Generating stereoscopic images..")
-
                 stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, stereo_separation,
                                                    stereo_modes, stereo_balance, stereo_fill)
                 for c in range(0, len(stereoimages)):
-                    show_images.append(stereoimages[c])
-                    save_images[count][stereo_modes[c]] = stereoimages[c]
+                    generated_images[count][stereo_modes[c]] = stereoimages[c]
 
             if gen_normal:  # TODO: should be moved into a separate file when redesigned
                 # taken from @graemeniedermayer
@@ -815,7 +808,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
                 normal *= 255
                 normal = normal.astype(np.uint8)
 
-                show_images.append(Image.fromarray(normal))
+                generated_images[count]['normal'] = Image.fromarray(normal)
 
             # gen mesh
             if gen_mesh:
@@ -875,7 +868,7 @@ def run_depthmap(processed, outpath, inputimages, inputnames, inp):
         reload_sd_model()
         print("All done.")
 
-    return show_images, save_images, mesh_fi, meshsimple_fi
+    return generated_images, mesh_fi, meshsimple_fi
 
 
 @njit(parallel=True)
@@ -1236,7 +1229,8 @@ def run_generate(*inputs):
     else:
         outpath = opts.outdir_samples or opts.outdir_extras_samples
 
-    show_images, save_images, mesh_fi, meshsimple_fi = run_depthmap(None, outpath, inputimages, inputnames, inputs)
+    save_images, mesh_fi, meshsimple_fi = run_depthmap(None, outpath, inputimages, inputnames, inputs)
+    show_images = []
 
     # Saving images
     for input_i, imgs in enumerate(save_images):
@@ -1247,7 +1241,9 @@ def run_generate(*inputs):
         info = None
 
         for image_type, image in list(imgs.items()):
-            images.save_image(image, path=outpath, basename=basename, seed=None,
+            show_images += [image]
+            if inputs["save_outputs"]:
+                images.save_image(image, path=outpath, basename=basename, seed=None,
                               prompt=None, extension=opts.samples_format, info=info, short_filename=True,
                               no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
                               forced_filename=None, suffix=f"_{image_type}")

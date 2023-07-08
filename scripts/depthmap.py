@@ -6,7 +6,6 @@ from pathlib import Path
 
 import gradio as gr
 from PIL import Image
-from numba import njit, prange
 from torchvision.transforms import Compose, transforms
 
 import modules.scripts as scripts
@@ -276,7 +275,7 @@ def main_ui_panel(is_depth_tab):
             outputs=[inp['clipthreshold_far']]
         )
 
-        # Invert_depthmap must not be used with gen_stereo - otherwise stereo images look super-wrong
+        # invert_depth must not be used with gen_stereo - otherwise stereo images look super-wrong
         inp['gen_stereo'].change(
             fn=lambda a, b: False if b else a,
             inputs=[inp['invert_depth'], inp['gen_stereo']],
@@ -365,10 +364,11 @@ class Script(scripts.Script):
                 processed.images.append(image)
                 if inputs["save_outputs"]:
                     try:
+                        suffix = "" if image_type == "depth" else f"_{image_type}"
                         images.save_image(image, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
                                   prompt=processed.all_prompts[input_i], extension=opts.samples_format, info=info,
                                   p=processed,
-                                  suffix=f"_{image_type}")
+                                  suffix=suffix)
                     except Exception as e:
                         if not ('image has wrong mode' in str(e) or 'I;16' in str(e)): raise e
                         print('Catched exception: image has wrong mode!')
@@ -426,8 +426,7 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
     stereo_modes = inp["stereo_modes"]
     stereo_separation = inp["stereo_separation"]
 
-    # TODO: run_depthmap should not generate or save meshes, since these do not use generated depthmaps.
-    #  Rationale: allowing webui-independent (stand-alone) wrappers.
+    # TODO: ideally, run_depthmap should not save meshes - that makes the function not pure
     print(f"\n{scriptname} {scriptversion} ({get_commit_hash()})")
 
     unload_sd_model()
@@ -631,7 +630,7 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
             model.eval()
 
             # optimize
-            if device == torch.device("cuda") and model_type < 7:
+            if device == torch.device("cuda") and model_type in [0, 1, 2, 3, 4, 5, 6]:
                 model = model.to(memory_format=torch.channels_last)
                 if not cmd_opts.no_half and model_type != 0 and not boost:
                     model = model.half()
@@ -650,11 +649,11 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
                 model = model.to(device)
 
         print("Computing depthmap(s) ..")
-        numimages = len(inputimages)
-        # Images that will be returned.
-        # Every array element corresponds to particular input image.
-        # Dictionary keys are types of images that were derived from the input image.
-        generated_images = [{} for _ in range(numimages)]
+
+        generated_images = [{} for _ in range(len(inputimages))]
+        """Images that will be returned.
+        Every array element corresponds to particular input image.
+        Dictionary keys are types of images that were derived from the input image."""
 
         # TODO: ???
         meshsimple_fi = None
@@ -662,14 +661,8 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
         inpaint_depths = []
 
         # iterate over input (generated) images
-        for count in trange(0, numimages):
-
-            print('\n')
-
-            # filename
-            basename = 'depthmap'
-
-            # override net size
+        for count in trange(0, len(inputimages)):
+            # override net size (size may be different for different images)
             if match_size:
                 net_width, net_height = inputimages[count].width, inputimages[count].height
 
@@ -681,61 +674,62 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
             # input image
             img = cv2.cvtColor(np.asarray(inputimages[count]), cv2.COLOR_BGR2RGB) / 255.0
 
-            skipInvertAndSave = False
+            raw_prediction = None
+            """Raw prediction, as returned by a model. None if input depthmap is used."""
+            raw_prediction_invert = False
+            """True if near=dark on raw_prediction"""
+            out = None
             if inputdepthmaps is not None and inputdepthmaps[count] is not None:
                 # use custom depthmap
                 dimg = inputdepthmaps[count]
                 # resize if not same size as input
                 if dimg.width != inputimages[count].width or dimg.height != inputimages[count].height:
                     dimg = dimg.resize((inputimages[count].width, inputimages[count].height), Image.Resampling.LANCZOS)
+
                 if dimg.mode == 'I' or dimg.mode == 'P' or dimg.mode == 'L':
-                    prediction = np.asarray(dimg, dtype="float")
+                    out = np.asarray(dimg, dtype="float")
                 else:
-                    prediction = np.asarray(dimg, dtype="float")[:, :, 0]
-                skipInvertAndSave = True  # skip invert for leres model (0)
+                    out = np.asarray(dimg, dtype="float")[:, :, 0]
             else:
                 # compute depthmap
                 if not boost:
                     if model_type == 0:
-                        prediction = estimateleres(img, model, net_width, net_height)
-                    elif model_type >= 7:
-                        prediction = estimatezoedepth(inputimages[count], model, net_width, net_height)
+                        raw_prediction = estimateleres(img, model, net_width, net_height)
+                        raw_prediction_invert = True
+                    elif model_type in [7, 8, 9]:
+                        raw_prediction = estimatezoedepth(inputimages[count], model, net_width, net_height)
+                        raw_prediction_invert = True
                     else:
-                        prediction = estimatemidas(img, model, net_width, net_height, resize_mode, normalization)
+                        raw_prediction = estimatemidas(img, model, net_width, net_height, resize_mode, normalization)
                 else:
-                    prediction = estimateboost(img, model, model_type, pix2pixmodel)
+                    raw_prediction = estimateboost(img, model, model_type, pix2pixmodel)
 
-            # output
-            depth = prediction
+                # output
+                if abs(raw_prediction.max() - raw_prediction.min()) > np.finfo("float").eps:
+                    out = np.copy(raw_prediction)
+                    # TODO: some models may output negative values, maybe these should be clamped to zero.
+                    if raw_prediction_invert:
+                        out *= -1
+                    if clipdepth:
+                        out = (out - out.min()) / (out.max() - out.min())  # normalize to [0; 1]
+                        out = np.clip(out, clipthreshold_far, clipthreshold_near)
+                else:
+                    # Regretfully, the depthmap is broken and will be replaced with a black image
+                    out = np.zeros(raw_prediction.shape)
+            out = (out - out.min()) / (out.max() - out.min())  # normalize to [0; 1]
+
+            # Single channel, 16 bit image. This loses some precision!
+            # uint16 conversion uses round-down, therefore values should be [0; 2**16)
             numbytes = 2
-            depth_min = depth.min()
-            depth_max = depth.max()
-            max_val = (2 ** (8 * numbytes)) - 1
-
-            # check output before normalizing and mapping to 16 bit
-            if depth_max - depth_min > np.finfo("float").eps:
-                out = max_val * (depth - depth_min) / (depth_max - depth_min)
-            else:
-                out = np.zeros(depth.shape)
-
-            # single channel, 16 bit image
+            max_val = (2 ** (8 * numbytes))
+            out = np.clip(out * max_val, 0, max_val - 0.1)  # Clipping form above is needed to avoid overflowing
             img_output = out.astype("uint16")
-
-            # invert depth map
-            if invert_depth ^ (((model_type == 0) or (model_type >= 7)) and not skipInvertAndSave):
-                img_output = cv2.bitwise_not(img_output)
-
-            # apply depth clip and renormalize if enabled
-            if clipdepth:
-                img_output = clipdepthmap(img_output, clipthreshold_far, clipthreshold_near)
-                # img_output = cv2.blur(img_output, (3, 3))
+            """Depthmap (near=bright), as uint16"""
 
             # if 3dinpainting, store maps for processing in second pass
             if inpaint:
                 inpaint_imgs.append(inputimages[count])
                 inpaint_depths.append(img_output)
-
-            rgb_image = inputimages[count]
 
             # applying background masks after depth
             if background_removal:
@@ -745,9 +739,7 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
                 background_removed_array = np.array(background_removed_image)
                 bg_mask = (background_removed_array[:, :, 0] == 0) & (background_removed_array[:, :, 1] == 0) & (
                             background_removed_array[:, :, 2] == 0) & (background_removed_array[:, :, 3] <= 0.2)
-                far_value = 255 if invert_depth else 0
-
-                img_output[bg_mask] = far_value * far_value  # 255*255 or 0*0
+                img_output[bg_mask] = 0  # far value
 
                 generated_images[count]['background_removed'] = background_removed_image
 
@@ -758,14 +750,17 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
 
                     generated_images[count]['foreground_mask'] = mask_image
 
-            if not skipInvertAndSave:  # TODO: skipInvertAndSave is not intuitive
+            # A weird quirk: if user tries to save depthmap, whereas input depthmap is used,
+            # depthmap will be outputed, even if combine_output is used.
+            if output_depth and inputdepthmaps[count] is None:
                 if output_depth:
+                    img_depth = cv2.bitwise_not(img_output) if invert_depth else img_output
                     if combine_output:
                         img_concat = Image.fromarray(np.concatenate(
-                            (rgb_image, convert_i16_to_rgb(img_output, rgb_image)), axis=combine_output_axis))
+                            (inputimages[count], convert_i16_to_rgb(img_depth, inputimages[count])), axis=combine_output_axis))
                         generated_images[count]['concat_depth'] = img_concat
                     else:
-                        generated_images[count]['depth'] = Image.fromarray(img_output)
+                        generated_images[count]['depth'] = Image.fromarray(img_depth)
 
             if show_heat:
                 heatmap = colorize(img_output, cmap='inferno')
@@ -802,15 +797,15 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
             # gen mesh
             if gen_mesh:
                 print(f"\nGenerating (occluded) mesh ..")
-
+                basename = 'depthmap'
                 meshsimple_fi = get_uniquefn(outpath, basename, 'obj')
                 meshsimple_fi = os.path.join(outpath, meshsimple_fi + '_simple.obj')
 
-                depthi = prediction
+                depthi = raw_prediction if raw_prediction is not None else raw_prediction
                 # try to map output to sensible values for non zoedepth models, boost, or custom maps
-                if model_type < 7 or boost or inputdepthmaps_complete:
+                if model_type not in [7, 8, 9] or boost or inputdepthmaps[count] is not None:
                     # invert if midas
-                    if model_type > 0 or (inputdepthmaps_complete and not invert_depth):
+                    if model_type > 0 or inputdepthmaps[count] is not None:  # TODO: Weird
                         depthi = depth_max - depthi + depth_min
                         depth_max = depthi.max()
                         depth_min = depthi.min()
@@ -826,7 +821,7 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
                     depthi = depthi + 1
 
                 mesh = create_mesh(inputimages[count], depthi, keep_edges=not mesh_occlude, spherical=mesh_spherical)
-                save_mesh_obj(meshsimple_fi, mesh)
+                mesh.export(meshsimple_fi)
 
         print("Done.")
 
@@ -848,40 +843,17 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
 
         gc.collect()
         devices.torch_gc()
-        reload_sd_model()
 
     mesh_fi = None
     if inpaint:
         try:
-            unload_sd_model()
             mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, inpaint_vids, 1, "mp4")
-        finally:
-            reload_sd_model()  # Do not reload twice
-            print("All done.")
+        except Exception as e:
+            print(f'{str(e)}, some issue with generating inpainted mesh')
+    reload_sd_model()
+    print("All done.")
 
     return generated_images, mesh_fi, meshsimple_fi
-
-
-@njit(parallel=True)
-def clipdepthmap(img, clipthreshold_far, clipthreshold_near):
-    clipped_img = img
-    w, h = img.shape
-    min = img.min()
-    max = img.max()
-    drange = max - min
-    clipthreshold_far = min + (clipthreshold_far * drange)
-    clipthreshold_near = min + (clipthreshold_near * drange)
-
-    for x in prange(w):
-        for y in range(h):
-            if clipped_img[x, y] < clipthreshold_far:
-                clipped_img[x, y] = 0
-            elif clipped_img[x, y] > clipthreshold_near:
-                clipped_img[x, y] = 65535
-            else:
-                clipped_img[x, y] = ((clipped_img[x, y] + min) / drange * 65535)
-
-    return clipped_img
 
 
 def get_uniquefn(outpath, basename, ext):
@@ -963,10 +935,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, inpaint_vids, v
         if device == torch.device("cpu"):
             config["gpu_ids"] = -1
 
-        # process all inputs
-        numimages = len(img_rgb)
-        for count in trange(0, numimages):
-
+        for count in trange(0, len(img_rgb)):
             basename = 'depthmap'
             if inputnames is not None:
                 if inputnames[count] is not None:
@@ -1205,6 +1174,8 @@ def run_generate(*inputs):
         inputimages.append(depthmap_input_image)
         inputnames.append(None)
         if custom_depthmap:
+            if custom_depthmap_img is None:
+                return [], None, None, "Custom depthmap is not specified. Please either supply it or disable this option.", ""
             inputdepthmaps.append(custom_depthmap_img)
         else:
             inputdepthmaps.append(None)
@@ -1217,9 +1188,9 @@ def run_generate(*inputs):
     elif depthmap_mode == '2':  # Batch from Directory
         assert not shared.cmd_opts.hide_ui_dir_config, '--hide-ui-dir-config option must be disabled'
         if depthmap_batch_input_dir == '':
-            return [], "Please select an input directory.", ""
+            return [], None, None, "Please select an input directory.", ""
         if depthmap_batch_input_dir == depthmap_batch_output_dir:
-            return [], "Please pick different directories for batch processing.", ""
+            return [], None, None, "Please pick different directories for batch processing.", ""
         image_list = shared.listfiles(depthmap_batch_input_dir)
         for path in image_list:
             try:
@@ -1232,8 +1203,7 @@ def run_generate(*inputs):
                     # Custom names are not used in samples directory
                     if outpath != opts.outdir_extras_samples:
                         # Possible filenames that the custom depthmaps may have
-                        name_candidates = [f'{basename}-0000_depth.{opts.samples_format}',  # current format
-                                           f'{basename}-0000.{opts.samples_format}',  # old format
+                        name_candidates = [f'{basename}-0000.{opts.samples_format}',  # current format
                                            f'{basename}.png',  # human-intuitive format
                                            f'{Path(path).name}']  # human-intuitive format (worse)
                         for fn_cand in name_candidates:
@@ -1261,10 +1231,11 @@ def run_generate(*inputs):
             show_images += [image]
             if inputs["save_outputs"]:
                 try:
+                    suffix = "" if image_type == "depth" else f"_{image_type}"
                     images.save_image(image, path=outpath, basename=basename, seed=None,
                               prompt=None, extension=opts.samples_format, info=info, short_filename=True,
                               no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
-                              forced_filename=None, suffix=f"_{image_type}")
+                              forced_filename=None, suffix=suffix)
                 except Exception as e:
                     if not ('image has wrong mode' in str(e) or 'I;16' in str(e)): raise e
                     print('Catched exception: image has wrong mode!')
@@ -1276,7 +1247,7 @@ def run_generate(*inputs):
     # however, don't show 3dmodel when disabled in settings
     if hasattr(opts, 'depthmap_script_show_3d') and not opts.depthmap_script_show_3d:
             meshsimple_fi = None
-
+    # TODO: return more info
     return show_images, mesh_fi, meshsimple_fi, plaintext_to_html('info'), ''
 
 
@@ -1342,7 +1313,7 @@ def on_ui_tabs():
                         inp += gr.Textbox(elem_id="depthmap_batch_output_dir", label="Output directory",
                                           **shared.hide_dirs,
                                           placeholder="Leave blank to save images to the default path.")
-                        gr.HTML("Files in the output directory may be overwritten")
+                        gr.HTML("Files in the output directory may be overwritten.")
                         inp += gr.Checkbox(elem_id="depthmap_batch_reuse",
                                            label="Skip generation and use (edited/custom) depthmaps in output directory when a file already exists.",
                                            value=True)

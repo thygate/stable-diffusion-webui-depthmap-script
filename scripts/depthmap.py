@@ -4,18 +4,12 @@
 from operator import getitem
 from pathlib import Path
 
-import gradio as gr
 from PIL import Image
 from torchvision.transforms import Compose, transforms
 
-import modules.scripts as scripts
-from modules import processing, images, shared, devices
-from modules import script_callbacks
-from modules.call_queue import wrap_gradio_gpu_call
+from modules import shared, devices
 from modules.images import get_next_sequence_number
-from modules.processing import create_infotext
 from modules.shared import opts, cmd_opts
-from modules.ui import plaintext_to_html
 
 try:
     from tqdm import trange
@@ -31,7 +25,6 @@ import skimage.measure
 import copy
 import platform
 import math
-import subprocess
 import traceback
 import pathlib
 import os
@@ -56,8 +49,8 @@ def ensure_gradio_temp_directory():
 ensure_gradio_temp_directory()
 
 # Our code
+from scripts.main import *
 from scripts.stereoimage_generation import create_stereoimages
-from scripts.gradio_args_transport import GradioComponentBundle
 
 # midas imports
 from dmidas.dpt_depth import DPTDepthModel
@@ -88,34 +81,253 @@ from dzoedepth.utils.geometry import depth_to_points, create_triangles
 # TODO: next two should not be here
 whole_size_threshold = 1600  # R_max from the paper
 pix2pixsize = 1024
-scriptname = "DepthMap"
-scriptversion = "v0.3.13"
 
 global video_mesh_data, video_mesh_fn
 video_mesh_data = None
 video_mesh_fn = None
 
-global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type, depthmap_deviceidx
-depthmap_model_depth = None
-depthmap_model_pix2pix = None
-depthmap_model_type = None
-depthmap_deviceidx = None
+class ModelHolder():
+    def __init__(self):
+        self.depth_model = None
+        self.pix2pix_model = None
+        self.depth_model_type = None
+        self.device = None
 
-commit_hash = None  # TODO: understand why it would spam to stderr if changed to ... = get_commit_hash()
-def get_commit_hash():
-    global commit_hash
-    if commit_hash is None:
-        try:
-            commit_hash = subprocess.check_output(
-                [os.environ.get('GIT', "git"), "rev-parse", "HEAD"],
-                cwd=pathlib.Path.cwd().joinpath('extensions/stable-diffusion-webui-depthmap-script/'),
-                shell=False,
-                stderr=subprocess.DEVNULL,
-                encoding='utf8').strip()[0:8]
-        except Exception:
-            commit_hash = "<none>"
-    return commit_hash
+        # Extra stuff
+        self.resize_mode = None
+        self.normalization = None
 
+    def ensure_models(self, model_type, device: torch.device, boost: bool):
+        # TODO: could make it more granular
+        if model_type == -1 or model_type is None:
+            self.unload_models()
+            return
+        # Certain optimisations are irreversible and not device-agnostic, thus changing device requires reloading
+        if model_type != self.depth_model_type or boost != self.pix2pix_model is not None or device != self.device:
+            self.unload_models()
+            self.load_models(model_type, device, boost)
+
+    def load_models(self, model_type, device: torch.device, boost: bool):
+        """Ensure that the depth model is loaded"""
+        # TODO: supply correct values for zoedepth
+        net_width = 512
+        net_height = 512
+
+        # model path and name
+        model_dir = "./models/midas"
+        if model_type == 0:
+            model_dir = "./models/leres"
+        # create paths to model if not present
+        os.makedirs(model_dir, exist_ok=True)
+        os.makedirs('./models/pix2pix', exist_ok=True)
+
+        print("Loading model weights from ", end=" ")
+
+        resize_mode = "minimal"
+        normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+        # TODO: net_w, net_h
+        model = None
+        if model_type == 0:  # "res101"
+            model_path = f"{model_dir}/res101.pth"
+            print(model_path)
+            ensure_file_downloaded(
+                model_path,
+                ["https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download",
+                 "https://huggingface.co/lllyasviel/Annotators/resolve/5bc80eec2b4fddbb/res101.pth",
+                 ],
+                "1d696b2ef3e8336b057d0c15bc82d2fecef821bfebe5ef9d7671a5ec5dde520b")
+            if device == torch.device('gpu'):
+                checkpoint = torch.load(model_path)
+            else:
+                checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+            model = RelDepthModel(backbone='resnext101')
+            model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)
+            del checkpoint
+            devices.torch_gc()
+
+        if model_type == 1:  # "dpt_beit_large_512" midas 3.1
+            model_path = f"{model_dir}/dpt_beit_large_512.pt"
+            print(model_path)
+            ensure_file_downloaded(model_path,
+                                   "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_512.pt")
+            model = DPTDepthModel(
+                path=model_path,
+                backbone="beitl16_512",
+                non_negative=True,
+            )
+            resize_mode = "minimal"
+            normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+        if model_type == 2:  # "dpt_beit_large_384" midas 3.1
+            model_path = f"{model_dir}/dpt_beit_large_384.pt"
+            print(model_path)
+            ensure_file_downloaded(model_path,
+                                   "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_384.pt")
+            model = DPTDepthModel(
+                path=model_path,
+                backbone="beitl16_384",
+                non_negative=True,
+            )
+            resize_mode = "minimal"
+            normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+        if model_type == 3:  # "dpt_large_384" midas 3.0
+            model_path = f"{model_dir}/dpt_large-midas-2f21e586.pt"
+            print(model_path)
+            ensure_file_downloaded(model_path,
+                                   "https://github.com/intel-isl/DPT/releases/download/1_0/dpt_large-midas-2f21e586.pt")
+            model = DPTDepthModel(
+                path=model_path,
+                backbone="vitl16_384",
+                non_negative=True,
+            )
+            resize_mode = "minimal"
+            normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+        elif model_type == 4:  # "dpt_hybrid_384" midas 3.0
+            model_path = f"{model_dir}/dpt_hybrid-midas-501f0c75.pt"
+            print(model_path)
+            ensure_file_downloaded(model_path,
+                                   "https://github.com/intel-isl/DPT/releases/download/1_0/dpt_hybrid-midas-501f0c75.pt")
+            model = DPTDepthModel(
+                path=model_path,
+                backbone="vitb_rn50_384",
+                non_negative=True,
+            )
+            resize_mode = "minimal"
+            normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+        elif model_type == 5:  # "midas_v21"
+            model_path = f"{model_dir}/midas_v21-f6b98070.pt"
+            print(model_path)
+            ensure_file_downloaded(model_path,
+                                   "https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21-f6b98070.pt")
+            model = MidasNet(model_path, non_negative=True)
+            resize_mode = "upper_bound"
+            normalization = NormalizeImage(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            )
+
+        elif model_type == 6:  # "midas_v21_small"
+            model_path = f"{model_dir}/midas_v21_small-70d6b9c8.pt"
+            print(model_path)
+            ensure_file_downloaded(model_path,
+                                   "https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21_small-70d6b9c8.pt")
+            model = MidasNet_small(model_path, features=64, backbone="efficientnet_lite3", exportable=True,
+                                   non_negative=True, blocks={'expand': True})
+            resize_mode = "upper_bound"
+            normalization = NormalizeImage(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            )
+
+        elif model_type == 7:  # zoedepth_n
+            print("zoedepth_n\n")
+            conf = get_config("zoedepth", "infer")
+            conf.img_size = [net_width, net_height]
+            model = build_model(conf)
+
+        elif model_type == 8:  # zoedepth_k
+            print("zoedepth_k\n")
+            conf = get_config("zoedepth", "infer", config_version="kitti")
+            conf.img_size = [net_width, net_height]
+            model = build_model(conf)
+
+        elif model_type == 9:  # zoedepth_nk
+            print("zoedepth_nk\n")
+            conf = get_config("zoedepth_nk", "infer")
+            conf.img_size = [net_width, net_height]
+            model = build_model(conf)
+
+        model.eval()  # prepare for evaluation
+        # optimize
+        if device == torch.device("cuda") and model_type in [0, 1, 2, 3, 4, 5, 6]:
+            model = model.to(memory_format=torch.channels_last)
+            if not cmd_opts.no_half and model_type != 0 and not boost:
+                model = model.half()
+        model.to(device)  # to correct device
+
+        self.depth_model = model
+        self.depth_model_type = model_type
+        self.resize_mode = resize_mode
+        self.normalization = normalization
+
+        # load merge network if boost enabled or keepmodels enabled
+        if boost or (hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels):
+            # sfu.ca unfortunately is not very reliable, we use a mirror just in case
+            ensure_file_downloaded(
+                './models/pix2pix/latest_net_G.pth',
+                ["https://huggingface.co/lllyasviel/Annotators/resolve/9a7d84251d487d11/latest_net_G.pth",
+                 "https://sfu.ca/~yagiz/CVPR21/latest_net_G.pth"],
+                '50ec735d74ed6499562d898f41b49343e521808b8dae589aa3c2f5c9ac9f7462')
+            opt = TestOptions().parse()
+            if device == torch.device('cpu'):
+                opt.gpu_ids = []
+            pix2pix_model = Pix2Pix4DepthModel(opt)
+            pix2pix_model.save_dir = './models/pix2pix'
+            pix2pix_model.load_networks('latest')
+            pix2pix_model.eval()
+            model.to(device)
+            self.pix2pix_model = pix2pix_model
+
+        devices.torch_gc()
+
+    def get_default_net_size(self, model_type):
+        # TODO: fill in, use in the GUI
+        sizes = {
+            1: [512, 512],
+            2: [384, 384],
+            3: [384, 384],
+            4: [384, 384],
+            5: [384, 384],
+            6: [256, 256],
+        }
+        if model_type in sizes:
+            return sizes[model_type]
+        return [512, 512]
+
+    def swap_to_cpu_memory(self):
+        if self.depth_model is not None:
+            self.depth_model.to(torch.device('cpu'))
+        if self.pix2pix_model is not None:
+            self.pix2pix_model.to(torch.device('cpu'))
+
+    def unload_models(self):
+        if self.depth_model is not None or self.pix2pix_model is not None:
+            del self.depth_model
+            self.depth_model = None
+            del self.pix2pix_model
+            self.pix2pix_model = None
+            gc.collect()
+            devices.torch_gc()
+
+        self.depth_model_type = None
+        self.deviceidx = None
+
+    def get_raw_prediction(self, input, net_width, net_height):
+        """Get prediction from the model currently loaded by the class.
+        If boost is enabled, net_width and net_height will be ignored."""
+        # input image
+        img = cv2.cvtColor(np.asarray(input), cv2.COLOR_BGR2RGB) / 255.0
+        # compute depthmap
+        if not self.pix2pix_model != None:
+            if self.depth_model_type == 0:
+                raw_prediction = estimateleres(img, self.depth_model, net_width, net_height)
+                raw_prediction_invert = True
+            elif self.depth_model_type in [7, 8, 9]:
+                raw_prediction = estimatezoedepth(input, self.depth_model, net_width, net_height)
+                raw_prediction_invert = True
+            else:
+                raw_prediction = estimatemidas(img, self.depth_model, net_width, net_height,
+                                               model_holder.resize_mode, model_holder.normalization)
+                raw_prediction_invert = False
+        else:
+            raw_prediction = estimateboost(img, self.depth_model, self.depth_model_type, self.pix2pix_model)
+            raw_prediction_invert = False
+        return raw_prediction, raw_prediction_invert
+
+
+model_holder = ModelHolder()
 
 def convert_i16_to_rgb(image, like):
     # three channel, 8 bits per channel image
@@ -124,256 +336,6 @@ def convert_i16_to_rgb(image, like):
     output[:, :, 1] = image / 256.0
     output[:, :, 2] = image / 256.0
     return output
-
-
-def main_ui_panel(is_depth_tab):
-    inp = GradioComponentBundle()
-    # TODO: Greater visual separation
-    with gr.Blocks():
-        with gr.Row():
-            inp += 'compute_device', gr.Radio(label="Compute on", choices=['GPU', 'CPU'], value='GPU')
-            # TODO: Should return value instead of index. Maybe Enum should be used?
-            inp += 'model_type', gr.Dropdown(label="Model",
-                                             choices=['res101', 'dpt_beit_large_512 (midas 3.1)',
-                                                      'dpt_beit_large_384 (midas 3.1)', 'dpt_large_384 (midas 3.0)',
-                                                      'dpt_hybrid_384 (midas 3.0)',
-                                                      'midas_v21', 'midas_v21_small',
-                                                      'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk'],
-                                             value='res101',
-                                             type="index")
-        with gr.Group():
-            with gr.Row():
-                inp += 'boost', gr.Checkbox(label="BOOST (multi-resolution merging)", value=True)
-                with gr.Group(visible=False) as options_depend_on_boost:
-                    inp += 'match_size', gr.Checkbox(label="Match net size to input size", value=False)
-            with gr.Row(visible=False) as options_depend_on_match_size:
-                inp += 'net_width', gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
-                inp += 'net_height', gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
-
-        with gr.Group():
-            with gr.Row():
-                inp += "save_outputs", gr.Checkbox(label="Save Outputs", value=True)  # 50% of width
-                with gr.Group():  # 50% of width
-                    inp += "output_depth", gr.Checkbox(label="Output DepthMap", value=True)
-                    inp += "invert_depth", gr.Checkbox(label="Invert (black=near, white=far)", value=False)
-            with gr.Row() as options_depend_on_output_depth_1:
-                inp += "combine_output", gr.Checkbox(
-                    label="Combine input and depthmap into one image", value=False)
-                inp += "combine_output_axis", gr.Radio(label="Combine axis", choices=['Vertical', 'Horizontal'],
-                                                       value='Horizontal', type="index", visible=False)
-        with gr.Group():
-            with gr.Row():
-                inp += 'clipdepth', gr.Checkbox(label="Clip and renormalize DepthMap", value=False)
-            with gr.Row(visible=False) as clip_options_row_1:
-                inp += "clipthreshold_far", gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
-                inp += "clipthreshold_near", gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
-
-        with gr.Group():
-            with gr.Row():
-                inp += "show_heat", gr.Checkbox(label="Generate HeatMap", value=False)
-                # gr.Checkbox(label="Generate NormalMap", value=False)  # TODO: this is a fake door
-
-        with gr.Group():
-            with gr.Row():
-                inp += "gen_stereo", gr.Checkbox(label="Generate stereoscopic image(s)", value=False)
-            with gr.Group(visible=False) as stereo_options:
-                with gr.Row():
-                    with gr.Row():
-                        inp += "stereo_modes", gr.CheckboxGroup(
-                            ["left-right", "right-left", "top-bottom", "bottom-top", "red-cyan-anaglyph"],
-                            label="Output", value=["left-right", "red-cyan-anaglyph"])
-                with gr.Row():
-                    inp += "stereo_divergence", gr.Slider(minimum=0.05, maximum=10.005, step=0.01,
-                                                          label='Divergence (3D effect)',
-                                                          value=2.5)
-                    inp += "stereo_separation", gr.Slider(minimum=-5.0, maximum=5.0, step=0.01,
-                                                          label='Separation (moves images apart)',
-                                                          value=0.0)
-                with gr.Row():
-                    inp += "stereo_fill", gr.Dropdown(label="Gap fill technique",
-                                                      choices=['none', 'naive', 'naive_interpolating', 'polylines_soft',
-                                                               'polylines_sharp'], value='polylines_sharp', type="value")
-                    inp += "stereo_balance", gr.Slider(minimum=-1.0, maximum=1.0, step=0.05, label='Balance between eyes',
-                                                       value=0.0)
-
-        with gr.Group():
-            with gr.Row():
-                inp += "gen_mesh", gr.Checkbox(
-                    label="Generate simple 3D mesh. "
-                          "(Fast, accurate only with ZoeDepth models and no boost, no custom maps)",
-                    value=False, visible=True)
-            with gr.Row(visible=False) as mesh_options_row_0:
-                inp += "mesh_occlude", gr.Checkbox(label="Remove occluded edges", value=True, visible=True)
-                inp += "mesh_spherical", gr.Checkbox(label="Equirectangular projection", value=False, visible=True)
-
-        if is_depth_tab:
-            with gr.Group():
-                with gr.Row():
-                    inp += "inpaint", gr.Checkbox(
-                        label="Generate 3D inpainted mesh. (Sloooow, required for generating videos)", value=False)
-                with gr.Group(visible=False) as inpaint_options_row_0:
-                    inp += "inpaint_vids", gr.Checkbox(
-                        label="Generate 4 demo videos with 3D inpainted mesh.", value=False)
-                    gr.HTML("More options for generating video can be found in the Generate video tab")
-
-        with gr.Group():
-            # TODO: it should be clear from the UI that the background removal does not use the model selected above
-            with gr.Row():
-                inp += "background_removal", gr.Checkbox(label="Remove background", value=False)
-            with gr.Row(visible=False) as bgrem_options_row_1:
-                inp += "save_background_removal_masks", gr.Checkbox(label="Save the foreground masks", value=False)
-                inp += "pre_depth_background_removal", gr.Checkbox(label="Pre-depth background removal", value=False)
-            with gr.Row(visible=False) as bgrem_options_row_2:
-                inp += "background_removal_model", gr.Dropdown(label="Rembg Model",
-                                                               choices=['u2net', 'u2netp', 'u2net_human_seg',
-                                                                        'silueta'],
-                                                               value='u2net', type="value")
-
-        with gr.Box():
-            gr.HTML("Information, comment and share @ <a "
-                    "href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>"
-                    "https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
-
-        inp += "gen_normal", gr.Checkbox(label="Generate Normalmap (hidden! api only)", value=False, visible=False)
-
-        inp['boost'].change(
-            fn=lambda a, b: (options_depend_on_boost.update(visible=not a), options_depend_on_match_size.update(visible=not a and not b)),
-            inputs=[inp['boost'], inp['match_size']],
-            outputs=[options_depend_on_boost, options_depend_on_match_size]
-        )
-        inp['match_size'].change(
-            fn=lambda a, b: options_depend_on_match_size.update(visible=not a and not b),
-            inputs=[inp['boost'], inp['match_size']],
-            outputs=[options_depend_on_match_size]
-        )
-
-        inp['output_depth'].change(
-            fn=lambda a: (inp['invert_depth'].update(visible=a), options_depend_on_output_depth_1.update(visible=a)),
-            inputs=[inp['output_depth']],
-            outputs=[inp['invert_depth'], options_depend_on_output_depth_1]
-        )
-
-        inp['combine_output'].change(
-            fn=lambda v: inp['combine_output_axis'].update(visible=v),
-            inputs=[inp['combine_output']],
-            outputs=[inp['combine_output_axis']]
-        )
-
-        inp['clipdepth'].change(
-            fn=lambda v: clip_options_row_1.update(visible=v),
-            inputs=[inp['clipdepth']],
-            outputs=[clip_options_row_1]
-        )
-        inp['clipthreshold_far'].change(
-            fn=lambda a, b: a if b < a else b,
-            inputs=[inp['clipthreshold_far'], inp['clipthreshold_near']],
-            outputs=[inp['clipthreshold_near']]
-        )
-        inp['clipthreshold_near'].change(
-            fn=lambda a, b: a if b > a else b,
-            inputs=[inp['clipthreshold_near'], inp['clipthreshold_far']],
-            outputs=[inp['clipthreshold_far']]
-        )
-
-        # invert_depth must not be used with gen_stereo - otherwise stereo images look super-wrong
-        inp['gen_stereo'].change(
-            fn=lambda a, b: False if b else a,
-            inputs=[inp['invert_depth'], inp['gen_stereo']],
-            outputs=[inp['invert_depth']]
-        )
-        inp['gen_stereo'].change(
-            fn=lambda a, b: inp['invert_depth'].update(interactive=not b),
-            inputs=[inp['invert_depth'], inp['gen_stereo']],
-            outputs=[inp['invert_depth']]
-        )
-
-        def stereo_options_visibility(v):
-            return stereo_options.update(visible=v)
-        inp['gen_stereo'].change(
-            fn=stereo_options_visibility,
-            inputs=[inp['gen_stereo']],
-            outputs=[stereo_options]
-        )
-
-        inp['gen_mesh'].change(
-            fn=lambda v: mesh_options_row_0.update(visible=v),
-            inputs=[inp['gen_mesh']],
-            outputs=[mesh_options_row_0]
-        )
-
-        def inpaint_options_visibility(v):
-            return inpaint_options_row_0.update(visible=v)
-        if is_depth_tab:
-            inp['inpaint'].change(
-                fn=inpaint_options_visibility,
-                inputs=[inp['inpaint']],
-                outputs=[inpaint_options_row_0]
-            )
-
-        def background_removal_options_visibility(v):
-            return bgrem_options_row_1.update(visible=v), \
-                bgrem_options_row_2.update(visible=v)
-        inp['background_removal'].change(
-            fn=background_removal_options_visibility,
-            inputs=[inp['background_removal']],
-            outputs=[bgrem_options_row_1, bgrem_options_row_2]
-        )
-
-    return inp
-
-
-class Script(scripts.Script):
-    def title(self):
-        return scriptname
-
-    def show(self, is_img2img):
-        return True
-
-    def ui(self, is_img2img):
-        gr.HTML()  # Work around a Gradio bug
-        with gr.Column(variant='panel'):
-            gr.HTML()  # Work around a Gradio bug
-            ret = main_ui_panel(False)
-            ret += ret.enkey_tail()
-        return ret.enkey_body()
-
-    # run from script in txt2img or img2img
-    def run(self, p, *inputs):
-        inputs = GradioComponentBundle.enkey_to_dict(inputs)
-
-        # sd process
-        processed = processing.process_images(p)
-        processed.sampler = p.sampler  # for create_infotext
-
-        inputimages = []
-        for count in range(0, len(processed.images)):
-            # skip first grid image
-            if count == 0 and len(processed.images) > 1 and opts.return_grid:
-                continue
-            inputimages.append(processed.images[count])
-
-        generated_images, mesh_fi, meshsimple_fi = run_depthmap(p.outpath_samples, inputimages, None, None, inputs)
-
-        for input_i, imgs in enumerate(generated_images):
-            # get generation parameters
-            if hasattr(processed, 'all_prompts') and opts.enable_pnginfo:
-                info = create_infotext(processed, processed.all_prompts, processed.all_seeds, processed.all_subseeds, "", 0, input_i)
-            else:
-                info = None
-            for image_type, image in list(imgs.items()):
-                processed.images.append(image)
-                if inputs["save_outputs"]:
-                    try:
-                        suffix = "" if image_type == "depth" else f"_{image_type}"
-                        images.save_image(image, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
-                                  prompt=processed.all_prompts[input_i], extension=opts.samples_format, info=info,
-                                  p=processed,
-                                  suffix=suffix)
-                    except Exception as e:
-                        if not ('image has wrong mode' in str(e) or 'I;16' in str(e)): raise e
-                        print('Catched exception: image has wrong mode!')
-                        traceback.print_exc()
-        return processed
 
 
 def unload_sd_model():
@@ -392,7 +354,7 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
     if len(inputimages) == 0 or inputimages[0] is None:
         return [], '', ''
     if len(inputdepthmaps) == 0:
-        inputdepthmaps = [None for _ in range(len(inputimages))]
+        inputdepthmaps: list[Image] = [None for _ in range(len(inputimages))]
     inputdepthmaps_complete = all([x is not None for x in inputdepthmaps])
 
     background_removal = inp["background_removal"]
@@ -427,7 +389,7 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
     stereo_separation = inp["stereo_separation"]
 
     # TODO: ideally, run_depthmap should not save meshes - that makes the function not pure
-    print(f"\n{scriptname} {scriptversion} ({get_commit_hash()})")
+    print(f"\n{SCRIPT_NAME} {SCRIPT_VERSION} ({get_commit_hash()})")
 
     unload_sd_model()
 
@@ -441,9 +403,6 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
         else:
             background_removed_images = batched_background_removal(inputimages, background_removal_model)
 
-    resize_mode = "minimal"
-    normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-
     # init torch device
     global device
     if depthmap_compute_device == 'GPU' and not torch.cuda.is_available():
@@ -455,212 +414,24 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
         device = torch.device("cpu")
     print("device: %s" % device)
 
-    # model path and name
-    model_dir = "./models/midas"
-    if model_type == 0:
-        model_dir = "./models/leres"
-    # create paths to model if not present
-    os.makedirs(model_dir, exist_ok=True)
-    os.makedirs('./models/pix2pix', exist_ok=True)
-
-    global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type, depthmap_device_idx
-    loadmodels = True  # TODO: loadmodels is not intuitive
-    if hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels:
-        loadmodels = False
-        if depthmap_model_type != model_type or depthmap_model_depth == None or depthmap_device_idx != depthmap_compute_device:
-            del depthmap_model_depth
-            depthmap_model_depth = None
-            loadmodels = True
+    generated_images = [{} for _ in range(len(inputimages))]
+    """Images that will be returned.
+    Every array element corresponds to particular input image.
+    Dictionary keys are types of images that were derived from the input image."""
+    # TODO: ???
+    meshsimple_fi = None
+    inpaint_imgs = []
+    inpaint_depths = []
 
     try:
-        if loadmodels and not inputdepthmaps_complete:
-            # TODO: loading model should be separated into a function that would return the model
-            #  and the parameters (or maybe even functions) needed.
-            #  The rest of the run_depthmap should not depend on what specific model
-            #  is actually used for the generation.
-            print("Loading model weights from ", end=" ")
+        if not inputdepthmaps_complete:
+            print("Loading model(s) ..")
+            model_holder.ensure_models(model_type, device, boost)
+        model = model_holder.depth_model
+        pix2pix_model = model_holder.pix2pix_model
 
-            # "res101"
-            if model_type == 0:
-                model_path = f"{model_dir}/res101.pth"
-                print(model_path)
-                ensure_file_downloaded(
-                    model_path,
-                    ["https://cloudstor.aarnet.edu.au/plus/s/lTIJF4vrvHCAI31/download",
-                     "https://huggingface.co/lllyasviel/Annotators/resolve/5bc80eec2b4fddbb/res101.pth",
-                     ],
-                    "1d696b2ef3e8336b057d0c15bc82d2fecef821bfebe5ef9d7671a5ec5dde520b")
-                if depthmap_compute_device == 'GPU':
-                    checkpoint = torch.load(model_path)
-                else:
-                    checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
-                model = RelDepthModel(backbone='resnext101')
-                model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)
-                del checkpoint
-                devices.torch_gc()
-
-            # "dpt_beit_large_512" midas 3.1
-            if model_type == 1:
-                model_path = f"{model_dir}/dpt_beit_large_512.pt"
-                print(model_path)
-                ensure_file_downloaded(model_path,
-                                       "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_512.pt")
-                model = DPTDepthModel(
-                    path=model_path,
-                    backbone="beitl16_512",
-                    non_negative=True,
-                )
-                net_w, net_h = 512, 512
-                resize_mode = "minimal"
-                normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-
-            # "dpt_beit_large_384" midas 3.1
-            if model_type == 2:
-                model_path = f"{model_dir}/dpt_beit_large_384.pt"
-                print(model_path)
-                ensure_file_downloaded(model_path,
-                                       "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_beit_large_384.pt")
-                model = DPTDepthModel(
-                    path=model_path,
-                    backbone="beitl16_384",
-                    non_negative=True,
-                )
-                net_w, net_h = 384, 384
-                resize_mode = "minimal"
-                normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-
-            # "dpt_large_384" midas 3.0
-            if model_type == 3:
-                model_path = f"{model_dir}/dpt_large-midas-2f21e586.pt"
-                print(model_path)
-                ensure_file_downloaded(model_path,
-                                       "https://github.com/intel-isl/DPT/releases/download/1_0/dpt_large-midas-2f21e586.pt")
-                model = DPTDepthModel(
-                    path=model_path,
-                    backbone="vitl16_384",
-                    non_negative=True,
-                )
-                net_w, net_h = 384, 384
-                resize_mode = "minimal"
-                normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-
-            # "dpt_hybrid_384" midas 3.0
-            elif model_type == 4:
-                model_path = f"{model_dir}/dpt_hybrid-midas-501f0c75.pt"
-                print(model_path)
-                ensure_file_downloaded(model_path,
-                                       "https://github.com/intel-isl/DPT/releases/download/1_0/dpt_hybrid-midas-501f0c75.pt")
-                model = DPTDepthModel(
-                    path=model_path,
-                    backbone="vitb_rn50_384",
-                    non_negative=True,
-                )
-                net_w, net_h = 384, 384
-                resize_mode = "minimal"
-                normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-
-            # "midas_v21"
-            elif model_type == 5:
-                model_path = f"{model_dir}/midas_v21-f6b98070.pt"
-                print(model_path)
-                ensure_file_downloaded(model_path,
-                                       "https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21-f6b98070.pt")
-                model = MidasNet(model_path, non_negative=True)
-                net_w, net_h = 384, 384
-                resize_mode = "upper_bound"
-                normalization = NormalizeImage(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                )
-
-            # "midas_v21_small"
-            elif model_type == 6:
-                model_path = f"{model_dir}/midas_v21_small-70d6b9c8.pt"
-                print(model_path)
-                ensure_file_downloaded(model_path,
-                                       "https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21_small-70d6b9c8.pt")
-                model = MidasNet_small(model_path, features=64, backbone="efficientnet_lite3", exportable=True,
-                                       non_negative=True, blocks={'expand': True})
-                net_w, net_h = 256, 256
-                resize_mode = "upper_bound"
-                normalization = NormalizeImage(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                )
-
-            # zoedepth_n
-            elif model_type == 7:
-                print("zoedepth_n\n")
-                conf = get_config("zoedepth", "infer")
-                conf.img_size = [net_width, net_height]
-                model = build_model(conf)
-
-            # zoedepth_k
-            elif model_type == 8:
-                print("zoedepth_k\n")
-                conf = get_config("zoedepth", "infer", config_version="kitti")
-                conf.img_size = [net_width, net_height]
-                model = build_model(conf)
-
-            # zoedepth_nk
-            elif model_type == 9:
-                print("zoedepth_nk\n")
-                conf = get_config("zoedepth_nk", "infer")
-                conf.img_size = [net_width, net_height]
-                model = build_model(conf)
-
-            pix2pixmodel = None
-            # load merge network if boost enabled or keepmodels enabled
-            if boost or (hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels):
-                # sfu.ca unfortunately is not very reliable, we use a mirror just in case
-                ensure_file_downloaded(
-                    './models/pix2pix/latest_net_G.pth',
-                    ["https://huggingface.co/lllyasviel/Annotators/resolve/9a7d84251d487d11/latest_net_G.pth",
-                     "https://sfu.ca/~yagiz/CVPR21/latest_net_G.pth"],
-                    '50ec735d74ed6499562d898f41b49343e521808b8dae589aa3c2f5c9ac9f7462')
-                opt = TestOptions().parse()
-                if depthmap_compute_device == "CPU":
-                    opt.gpu_ids = []
-                pix2pixmodel = Pix2Pix4DepthModel(opt)
-                pix2pixmodel.save_dir = './models/pix2pix'
-                pix2pixmodel.load_networks('latest')
-                pix2pixmodel.eval()
-
-            devices.torch_gc()
-
-            # prepare for evaluation
-            model.eval()
-
-            # optimize
-            if device == torch.device("cuda") and model_type in [0, 1, 2, 3, 4, 5, 6]:
-                model = model.to(memory_format=torch.channels_last)
-                if not cmd_opts.no_half and model_type != 0 and not boost:
-                    model = model.half()
-
-            model.to(device)
-
-            depthmap_model_depth = model
-            depthmap_model_pix2pix = pix2pixmodel
-            depthmap_model_type = model_type
-            depthmap_device_idx = depthmap_compute_device
-
-        if not loadmodels:
-            model = depthmap_model_depth
-            pix2pixmodel = depthmap_model_pix2pix
-            if device == torch.device("cuda"):
-                model = model.to(device)
-
-        print("Computing depthmap(s) ..")
-
-        generated_images = [{} for _ in range(len(inputimages))]
-        """Images that will be returned.
-        Every array element corresponds to particular input image.
-        Dictionary keys are types of images that were derived from the input image."""
-
-        # TODO: ???
-        meshsimple_fi = None
-        inpaint_imgs = []
-        inpaint_depths = []
-
-        # iterate over input (generated) images
+        print("Computing output(s) ..")
+        # iterate over input images
         for count in trange(0, len(inputimages)):
             # override net size (size may be different for different images)
             if match_size:
@@ -670,9 +441,6 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
             if inputimages[count].mode == 'I':
                 inputimages[count].point(lambda p: p * 0.0039063096, mode='RGB')
                 inputimages[count] = inputimages[count].convert('RGB')
-
-            # input image
-            img = cv2.cvtColor(np.asarray(inputimages[count]), cv2.COLOR_BGR2RGB) / 255.0
 
             raw_prediction = None
             """Raw prediction, as returned by a model. None if input depthmap is used."""
@@ -691,18 +459,8 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
                 else:
                     out = np.asarray(dimg, dtype="float")[:, :, 0]
             else:
-                # compute depthmap
-                if not boost:
-                    if model_type == 0:
-                        raw_prediction = estimateleres(img, model, net_width, net_height)
-                        raw_prediction_invert = True
-                    elif model_type in [7, 8, 9]:
-                        raw_prediction = estimatezoedepth(inputimages[count], model, net_width, net_height)
-                        raw_prediction_invert = True
-                    else:
-                        raw_prediction = estimatemidas(img, model, net_width, net_height, resize_mode, normalization)
-                else:
-                    raw_prediction = estimateboost(img, model, model_type, pix2pixmodel)
+                raw_prediction, raw_prediction_invert = \
+                    model_holder.get_raw_prediction(inputimages[count], net_width, net_height)
 
                 # output
                 if abs(raw_prediction.max() - raw_prediction.min()) > np.finfo("float").eps:
@@ -757,7 +515,8 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
                     img_depth = cv2.bitwise_not(img_output) if invert_depth else img_output
                     if combine_output:
                         img_concat = Image.fromarray(np.concatenate(
-                            (inputimages[count], convert_i16_to_rgb(img_depth, inputimages[count])), axis=combine_output_axis))
+                            (inputimages[count], convert_i16_to_rgb(img_depth, inputimages[count])),
+                            axis=combine_output_axis))
                         generated_images[count]['concat_depth'] = img_concat
                     else:
                         generated_images[count]['depth'] = Image.fromarray(img_depth)
@@ -776,7 +535,7 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
             if gen_normal:  # TODO: should be moved into a separate file when redesigned
                 # taken from @graemeniedermayer
                 # take gradients
-                zx = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 1, 0, ksize=3)
+                zx = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 1, 0, ksize=3)  # TODO: CV_64F ?
                 zy = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 0, 1, ksize=3)
 
                 # combine and normalize gradients.
@@ -801,58 +560,59 @@ def run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inp):
                 meshsimple_fi = get_uniquefn(outpath, basename, 'obj')
                 meshsimple_fi = os.path.join(outpath, meshsimple_fi + '_simple.obj')
 
-                depthi = raw_prediction if raw_prediction is not None else raw_prediction
+                depthi = raw_prediction if raw_prediction is not None else out
+                depthi_min, depthi_max = depthi.min(), depthi.max()
                 # try to map output to sensible values for non zoedepth models, boost, or custom maps
                 if model_type not in [7, 8, 9] or boost or inputdepthmaps[count] is not None:
                     # invert if midas
                     if model_type > 0 or inputdepthmaps[count] is not None:  # TODO: Weird
-                        depthi = depth_max - depthi + depth_min
+                        depthi = depthi_max - depthi + depthi_min
                         depth_max = depthi.max()
                         depth_min = depthi.min()
                     # make positive
-                    if depth_min < 0:
-                        depthi = depthi - depth_min
+                    if depthi_min < 0:
+                        depthi = depthi - depthi_min
                         depth_max = depthi.max()
                         depth_min = depthi.min()
                     # scale down
-                    if depthi.max() > 10:
-                        depthi = 4 * (depthi - depth_min) / (depth_max - depth_min)
+                    if depthi.max() > 10.0:
+                        depthi = 4.0 * (depthi - depthi_min) / (depthi_max - depthi_min)
                     # offset
-                    depthi = depthi + 1
+                    depthi = depthi + 1.0
 
                 mesh = create_mesh(inputimages[count], depthi, keep_edges=not mesh_occlude, spherical=mesh_spherical)
                 mesh.export(meshsimple_fi)
 
-        print("Done.")
-
+        print("Computing output(s) done.")
     except RuntimeError as e:
+        # TODO: display in UI
         if 'out of memory' in str(e):
             print("ERROR: out of memory, could not generate depthmap !")
         else:
             print(e)
-
     finally:
         if not (hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels):
             if 'model' in locals():
                 del model
             if boost and 'pix2pixmodel' in locals():
-                del pix2pixmodel
+                del pix2pix_model
+            model_holder.unload_models()
         else:
-            if 'model' in locals():
-                model.to(devices.cpu)
+            model_holder.swap_to_cpu_memory()
 
         gc.collect()
         devices.torch_gc()
 
+    # TODO: This should not be here
     mesh_fi = None
     if inpaint:
         try:
             mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, inpaint_vids, 1, "mp4")
         except Exception as e:
             print(f'{str(e)}, some issue with generating inpainted mesh')
+
     reload_sd_model()
     print("All done.")
-
     return generated_images, mesh_fi, meshsimple_fi
 
 
@@ -1022,7 +782,7 @@ def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border,
 
     # read ply
     global video_mesh_data, video_mesh_fn
-    if video_mesh_fn == None or video_mesh_fn != mesh_fi:
+    if video_mesh_fn is None or video_mesh_fn != mesh_fi:
         del video_mesh_data
         video_mesh_fn = mesh_fi
         video_mesh_data = read_mesh(mesh_fi)
@@ -1147,284 +907,9 @@ def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_bord
     return fn_saved[-1], fn_saved[-1], ''
 
 
-# called from depth tab
-def run_generate(*inputs):
-    inputs = GradioComponentBundle.enkey_to_dict(inputs)
-    depthmap_mode = inputs['depthmap_mode']
-    depthmap_batch_input_dir = inputs['depthmap_batch_input_dir']
-    image_batch = inputs['image_batch']
-    depthmap_input_image = inputs['depthmap_input_image']
-    depthmap_batch_output_dir = inputs['depthmap_batch_output_dir']
-    depthmap_batch_reuse = inputs['depthmap_batch_reuse']
-    custom_depthmap = inputs['custom_depthmap']
-    custom_depthmap_img = inputs['custom_depthmap_img']
-
-    inputimages = []
-    # Allow supplying custom depthmaps
-    inputdepthmaps = []
-    # Also keep track of original file names
-    inputnames = []
-
-    if depthmap_mode == '2' and depthmap_batch_output_dir != '':
-        outpath = depthmap_batch_output_dir
-    else:
-        outpath = opts.outdir_samples or opts.outdir_extras_samples
-
-    if depthmap_mode == '0':  # Single image
-        inputimages.append(depthmap_input_image)
-        inputnames.append(None)
-        if custom_depthmap:
-            if custom_depthmap_img is None:
-                return [], None, None, "Custom depthmap is not specified. Please either supply it or disable this option.", ""
-            inputdepthmaps.append(custom_depthmap_img)
-        else:
-            inputdepthmaps.append(None)
-    if depthmap_mode == '1':  # Batch Process
-        # convert files to pillow images
-        for img in image_batch:
-            image = Image.open(os.path.abspath(img.name))
-            inputimages.append(image)
-            inputnames.append(os.path.splitext(img.orig_name)[0])
-    elif depthmap_mode == '2':  # Batch from Directory
-        assert not shared.cmd_opts.hide_ui_dir_config, '--hide-ui-dir-config option must be disabled'
-        if depthmap_batch_input_dir == '':
-            return [], None, None, "Please select an input directory.", ""
-        if depthmap_batch_input_dir == depthmap_batch_output_dir:
-            return [], None, None, "Please pick different directories for batch processing.", ""
-        image_list = shared.listfiles(depthmap_batch_input_dir)
-        for path in image_list:
-            try:
-                inputimages.append(Image.open(path))
-                inputnames.append(path)
-
-                custom_depthmap = None
-                if depthmap_batch_reuse:
-                    basename = Path(path).stem
-                    # Custom names are not used in samples directory
-                    if outpath != opts.outdir_extras_samples:
-                        # Possible filenames that the custom depthmaps may have
-                        name_candidates = [f'{basename}-0000.{opts.samples_format}',  # current format
-                                           f'{basename}.png',  # human-intuitive format
-                                           f'{Path(path).name}']  # human-intuitive format (worse)
-                        for fn_cand in name_candidates:
-                            path_cand = os.path.join(outpath, fn_cand)
-                            if os.path.isfile(path_cand):
-                                custom_depthmap = Image.open(os.path.abspath(path_cand))
-                                break
-                inputdepthmaps.append(custom_depthmap)
-            except Exception:
-                print(f'Failed to load {path}, ignoring.')
-        inputdepthmaps_n = len([1 for x in inputdepthmaps if x is not None])
-        print(f'{len(inputimages)} images will be processed, {inputdepthmaps_n} existing depthmaps will be reused')
-
-    save_images, mesh_fi, meshsimple_fi = run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inputs)
-    show_images = []
-
-    # Saving images
-    for input_i, imgs in enumerate(save_images):
-        basename = 'depthmap'
-        if depthmap_mode == '2' and inputnames[input_i] is not None and outpath != opts.outdir_extras_samples:
-            basename = Path(inputnames[input_i]).stem
-        info = None
-
-        for image_type, image in list(imgs.items()):
-            show_images += [image]
-            if inputs["save_outputs"]:
-                try:
-                    suffix = "" if image_type == "depth" else f"_{image_type}"
-                    images.save_image(image, path=outpath, basename=basename, seed=None,
-                              prompt=None, extension=opts.samples_format, info=info, short_filename=True,
-                              no_prompt=True, grid=False, pnginfo_section_name="extras", existing_info=None,
-                              forced_filename=None, suffix=suffix)
-                except Exception as e:
-                    if not ('image has wrong mode' in str(e) or 'I;16' in str(e)): raise e
-                    print('Catched exception: image has wrong mode!')
-                    traceback.print_exc()
-
-    # use inpainted 3d mesh to show in 3d model output when enabled in settings
-    if hasattr(opts, 'depthmap_script_show_3d_inpaint') and opts.depthmap_script_show_3d_inpaint and mesh_fi != None and len(mesh_fi) > 0:
-            meshsimple_fi = mesh_fi
-    # however, don't show 3dmodel when disabled in settings
-    if hasattr(opts, 'depthmap_script_show_3d') and not opts.depthmap_script_show_3d:
-            meshsimple_fi = None
-    # TODO: return more info
-    return show_images, mesh_fi, meshsimple_fi, plaintext_to_html('info'), ''
-
-
 def unload_models():
-    global depthmap_model_depth, depthmap_model_pix2pix, depthmap_model_type
-    depthmap_model_type = -1
-    del depthmap_model_depth
-    del depthmap_model_pix2pix
-    depthmap_model_depth = None
-    depthmap_model_pix2pix = None
-    gc.collect()
-    devices.torch_gc()
+    model_holder.unload_models()
 
-
-def clear_mesh():
-    return None
-
-# TODO: some of them may be put into the main ui pane
-def on_ui_settings():
-    section = ('depthmap-script', "Depthmap extension")
-    shared.opts.add_option("depthmap_script_keepmodels",
-                           shared.OptionInfo(False, "Keep depth models loaded.",
-                                             section=section))
-    shared.opts.add_option("depthmap_script_boost_rmax",
-                           shared.OptionInfo(1600, "Maximum wholesize for boost (Rmax)",
-                                             section=section))
-    shared.opts.add_option("depthmap_script_save_ply",
-                           shared.OptionInfo(False, "Save additional PLY file with 3D inpainted mesh.",
-                                             section=section))
-    shared.opts.add_option("depthmap_script_show_3d",
-                           shared.OptionInfo(True, "Enable showing 3D Meshes in output tab. (Experimental)",
-                                             section=section))
-    shared.opts.add_option("depthmap_script_show_3d_inpaint",
-                           shared.OptionInfo(True, "Also show 3D Inpainted Mesh in 3D Mesh output tab. (Experimental)",
-                                             section=section))
-    shared.opts.add_option("depthmap_script_mesh_maxsize",
-                           shared.OptionInfo(2048, "Max size for generating simple mesh.",
-                                             section=section))
-
-
-def on_ui_tabs():
-    inp = GradioComponentBundle()
-    with gr.Blocks(analytics_enabled=False) as depthmap_interface:
-        with gr.Row().style(equal_height=False):
-            with gr.Column(variant='panel'):
-                inp += 'depthmap_mode', gr.HTML(visible=False, value='0')
-                with gr.Tabs():
-                    with gr.TabItem('Single Image') as depthmap_mode_0:
-                        with gr.Row():
-                            inp += gr.Image(label="Source", source="upload", interactive=True, type="pil",
-                                            elem_id="depthmap_input_image")
-                            with gr.Group(visible=False) as custom_depthmap_row_0:
-                                inp += gr.File(label="Custom DepthMap", file_count="single", interactive=True,
-                                               type="file", elem_id='custom_depthmap_img')
-                        inp += gr.Checkbox(elem_id="custom_depthmap", label="Use custom DepthMap", value=False)
-                    with gr.TabItem('Batch Process') as depthmap_mode_1:
-                        inp += gr.File(elem_id='image_batch', label="Batch Process", file_count="multiple",
-                                       interactive=True, type="file")
-                    with gr.TabItem('Batch from Directory') as depthmap_mode_2:
-                        inp += gr.Textbox(elem_id="depthmap_batch_input_dir", label="Input directory",
-                                          **shared.hide_dirs,
-                                          placeholder="A directory on the same machine where the server is running.")
-                        inp += gr.Textbox(elem_id="depthmap_batch_output_dir", label="Output directory",
-                                          **shared.hide_dirs,
-                                          placeholder="Leave blank to save images to the default path.")
-                        gr.HTML("Files in the output directory may be overwritten.")
-                        inp += gr.Checkbox(elem_id="depthmap_batch_reuse",
-                                           label="Skip generation and use (edited/custom) depthmaps in output directory when a file already exists.",
-                                           value=True)
-                submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
-                inp += main_ui_panel(True)  # Main panel is inserted here
-                unloadmodels = gr.Button('Unload models', elem_id="depthmap_unloadmodels")
-
-            with gr.Column(variant='panel'):
-                with gr.Tabs(elem_id="mode_depthmap_output"):
-                    with gr.TabItem('Depth Output'):
-                        with gr.Group():
-                            result_images = gr.Gallery(label='Output', show_label=False,
-                                                       elem_id=f"depthmap_gallery").style(grid=4)
-                        with gr.Column():
-                            html_info_x = gr.HTML()
-                            html_info = gr.HTML()
-
-                    with gr.TabItem('3D Mesh'):
-                        with gr.Group():
-                            result_depthmesh = gr.Model3D(label="3d Mesh", clear_color=[1.0, 1.0, 1.0, 1.0])
-                            with gr.Row():
-                                #loadmesh = gr.Button('Load')
-                                clearmesh = gr.Button('Clear')
-
-                    with gr.TabItem('Generate video'):
-                        # generate video
-                        with gr.Group():
-                            with gr.Row():
-                                gr.Markdown("Generate video from inpainted(!) mesh.")
-                            with gr.Row():
-                                depth_vid = gr.Video(interactive=False)
-                            with gr.Column():
-                                vid_html_info_x = gr.HTML()
-                                vid_html_info = gr.HTML()
-                                fn_mesh = gr.Textbox(label="Input Mesh (.ply | .obj)", **shared.hide_dirs, placeholder="A file on the same machine where the server is running.")
-                            with gr.Row():
-                                vid_numframes = gr.Textbox(label="Number of frames", value="300")
-                                vid_fps = gr.Textbox(label="Framerate", value="40")
-                                vid_format = gr.Dropdown(label="Format", choices=['mp4', 'webm'], value='mp4', type="value", elem_id="video_format")
-                                vid_ssaa = gr.Dropdown(label="SSAA", choices=['1', '2', '3', '4'], value='3', type="value", elem_id="video_ssaa")
-                            with gr.Row():
-                                vid_traj = gr.Dropdown(label="Trajectory", choices=['straight-line', 'double-straight-line', 'circle'], value='double-straight-line', type="index", elem_id="video_trajectory")
-                                vid_shift = gr.Textbox(label="Translate: x, y, z", value="-0.015, 0.0, -0.05")
-                                vid_border = gr.Textbox(label="Crop: top, left, bottom, right", value="0.03, 0.03, 0.05, 0.03")
-                                vid_dolly = gr.Checkbox(label="Dolly", value=False, elem_classes="smalltxt")
-                            with gr.Row():
-                                submit_vid = gr.Button('Generate Video', elem_id="depthmap_generatevideo", variant='primary')
-
-        inp += inp.enkey_tail()
-
-        depthmap_mode_0.select(lambda: '0', None, inp['depthmap_mode'])
-        depthmap_mode_1.select(lambda: '1', None, inp['depthmap_mode'])
-        depthmap_mode_2.select(lambda: '2', None, inp['depthmap_mode'])
-
-        def custom_depthmap_visibility(v):
-            return custom_depthmap_row_0.update(visible=v)
-        inp['custom_depthmap'].change(
-            fn=custom_depthmap_visibility,
-            inputs=[inp['custom_depthmap']],
-            outputs=[custom_depthmap_row_0]
-        )
-
-        unloadmodels.click(
-            fn=unload_models,
-            inputs=[],
-            outputs=[]
-        )
-
-        clearmesh.click(
-            fn=clear_mesh,
-            inputs=[],
-            outputs=[result_depthmesh]
-        )
-
-        submit.click(
-            fn=wrap_gradio_gpu_call(run_generate),
-            inputs=inp.enkey_body(),
-            outputs=[
-                result_images,
-                fn_mesh,
-                result_depthmesh,
-                html_info_x,
-                html_info
-            ]
-        )
-
-        submit_vid.click(
-            fn=wrap_gradio_gpu_call(run_makevideo),
-            inputs=[
-                fn_mesh,
-                vid_numframes,
-                vid_fps,
-                vid_traj,
-                vid_shift,
-                vid_border,
-                vid_dolly,
-                vid_format,
-                vid_ssaa
-            ],
-            outputs=[
-                depth_vid,
-                vid_html_info_x,
-                vid_html_info
-            ]
-        )
-
-    return (depthmap_interface, "Depth", "depthmap_interface"),
-
-
-script_callbacks.on_ui_settings(on_ui_settings)
-script_callbacks.on_ui_tabs(on_ui_tabs)
 
 # TODO: code borrowed from the internet to be marked as such and to reside in separate files
 

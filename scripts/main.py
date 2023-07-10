@@ -1,6 +1,7 @@
 import subprocess
 import os
 import pathlib
+import torch
 
 SCRIPT_NAME = "DepthMap"
 SCRIPT_VERSION = "v0.3.13"

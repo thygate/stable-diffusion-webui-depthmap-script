@@ -11,8 +11,20 @@ from pathlib import Path
 
 from scripts.gradio_args_transport import GradioComponentBundle
 from scripts.main import *
-from scripts.depthmap import run_depthmap, unload_models, run_makevideo
+from scripts.core import core_generation_funnel, unload_models, run_makevideo
 from PIL import Image
+
+
+# Ugly workaround to fix gradio tempfile issue
+def ensure_gradio_temp_directory():
+    try:
+        import tempfile
+        path = os.path.join(tempfile.gettempdir(), 'gradio')
+        if not (os.path.exists(path)):
+            os.mkdir(path)
+    except Exception as e:
+        traceback.print_exc()
+ensure_gradio_temp_directory()
 
 
 def main_ui_panel(is_depth_tab):
@@ -167,18 +179,6 @@ def main_ui_panel(is_depth_tab):
             outputs=[inp['clipthreshold_far']]
         )
 
-        # invert_depth must not be used with gen_stereo - otherwise stereo images look super-wrong
-        inp['gen_stereo'].change(
-            fn=lambda a, b: False if b else a,
-            inputs=[inp['invert_depth'], inp['gen_stereo']],
-            outputs=[inp['invert_depth']]
-        )
-        inp['gen_stereo'].change(
-            fn=lambda a, b: inp['invert_depth'].update(interactive=not b),
-            inputs=[inp['invert_depth'], inp['gen_stereo']],
-            outputs=[inp['invert_depth']]
-        )
-
         def stereo_options_visibility(v):
             return stereo_options.update(visible=v)
 
@@ -247,9 +247,9 @@ class Script(scripts.Script):
                 continue
             inputimages.append(processed.images[count])
 
-        generated_images, mesh_fi, meshsimple_fi = run_depthmap(p.outpath_samples, inputimages, None, None, inputs)
+        outputs, mesh_fi, meshsimple_fi = core_generation_funnel(p.outpath_samples, inputimages, None, None, inputs)
 
-        for input_i, imgs in enumerate(generated_images):
+        for input_i, imgs in enumerate(outputs):
             # get generation parameters
             if hasattr(processed, 'all_prompts') and opts.enable_pnginfo:
                 info = create_infotext(processed, processed.all_prompts, processed.all_seeds, processed.all_subseeds,
@@ -278,7 +278,7 @@ class Script(scripts.Script):
 def on_ui_settings():
     section = ('depthmap-script', "Depthmap extension")
     shared.opts.add_option("depthmap_script_keepmodels",
-                           shared.OptionInfo(False, "Keep depth models loaded.",
+                           shared.OptionInfo(False, "Do not unload depth and pix2pix models.",
                                              section=section))
     shared.opts.add_option("depthmap_script_boost_rmax",
                            shared.OptionInfo(1600, "Maximum wholesize for boost (Rmax)",
@@ -514,11 +514,11 @@ def run_generate(*inputs):
         inputdepthmaps_n = len([1 for x in inputdepthmaps if x is not None])
         print(f'{len(inputimages)} images will be processed, {inputdepthmaps_n} existing depthmaps will be reused')
 
-    save_images, mesh_fi, meshsimple_fi = run_depthmap(outpath, inputimages, inputdepthmaps, inputnames, inputs)
+    outputs, mesh_fi, meshsimple_fi = core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inputs)
     show_images = []
 
     # Saving images
-    for input_i, imgs in enumerate(save_images):
+    for input_i, imgs in enumerate(outputs):
         basename = 'depthmap'
         if depthmap_mode == '2' and inputnames[input_i] is not None and outpath != opts.outdir_extras_samples:
             basename = Path(inputnames[input_i]).stem

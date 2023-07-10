@@ -1,4 +1,11 @@
-from numba import njit, prange
+try:
+    from numba import njit, prange
+except Exception as e:
+    print(f"WARINING! Numba failed to import! Stereoimage generation will be much slower! ({str(e)})")
+    from builtins import range as prange
+    def njit(parallel=False):
+        def Inner(func): return lambda *args, **kwargs: func(*args, **kwargs)
+        return Inner
 import numpy as np
 from PIL import Image
 
@@ -73,7 +80,7 @@ def apply_stereo_divergence(original_image, depth, divergence, separation, fill_
         )
 
 
-@njit
+@njit(parallel=False)
 def apply_stereo_divergence_naive(
         original_image, normalized_depth, divergence_px: float, separation_px: float, fill_technique):
     h, w, c = original_image.shape

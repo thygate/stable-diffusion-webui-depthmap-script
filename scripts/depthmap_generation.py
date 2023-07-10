@@ -3,6 +3,7 @@ from operator import getitem
 from PIL import Image
 from torchvision.transforms import Compose, transforms
 
+# TODO: depthmap_generation should not depend on WebUI
 from modules import shared, devices
 from modules.shared import opts, cmd_opts
 
@@ -28,7 +29,6 @@ from lib.net_tools import strip_prefix_if_present
 # pix2pix/merge net imports
 from pix2pix.options.test_options import TestOptions
 from pix2pix.models.pix2pix4depth_model import Pix2Pix4DepthModel
-
 
 # zoedepth
 from dzoedepth.models.builder import build_model
@@ -59,9 +59,6 @@ class ModelHolder():
 
     def load_models(self, model_type, device: torch.device, boost: bool):
         """Ensure that the depth model is loaded"""
-        # TODO: supply correct values for zoedepth
-        net_width = 512
-        net_height = 512
 
         # model path and name
         model_dir = "./models/midas"
@@ -171,22 +168,21 @@ class ModelHolder():
                 mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
             )
 
+        # When loading, zoedepth models will report the default net size.
+        # It will be overridden by the generation settings.
         elif model_type == 7:  # zoedepth_n
             print("zoedepth_n\n")
             conf = get_config("zoedepth", "infer")
-            conf.img_size = [net_width, net_height]
             model = build_model(conf)
 
         elif model_type == 8:  # zoedepth_k
             print("zoedepth_k\n")
             conf = get_config("zoedepth", "infer", config_version="kitti")
-            conf.img_size = [net_width, net_height]
             model = build_model(conf)
 
         elif model_type == 9:  # zoedepth_nk
             print("zoedepth_nk\n")
             conf = get_config("zoedepth_nk", "infer")
-            conf.img_size = [net_width, net_height]
             model = build_model(conf)
 
         model.eval()  # prepare for evaluation
@@ -221,15 +217,20 @@ class ModelHolder():
 
         devices.torch_gc()
 
-    def get_default_net_size(self, model_type):
+    @staticmethod
+    def get_default_net_size(model_type):
         # TODO: fill in, use in the GUI
         sizes = {
+            0: [448, 448],
             1: [512, 512],
             2: [384, 384],
             3: [384, 384],
             4: [384, 384],
             5: [384, 384],
             6: [256, 256],
+            7: [384, 512],
+            8: [384, 768],
+            9: [384, 512]
         }
         if model_type in sizes:
             return sizes[model_type]
@@ -254,8 +255,9 @@ class ModelHolder():
         self.device = None
 
     def get_raw_prediction(self, input, net_width, net_height):
-        """Get prediction from the model currently loaded by the class.
+        """Get prediction from the model currently loaded by the ModelHolder object.
         If boost is enabled, net_width and net_height will be ignored."""
+        # TODO: supply net size for zoedepth
         global device
         device = self.device
         # input image
@@ -264,17 +266,14 @@ class ModelHolder():
         if self.pix2pix_model is None:
             if self.depth_model_type == 0:
                 raw_prediction = estimateleres(img, self.depth_model, net_width, net_height)
-                raw_prediction_invert = True
             elif self.depth_model_type in [7, 8, 9]:
                 raw_prediction = estimatezoedepth(input, self.depth_model, net_width, net_height)
-                raw_prediction_invert = True
             else:
                 raw_prediction = estimatemidas(img, self.depth_model, net_width, net_height,
                                                self.resize_mode, self.normalization)
-                raw_prediction_invert = False
         else:
             raw_prediction = estimateboost(img, self.depth_model, self.depth_model_type, self.pix2pix_model)
-            raw_prediction_invert = False
+        raw_prediction_invert = self.depth_model_type in [0, 7, 8, 9]
         return raw_prediction, raw_prediction_invert
 
 

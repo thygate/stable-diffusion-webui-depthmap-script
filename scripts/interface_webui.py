@@ -8,11 +8,12 @@ from modules.processing import create_infotext
 from modules.shared import opts
 from modules.ui import plaintext_to_html
 from pathlib import Path
+from PIL import Image
 
 from scripts.gradio_args_transport import GradioComponentBundle
 from scripts.main import *
 from scripts.core import core_generation_funnel, unload_models, run_makevideo
-from PIL import Image
+from scripts.depthmap_generation import ModelHolder
 
 
 # Ugly workaround to fix gradio tempfile issue
@@ -102,10 +103,9 @@ def main_ui_panel(is_depth_tab):
         with gr.Group():
             with gr.Row():
                 inp += "gen_mesh", gr.Checkbox(
-                    label="Generate simple 3D mesh. "
-                          "(Fast, accurate only with ZoeDepth models and no boost, no custom maps)",
-                    value=False, visible=True)
+                    label="Generate simple 3D mesh", value=False, visible=True)
             with gr.Row(visible=False) as mesh_options_row_0:
+                gr.Label(value="Generates fast, accurate only with ZoeDepth models and no boost, no custom maps")
                 inp += "mesh_occlude", gr.Checkbox(label="Remove occluded edges", value=True, visible=True)
                 inp += "mesh_spherical", gr.Checkbox(label="Equirectangular projection", value=False, visible=True)
 
@@ -113,8 +113,9 @@ def main_ui_panel(is_depth_tab):
             with gr.Group():
                 with gr.Row():
                     inp += "inpaint", gr.Checkbox(
-                        label="Generate 3D inpainted mesh. (Sloooow, required for generating videos)", value=False)
+                        label="Generate 3D inpainted mesh", value=False)
                 with gr.Group(visible=False) as inpaint_options_row_0:
+                    gr.Label("Generation is sloooow, required for generating videos")
                     inp += "inpaint_vids", gr.Checkbox(
                         label="Generate 4 demo videos with 3D inpainted mesh.", value=False)
                     gr.HTML("More options for generating video can be found in the Generate video tab")
@@ -138,6 +139,15 @@ def main_ui_panel(is_depth_tab):
                     "https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
         inp += "gen_normal", gr.Checkbox(label="Generate Normalmap (hidden! api only)", value=False, visible=False)
+
+        def update_delault_net_size(model_type):
+            w, h = ModelHolder.get_default_net_size(model_type)
+            return inp['net_width'].update(value=w), inp['net_height'].update(value=h)
+        inp['model_type'].change(
+            fn=update_delault_net_size,
+            inputs=inp['model_type'],
+            outputs=[inp['net_width'], inp['net_height']]
+        )
 
         inp['boost'].change(
             fn=lambda a, b: (options_depend_on_boost.update(visible=not a),
@@ -309,6 +319,7 @@ def on_ui_tabs():
                             inp += gr.Image(label="Source", source="upload", interactive=True, type="pil",
                                             elem_id="depthmap_input_image")
                             with gr.Group(visible=False) as custom_depthmap_row_0:
+                                # TODO: depthmap generation settings should disappear when using this
                                 inp += gr.File(label="Custom DepthMap", file_count="single", interactive=True,
                                                type="file", elem_id='custom_depthmap_img')
                         inp += gr.Checkbox(elem_id="custom_depthmap", label="Use custom DepthMap", value=False)
@@ -471,13 +482,12 @@ def run_generate(*inputs):
         inputnames.append(None)
         if custom_depthmap:
             if custom_depthmap_img is None:
-                return [], None, None, "Custom depthmap is not specified. " \
-                                       "Please either supply it or disable this option.", ""
-            inputdepthmaps.append(custom_depthmap_img)
+                return [], None, None,\
+                    "Custom depthmap is not specified. Please either supply it or disable this option.", ""
+            inputdepthmaps.append(Image.open(os.path.abspath(custom_depthmap_img.name)))
         else:
             inputdepthmaps.append(None)
     if depthmap_mode == '1':  # Batch Process
-        # convert files to pillow images
         for img in image_batch:
             image = Image.open(os.path.abspath(img.name))
             inputimages.append(image)

@@ -98,7 +98,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     stereo_separation = inp["stereo_separation"]
 
     # TODO: ideally, run_depthmap should not save meshes - that makes the function not pure
-    print(f"\n{SCRIPT_NAME} {SCRIPT_VERSION} ({get_commit_hash()})")
+    print(f"{SCRIPT_NAME} {SCRIPT_VERSION} ({get_commit_hash()})")
 
     unload_sd_model()
 
@@ -230,7 +230,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
 
             if show_heat:
                 from dzoedepth.utils.misc import colorize
-                heatmap = colorize(img_output, cmap='inferno')
+                heatmap = Image.fromarray(colorize(img_output, cmap='inferno'))
                 generated_images[count]['heatmap'] = heatmap
 
             if gen_stereo:
@@ -325,7 +325,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
             print(f'{str(e)}, some issue with generating inpainted mesh')
 
     reload_sd_model()
-    print("All done.")
+    print("All done.\n")
     return generated_images, mesh_fi, meshsimple_fi
 
 

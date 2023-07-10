@@ -4,7 +4,7 @@ import pathlib
 import torch
 
 SCRIPT_NAME = "DepthMap"
-SCRIPT_VERSION = "v0.3.13"
+SCRIPT_VERSION = "v0.4.0"
 
 commit_hash = None  # TODO: understand why it would spam to stderr if changed to ... = get_commit_hash()
 def get_commit_hash():

@@ -62,7 +62,7 @@ def reload_sd_model():
 def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp):
     if len(inputimages) == 0 or inputimages[0] is None:
         return [], '', ''
-    if len(inputdepthmaps) == 0:
+    if inputdepthmaps is None or len(inputdepthmaps) == 0:
         inputdepthmaps: list[Image] = [None for _ in range(len(inputimages))]
     inputdepthmaps_complete = all([x is not None for x in inputdepthmaps])
 
@@ -78,8 +78,8 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     gen_mesh = inp["gen_mesh"]
     gen_normal = inp["gen_normal"] if "gen_normal" in inp else False
     gen_stereo = inp["gen_stereo"]
-    inpaint = inp["inpaint"]
-    inpaint_vids = inp["inpaint_vids"]
+    inpaint = inp["inpaint"] if "inpaint" in inp else False
+    inpaint_vids = inp["inpaint_vids"] if "inpaint_vids" in inp else False
     invert_depth = inp["invert_depth"]
     match_size = inp["match_size"]
     mesh_occlude = inp["mesh_occlude"]
@@ -165,7 +165,9 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
             else:
                 # override net size (size may be different for different images)
                 if match_size:
-                    net_width, net_height = inputimages[count].width, inputimages[count].height
+                    # Round up to a multiple of 32 to avoid potential issues
+                    net_width = (inputimages[count].width + 31) // 32 * 32
+                    net_height = (inputimages[count].height + 31) // 32 * 32
                 raw_prediction, raw_prediction_invert = \
                     model_holder.get_raw_prediction(inputimages[count], net_width, net_height)
 
@@ -304,14 +306,14 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
         else:
             raise e
     finally:
-        if not (hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels):
+        if hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels:
+            model_holder.offload()  # Swap to CPU memory
+        else:
             if 'model' in locals():
                 del model
             if 'pix2pixmodel' in locals():
                 del pix2pix_model
             model_holder.unload_models()
-        else:
-            model_holder.swap_to_cpu_memory()
 
         gc.collect()
         devices.torch_gc()

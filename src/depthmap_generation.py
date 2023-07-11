@@ -42,6 +42,7 @@ class ModelHolder():
         self.pix2pix_model = None
         self.depth_model_type = None
         self.device = None  # Target device, the model may be swapped from VRAM into RAM.
+        self.offloaded = False  # True means current device is not the target device
 
         # Extra stuff
         self.resize_mode = None
@@ -53,9 +54,10 @@ class ModelHolder():
             self.unload_models()
             return
         # Certain optimisations are irreversible and not device-agnostic, thus changing device requires reloading
-        if model_type != self.depth_model_type or boost != self.pix2pix_model is not None or device != self.device:
+        if model_type != self.depth_model_type or boost != (self.pix2pix_model is not None) or device != self.device:
             self.unload_models()
             self.load_models(model_type, device, boost)
+        self.reload()
 
     def load_models(self, model_type, device: torch.device, boost: bool):
         """Ensure that the depth model is loaded"""
@@ -236,11 +238,24 @@ class ModelHolder():
             return sizes[model_type]
         return [512, 512]
 
-    def swap_to_cpu_memory(self):
+    def offload(self):
+        """Move to RAM to conserve VRAM"""
+        if self.device != torch.device('cpu') and not self.offloaded:
+            self.move_models_to(torch.device('cpu'))
+            self.offloaded = True
+
+    def reload(self):
+        """Undoes offload"""
+        if self.offloaded:
+            self.move_models_to(self.device)
+            self.offloaded = True
+
+    def move_models_to(self, device):
         if self.depth_model is not None:
-            self.depth_model.to(torch.device('cpu'))
+            self.depth_model.to(device)
         if self.pix2pix_model is not None:
-            self.pix2pix_model.to(torch.device('cpu'))
+            pass
+            # TODO: pix2pix offloading not implemented
 
     def unload_models(self):
         if self.depth_model is not None or self.pix2pix_model is not None:

@@ -49,8 +49,8 @@ def main_ui_panel(is_depth_tab):
                 with gr.Group(visible=False) as options_depend_on_boost:
                     inp += 'match_size', gr.Checkbox(label="Match net size to input size", value=False)
             with gr.Row(visible=False) as options_depend_on_match_size:
-                inp += 'net_width', gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=512)
-                inp += 'net_height', gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=512)
+                inp += 'net_width', gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=448)
+                inp += 'net_height', gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=448)
 
         with gr.Group():
             with gr.Row():
@@ -104,10 +104,12 @@ def main_ui_panel(is_depth_tab):
             with gr.Row():
                 inp += "gen_mesh", gr.Checkbox(
                     label="Generate simple 3D mesh", value=False, visible=True)
-            with gr.Row(visible=False) as mesh_options_row_0:
-                gr.Label(value="Generates fast, accurate only with ZoeDepth models and no boost, no custom maps")
-                inp += "mesh_occlude", gr.Checkbox(label="Remove occluded edges", value=True, visible=True)
-                inp += "mesh_spherical", gr.Checkbox(label="Equirectangular projection", value=False, visible=True)
+            with gr.Group(visible=False) as mesh_options:
+                with gr.Row():
+                    gr.HTML(value="Generates fast, accurate only with ZoeDepth models and no boost, no custom maps")
+                with gr.Row():
+                    inp += "mesh_occlude", gr.Checkbox(label="Remove occluded edges", value=True, visible=True)
+                    inp += "mesh_spherical", gr.Checkbox(label="Equirectangular projection", value=False, visible=True)
 
         if is_depth_tab:
             with gr.Group():
@@ -115,7 +117,7 @@ def main_ui_panel(is_depth_tab):
                     inp += "inpaint", gr.Checkbox(
                         label="Generate 3D inpainted mesh", value=False)
                 with gr.Group(visible=False) as inpaint_options_row_0:
-                    gr.Label("Generation is sloooow, required for generating videos")
+                    gr.HTML("Generation is sloooow, required for generating videos")
                     inp += "inpaint_vids", gr.Checkbox(
                         label="Generate 4 demo videos with 3D inpainted mesh.", value=False)
                     gr.HTML("More options for generating video can be found in the Generate video tab")
@@ -199,9 +201,9 @@ def main_ui_panel(is_depth_tab):
         )
 
         inp['gen_mesh'].change(
-            fn=lambda v: mesh_options_row_0.update(visible=v),
+            fn=lambda v: mesh_options.update(visible=v),
             inputs=[inp['gen_mesh']],
-            outputs=[mesh_options_row_0]
+            outputs=[mesh_options]
         )
 
         def inpaint_options_visibility(v):

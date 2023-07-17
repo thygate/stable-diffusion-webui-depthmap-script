@@ -21,9 +21,9 @@ import math
 import traceback
 
 # Our code
-from scripts.main import *
-from scripts.stereoimage_generation import create_stereoimages
-from scripts.depthmap_generation import ModelHolder
+from src.main import *
+from src.stereoimage_generation import create_stereoimages
+from src.depthmap_generation import ModelHolder
 
 # 3d-photo-inpainting imports
 from inpaint.mesh import write_mesh, read_mesh, output_3d_photo

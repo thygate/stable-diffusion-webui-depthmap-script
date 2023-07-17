@@ -10,10 +10,10 @@ from modules.ui import plaintext_to_html
 from pathlib import Path
 from PIL import Image
 
-from scripts.gradio_args_transport import GradioComponentBundle
-from scripts.main import *
-from scripts.core import core_generation_funnel, unload_models, run_makevideo
-from scripts.depthmap_generation import ModelHolder
+from src.gradio_args_transport import GradioComponentBundle
+from src.main import *
+from src.core import core_generation_funnel, unload_models, run_makevideo
+from src.depthmap_generation import ModelHolder
 
 
 # Ugly workaround to fix gradio tempfile issue

@@ -14,7 +14,7 @@ import numpy as np
 import skimage.measure
 
 # Our code
-from scripts.main import *
+from src.main import *
 
 # midas imports
 from dmidas.dpt_depth import DPTDepthModel

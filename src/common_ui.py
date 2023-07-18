@@ -28,8 +28,7 @@ def main_ui_panel(is_depth_tab):
         with gr.Group():
             with gr.Row():
                 inp += 'boost', gr.Checkbox(label="BOOST (multi-resolution merging)", value=True)
-                with gr.Group(visible=False) as options_depend_on_boost:
-                    inp += 'match_size', gr.Checkbox(label="Match net size to input size", value=False)
+                inp += 'match_size', gr.Checkbox(label="Match net size to input size", value=False)
             with gr.Row(visible=False) as options_depend_on_match_size:
                 inp += 'net_width', gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=448)
                 inp += 'net_height', gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=448)
@@ -62,10 +61,9 @@ def main_ui_panel(is_depth_tab):
                 inp += "gen_stereo", gr.Checkbox(label="Generate stereoscopic image(s)", value=False)
             with gr.Group(visible=False) as stereo_options:
                 with gr.Row():
-                    with gr.Row():
-                        inp += "stereo_modes", gr.CheckboxGroup(
-                            ["left-right", "right-left", "top-bottom", "bottom-top", "red-cyan-anaglyph"],
-                            label="Output", value=["left-right", "red-cyan-anaglyph"])
+                    inp += "stereo_modes", gr.CheckboxGroup(
+                        ["left-right", "right-left", "top-bottom", "bottom-top", "red-cyan-anaglyph"],
+                        label="Output", value=["left-right", "red-cyan-anaglyph"])
                 with gr.Row():
                     inp += "stereo_divergence", gr.Slider(minimum=0.05, maximum=10.005, step=0.01,
                                                           label='Divergence (3D effect)',
@@ -137,10 +135,10 @@ def main_ui_panel(is_depth_tab):
         )
 
         inp['boost'].change(
-            fn=lambda a, b: (options_depend_on_boost.update(visible=not a),
+            fn=lambda a, b: (inp['match_size'].update(visible=not a),
                              options_depend_on_match_size.update(visible=not a and not b)),
             inputs=[inp['boost'], inp['match_size']],
-            outputs=[options_depend_on_boost, options_depend_on_match_size]
+            outputs=[inp['match_size'], options_depend_on_match_size]
         )
         inp['match_size'].change(
             fn=lambda a, b: options_depend_on_match_size.update(visible=not a and not b),
@@ -176,11 +174,8 @@ def main_ui_panel(is_depth_tab):
             outputs=[inp['clipthreshold_far']]
         )
 
-        def stereo_options_visibility(v):
-            return stereo_options.update(visible=v)
-
         inp['gen_stereo'].change(
-            fn=stereo_options_visibility,
+            fn=lambda v: stereo_options.update(visible=v),
             inputs=[inp['gen_stereo']],
             outputs=[stereo_options]
         )
@@ -191,22 +186,15 @@ def main_ui_panel(is_depth_tab):
             outputs=[mesh_options]
         )
 
-        def inpaint_options_visibility(v):
-            return inpaint_options_row_0.update(visible=v)
-
         if is_depth_tab:
             inp['inpaint'].change(
-                fn=inpaint_options_visibility,
+                fn=lambda v: inpaint_options_row_0.update(visible=v),
                 inputs=[inp['inpaint']],
                 outputs=[inpaint_options_row_0]
             )
 
-        def background_removal_options_visibility(v):
-            return bgrem_options_row_1.update(visible=v), \
-                bgrem_options_row_2.update(visible=v)
-
         inp['background_removal'].change(
-            fn=background_removal_options_visibility,
+            fn=lambda v: (bgrem_options_row_1.update(visible=v), bgrem_options_row_2.update(visible=v)),
             inputs=[inp['background_removal']],
             outputs=[bgrem_options_row_1, bgrem_options_row_2]
         )
@@ -215,7 +203,7 @@ def main_ui_panel(is_depth_tab):
 
 def on_ui_tabs():
     inp = GradioComponentBundle()
-    with gr.Blocks(analytics_enabled=False) as depthmap_interface:
+    with gr.Blocks(analytics_enabled=False, title="DepthMap") as depthmap_interface:
         with gr.Row().style(equal_height=False):
             with gr.Column(variant='panel'):
                 inp += 'depthmap_mode', gr.HTML(visible=False, value='0')
@@ -382,7 +370,7 @@ def run_generate(*inputs):
 
     if depthmap_mode == '0':  # Single image
         if depthmap_input_image is None:
-            return [], None, None, "Please select an input image!"
+            return [], None, None, "Please select an input image"
         inputimages.append(depthmap_input_image)
         inputnames.append(None)
         if custom_depthmap:
@@ -394,7 +382,7 @@ def run_generate(*inputs):
             inputdepthmaps.append(None)
     if depthmap_mode == '1':  # Batch Process
         if image_batch is None:
-            return [], None, None, "Please select input images!", ""
+            return [], None, None, "Please select input images", ""
         for img in image_batch:
             image = Image.open(os.path.abspath(img.name))
             inputimages.append(image)

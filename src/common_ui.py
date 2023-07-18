@@ -25,7 +25,7 @@ def main_ui_panel(is_depth_tab):
                                                       'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk'],
                                              value='res101',
                                              type="index")
-        with gr.Group():
+        with gr.Box():
             with gr.Row():
                 inp += 'boost', gr.Checkbox(label="BOOST (multi-resolution merging)", value=True)
                 inp += 'match_size', gr.Checkbox(label="Match net size to input size", value=False)
@@ -33,9 +33,10 @@ def main_ui_panel(is_depth_tab):
                 inp += 'net_width', gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=448)
                 inp += 'net_height', gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=448)
 
-        with gr.Group():
+        with gr.Box():
             with gr.Row():
-                inp += "save_outputs", gr.Checkbox(label="Save Outputs", value=True)  # 50% of width
+                with gr.Group():
+                    inp += "save_outputs", gr.Checkbox(label="Save Outputs", value=True)  # 50% of width
                 with gr.Group():  # 50% of width
                     inp += "output_depth", gr.Checkbox(label="Output DepthMap", value=True)
                     inp += "invert_depth", gr.Checkbox(label="Invert (black=near, white=far)", value=False)
@@ -44,22 +45,22 @@ def main_ui_panel(is_depth_tab):
                     label="Combine input and depthmap into one image", value=False)
                 inp += "combine_output_axis", gr.Radio(label="Combine axis", choices=['Vertical', 'Horizontal'],
                                                        value='Horizontal', type="index", visible=False)
-        with gr.Group():
+        with gr.Box():
             with gr.Row():
                 inp += 'clipdepth', gr.Checkbox(label="Clip and renormalize DepthMap", value=False)
             with gr.Row(visible=False) as clip_options_row_1:
                 inp += "clipthreshold_far", gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
                 inp += "clipthreshold_near", gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
 
-        with gr.Group():
+        with gr.Box():
             with gr.Row():
                 inp += "show_heat", gr.Checkbox(label="Generate HeatMap", value=False)
                 # gr.Checkbox(label="Generate NormalMap", value=False)  # TODO: this is a fake door
 
-        with gr.Group():
+        with gr.Box():
             with gr.Row():
                 inp += "gen_stereo", gr.Checkbox(label="Generate stereoscopic image(s)", value=False)
-            with gr.Group(visible=False) as stereo_options:
+            with gr.Column(visible=False) as stereo_options:
                 with gr.Row():
                     inp += "stereo_modes", gr.CheckboxGroup(
                         ["left-right", "right-left", "top-bottom", "bottom-top", "red-cyan-anaglyph"],
@@ -80,11 +81,11 @@ def main_ui_panel(is_depth_tab):
                                                        label='Balance between eyes',
                                                        value=0.0)
 
-        with gr.Group():
-            with gr.Row():
+        with gr.Box():
+            with gr.Column():
                 inp += "gen_mesh", gr.Checkbox(
                     label="Generate simple 3D mesh", value=False, visible=True)
-            with gr.Group(visible=False) as mesh_options:
+            with gr.Column(visible=False) as mesh_options:
                 with gr.Row():
                     gr.HTML(value="Generates fast, accurate only with ZoeDepth models and no boost, no custom maps")
                 with gr.Row():
@@ -92,29 +93,30 @@ def main_ui_panel(is_depth_tab):
                     inp += "mesh_spherical", gr.Checkbox(label="Equirectangular projection", value=False, visible=True)
 
         if is_depth_tab:
-            with gr.Group():
-                with gr.Row():
+            with gr.Box():
+                with gr.Column():
                     inp += "inpaint", gr.Checkbox(
                         label="Generate 3D inpainted mesh", value=False)
-                with gr.Group(visible=False) as inpaint_options_row_0:
+                with gr.Column(visible=False) as inpaint_options_row_0:
                     gr.HTML("Generation is sloooow, required for generating videos")
                     inp += "inpaint_vids", gr.Checkbox(
                         label="Generate 4 demo videos with 3D inpainted mesh.", value=False)
                     gr.HTML("More options for generating video can be found in the Generate video tab")
 
-        with gr.Group():
+        with gr.Box():
             # TODO: it should be clear from the UI that there is an option of the background removal
             #  that does not use the model selected above
             with gr.Row():
                 inp += "background_removal", gr.Checkbox(label="Remove background", value=False)
-            with gr.Row(visible=False) as bgrem_options_row_1:
-                inp += "save_background_removal_masks", gr.Checkbox(label="Save the foreground masks", value=False)
-                inp += "pre_depth_background_removal", gr.Checkbox(label="Pre-depth background removal", value=False)
-            with gr.Row(visible=False) as bgrem_options_row_2:
-                inp += "background_removal_model", gr.Dropdown(label="Rembg Model",
-                                                               choices=['u2net', 'u2netp', 'u2net_human_seg',
-                                                                        'silueta'],
-                                                               value='u2net', type="value")
+            with gr.Column(visible=False) as bgrem_options:
+                with gr.Row():
+                    inp += "save_background_removal_masks", gr.Checkbox(label="Save the foreground masks", value=False)
+                    inp += "pre_depth_background_removal", gr.Checkbox(label="Pre-depth background removal", value=False)
+                with gr.Row():
+                    inp += "background_removal_model", gr.Dropdown(label="Rembg Model",
+                                                                   choices=['u2net', 'u2netp', 'u2net_human_seg',
+                                                                            'silueta'],
+                                                                   value='u2net', type="value")
 
         with gr.Box():
             gr.HTML(f"{SCRIPT_FULL_NAME}<br/>")
@@ -194,9 +196,9 @@ def main_ui_panel(is_depth_tab):
             )
 
         inp['background_removal'].change(
-            fn=lambda v: (bgrem_options_row_1.update(visible=v), bgrem_options_row_2.update(visible=v)),
+            fn=lambda v: bgrem_options.update(visible=v),
             inputs=[inp['background_removal']],
-            outputs=[bgrem_options_row_1, bgrem_options_row_2]
+            outputs=[bgrem_options]
         )
 
     return inp
@@ -209,13 +211,13 @@ def on_ui_tabs():
                 inp += 'depthmap_mode', gr.HTML(visible=False, value='0')
                 with gr.Tabs():
                     with gr.TabItem('Single Image') as depthmap_mode_0:
-                        with gr.Row():
-                            inp += gr.Image(label="Source", source="upload", interactive=True, type="pil",
-                                            elem_id="depthmap_input_image")
-                            with gr.Group(visible=False) as custom_depthmap_row_0:
+                        with gr.Group():
+                            with gr.Row():
+                                inp += gr.Image(label="Source", source="upload", interactive=True, type="pil",
+                                                elem_id="depthmap_input_image")
                                 # TODO: depthmap generation settings should disappear when using this
                                 inp += gr.File(label="Custom DepthMap", file_count="single", interactive=True,
-                                               type="file", elem_id='custom_depthmap_img')
+                                               type="file", elem_id='custom_depthmap_img', visible=False)
                         inp += gr.Checkbox(elem_id="custom_depthmap", label="Use custom DepthMap", value=False)
                     with gr.TabItem('Batch Process') as depthmap_mode_1:
                         inp += gr.File(elem_id='image_batch', label="Batch Process", file_count="multiple",
@@ -291,13 +293,10 @@ def on_ui_tabs():
         depthmap_mode_1.select(lambda: '1', None, inp['depthmap_mode'])
         depthmap_mode_2.select(lambda: '2', None, inp['depthmap_mode'])
 
-        def custom_depthmap_visibility(v):
-            return custom_depthmap_row_0.update(visible=v)
-
         inp['custom_depthmap'].change(
-            fn=custom_depthmap_visibility,
+            fn=lambda v: inp['custom_depthmap_img'].update(visible=v),
             inputs=[inp['custom_depthmap']],
-            outputs=[custom_depthmap_row_0]
+            outputs=[inp['custom_depthmap_img']]
         )
 
         unloadmodels.click(

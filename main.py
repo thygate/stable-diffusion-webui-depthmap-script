@@ -1,4 +1,7 @@
 # This launches DepthMap without the AUTOMATIC1111/stable-diffusion-webui
+# If DepthMap is installed as an extension,
+# you may want to change the working directory to the stable-diffusion-webui root.
+
 import argparse
 import src.common_ui
 

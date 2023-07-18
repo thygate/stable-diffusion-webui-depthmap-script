@@ -16,7 +16,7 @@ import math
 import traceback
 
 # Our code
-from src.main import *
+from src.misc import *
 from src.stereoimage_generation import create_stereoimages
 from src.depthmap_generation import ModelHolder
 from src import backbone

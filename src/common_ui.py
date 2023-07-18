@@ -7,7 +7,7 @@ from src import backbone
 from src.core import core_generation_funnel, unload_models, run_makevideo
 from src.depthmap_generation import ModelHolder
 from src.gradio_args_transport import GradioComponentBundle
-from src.main import *
+from src.misc import *
 
 
 def main_ui_panel(is_depth_tab):

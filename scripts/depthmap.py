@@ -7,7 +7,7 @@ from src import backbone
 from src import common_ui
 from src.core import core_generation_funnel
 from src.gradio_args_transport import GradioComponentBundle
-from src.main import *
+from src.misc import *
 
 
 # Ugly workaround to fix gradio tempfile issue

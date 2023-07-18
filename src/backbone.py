@@ -1,5 +1,7 @@
-# This file contains stable-duiffusion-webui stuff that the plugin relies on.
-# Eventually, when we have a standalone interface, this will load either standalone backbone or webui backbone.
+# DepthMap can be run inside stable-duiffusion-webui, but also separately.
+# All the stable-duiffusion-webui stuff that the DepthMap relies on
+# must be resided in this file (or in the scripts folder).
+
 try:
     # stable-duiffusion-webui backbone
     from modules.images import save_image  # Should fail if not on stable-duiffusion-webui
@@ -93,4 +95,4 @@ except:
 
     def reload_sd_model(): pass  # Not needed
 
-    def get_hide_dirs(): return {}  # Directories will not be hidden from traversal
+    def get_hide_dirs(): return {}  # Directories will not be hidden from traversal (except when starts with the dot)

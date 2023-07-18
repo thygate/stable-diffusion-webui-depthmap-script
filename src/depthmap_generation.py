@@ -24,7 +24,7 @@ from pix2pix.models.pix2pix4depth_model import Pix2Pix4DepthModel
 from pix2pix.options.test_options import TestOptions
 
 # Our code
-from src.main import *
+from src.misc import *
 from src import backbone
 
 global depthmap_device

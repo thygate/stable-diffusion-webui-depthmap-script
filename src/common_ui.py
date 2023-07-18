@@ -10,6 +10,20 @@ from src.gradio_args_transport import GradioComponentBundle
 from src.misc import *
 
 
+# Ugly workaround to fix gradio tempfile issue
+def ensure_gradio_temp_directory():
+    try:
+        import tempfile
+        path = os.path.join(tempfile.gettempdir(), 'gradio')
+        if not (os.path.exists(path)):
+            os.mkdir(path)
+    except Exception as e:
+        traceback.print_exc()
+
+
+ensure_gradio_temp_directory()
+
+
 def main_ui_panel(is_depth_tab):
     inp = GradioComponentBundle()
     # TODO: Greater visual separation

@@ -16,7 +16,7 @@ def get_commit_hash():
 
 
 SCRIPT_NAME = "DepthMap"
-SCRIPT_VERSION = "v0.4.0"
+SCRIPT_VERSION = "v0.4.1"
 SCRIPT_FULL_NAME = f"{SCRIPT_NAME} {SCRIPT_VERSION} ({get_commit_hash()})"
 
 

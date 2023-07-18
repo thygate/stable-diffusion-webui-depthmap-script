@@ -294,7 +294,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
         else:
             raise e
     finally:
-        if backbone.get_opt('depthmap_script_keepmodels', False):
+        if backbone.get_opt('depthmap_script_keepmodels', True):
             model_holder.offload()  # Swap to CPU memory
         else:
             if 'model' in locals():

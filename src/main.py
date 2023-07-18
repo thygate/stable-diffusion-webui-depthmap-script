@@ -3,23 +3,21 @@ import os
 import pathlib
 import torch
 
+def get_commit_hash():
+    try:
+        return subprocess.check_output(
+            [os.environ.get("GIT", "git"), "rev-parse", "HEAD"],
+            cwd=pathlib.Path.cwd().joinpath('extensions/stable-diffusion-webui-depthmap-script/'),
+            shell=False,
+            stderr=subprocess.DEVNULL,
+            encoding='utf8').strip()[0:8]
+    except Exception:
+        return "<none>"
+
+
 SCRIPT_NAME = "DepthMap"
 SCRIPT_VERSION = "v0.4.0"
-
-commit_hash = None  # TODO: understand why it would spam to stderr if changed to ... = get_commit_hash()
-def get_commit_hash():
-    global commit_hash
-    if commit_hash is None:
-        try:
-            commit_hash = subprocess.check_output(
-                [os.environ.get('GIT', "git"), "rev-parse", "HEAD"],
-                cwd=pathlib.Path.cwd().joinpath('extensions/stable-diffusion-webui-depthmap-script/'),
-                shell=False,
-                stderr=subprocess.DEVNULL,
-                encoding='utf8').strip()[0:8]
-        except Exception:
-            commit_hash = "<none>"
-    return commit_hash
+SCRIPT_FULL_NAME = f"{SCRIPT_NAME} {SCRIPT_VERSION} ({get_commit_hash()})"
 
 
 def ensure_file_downloaded(filename, url, sha256_hash_prefix=None):

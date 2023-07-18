@@ -98,7 +98,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     stereo_separation = inp["stereo_separation"]
 
     # TODO: ideally, run_depthmap should not save meshes - that makes the function not pure
-    print(f"{SCRIPT_NAME} {SCRIPT_VERSION} ({get_commit_hash()})")
+    print(SCRIPT_FULL_NAME)
 
     unload_sd_model()
 
@@ -647,24 +647,6 @@ def batched_background_removal(inimages, model_name):
     # The line below might be redundant
     del background_removal_session
     return outimages
-
-
-def ensure_file_downloaded(filename, url, sha256_hash_prefix=None):
-    # Do not check the hash every time - it is somewhat time-consuming
-    if os.path.exists(filename):
-        return
-
-    if type(url) is not list:
-        url = [url]
-    for cur_url in url:
-        try:
-            print("Downloading", cur_url, "to", filename)
-            torch.hub.download_url_to_file(cur_url, filename, sha256_hash_prefix)
-            if os.path.exists(filename):
-                return  # The correct model was downloaded, no need to try more
-        except:
-            pass
-    raise RuntimeError('Download failed. Try again later or manually download the file to that location.')
 
 
 def pano_depth_to_world_points(depth):

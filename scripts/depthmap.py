@@ -136,6 +136,7 @@ def main_ui_panel(is_depth_tab):
                                                                value='u2net', type="value")
 
         with gr.Box():
+            gr.HTML(f"{SCRIPT_FULL_NAME}<br/>")
             gr.HTML("Information, comment and share @ <a "
                     "href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>"
                     "https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
@@ -480,6 +481,8 @@ def run_generate(*inputs):
         outpath = opts.outdir_samples or opts.outdir_extras_samples
 
     if depthmap_mode == '0':  # Single image
+        if depthmap_input_image is None:
+            return [], None, None, "Please select an input image!", ""
         inputimages.append(depthmap_input_image)
         inputnames.append(None)
         if custom_depthmap:
@@ -490,6 +493,8 @@ def run_generate(*inputs):
         else:
             inputdepthmaps.append(None)
     if depthmap_mode == '1':  # Batch Process
+        if image_batch is None:
+            return [], None, None, "Please select input images!", ""
         for img in image_batch:
             image = Image.open(os.path.abspath(img.name))
             inputimages.append(image)

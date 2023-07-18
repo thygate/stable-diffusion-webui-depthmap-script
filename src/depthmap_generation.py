@@ -1,41 +1,35 @@
+import gc
+import os.path
 from operator import getitem
 
-from PIL import Image
-from torchvision.transforms import Compose, transforms
-
-# TODO: depthmap_generation should not depend on WebUI
-from modules import devices
-
-import torch, gc
 import cv2
-import os.path
 import numpy as np
 import skimage.measure
-
-# Our code
-from src.main import *
+from PIL import Image
+from torchvision.transforms import Compose, transforms
 
 # midas imports
 from dmidas.dpt_depth import DPTDepthModel
 from dmidas.midas_net import MidasNet
 from dmidas.midas_net_custom import MidasNet_small
 from dmidas.transforms import Resize, NormalizeImage, PrepareForNet
-
-# AdelaiDepth/LeReS imports
-from lib.multi_depth_model_woauxi import RelDepthModel
-from lib.net_tools import strip_prefix_if_present
-
-# pix2pix/merge net imports
-from pix2pix.options.test_options import TestOptions
-from pix2pix.models.pix2pix4depth_model import Pix2Pix4DepthModel
-
 # zoedepth
 from dzoedepth.models.builder import build_model
 from dzoedepth.utils.config import get_config
+# AdelaiDepth/LeReS imports
+from lib.multi_depth_model_woauxi import RelDepthModel
+from lib.net_tools import strip_prefix_if_present
+from pix2pix.models.pix2pix4depth_model import Pix2Pix4DepthModel
+# pix2pix/merge net imports
+from pix2pix.options.test_options import TestOptions
 
-global device
+# Our code
+from src.main import *
+from src import backbone
 
-class ModelHolder():
+global depthmap_device
+
+class ModelHolder:
     def __init__(self):
         self.depth_model = None
         self.pix2pix_model = None
@@ -88,7 +82,6 @@ class ModelHolder():
         resize_mode = "minimal"
         normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
-        # TODO: net_w, net_h
         model = None
         if model_type == 0:  # "res101"
             model_path = f"{model_dir}/res101.pth"
@@ -106,7 +99,7 @@ class ModelHolder():
             model = RelDepthModel(backbone='resnext101')
             model.load_state_dict(strip_prefix_if_present(checkpoint['depth_model'], "module."), strict=True)
             del checkpoint
-            devices.torch_gc()
+            backbone.torch_gc()
 
         if model_type == 1:  # "dpt_beit_large_512" midas 3.1
             model_path = f"{model_dir}/dpt_beit_large_512.pt"
@@ -203,7 +196,7 @@ class ModelHolder():
         model.eval()  # prepare for evaluation
         # optimize
         if device == torch.device("cuda") and model_type in [0, 1, 2, 3, 4, 5, 6]:
-            model = model.to(memory_format=torch.channels_last)
+            model = model.to(memory_format=torch.channels_last)  # TODO: weird
             if not self.no_half and model_type != 0 and not boost:  # TODO: zoedepth, too?
                 model = model.half()
         model.to(device)  # to correct device
@@ -230,7 +223,7 @@ class ModelHolder():
             self.pix2pix_model.load_networks('latest')
             self.pix2pix_model.eval()
 
-        devices.torch_gc()
+        backbone.torch_gc()
 
     @staticmethod
     def get_default_net_size(model_type):
@@ -276,7 +269,7 @@ class ModelHolder():
             del self.pix2pix_model
             self.pix2pix_model = None
             gc.collect()
-            devices.torch_gc()
+            backbone.torch_gc()
 
         self.depth_model_type = None
         self.device = None
@@ -284,9 +277,8 @@ class ModelHolder():
     def get_raw_prediction(self, input, net_width, net_height):
         """Get prediction from the model currently loaded by the ModelHolder object.
         If boost is enabled, net_width and net_height will be ignored."""
-        # TODO: supply net size for zoedepth
-        global device
-        device = self.device
+        global depthmap_device
+        depthmap_device = self.device
         # input image
         img = cv2.cvtColor(np.asarray(input), cv2.COLOR_BGR2RGB) / 255.0
         # compute depthmap
@@ -314,7 +306,7 @@ def estimateleres(img, model, w, h):
 
     # compute
     with torch.no_grad():
-        if device == torch.device("cuda"):
+        if depthmap_device == torch.device("cuda"):
             img_torch = img_torch.cuda()
         prediction = model.depth_model(img_torch)
 
@@ -346,7 +338,7 @@ def scale_torch(img):
 def estimatezoedepth(img, model, w, h):
     # x = transforms.ToTensor()(img).unsqueeze(0)
     # x = x.type(torch.float32)
-    # x.to(device)
+    # x.to(depthmap_device)
     # prediction = model.infer(x)
     model.core.prep.resizer._Resize__width = w
     model.core.prep.resizer._Resize__height = h
@@ -378,11 +370,11 @@ def estimatemidas(img, model, w, h, resize_mode, normalization, no_half, precisi
     img_input = transform({"image": img})["image"]
 
     # compute
-    precision_scope = torch.autocast if precision_is_autocast and device == torch.device(
+    precision_scope = torch.autocast if precision_is_autocast and depthmap_device == torch.device(
         "cuda") else contextlib.nullcontext
     with torch.no_grad(), precision_scope("cuda"):
-        sample = torch.from_numpy(img_input).to(device).unsqueeze(0)
-        if device == torch.device("cuda"):
+        sample = torch.from_numpy(img_input).to(depthmap_device).unsqueeze(0)
+        if depthmap_device == torch.device("cuda"):
             sample = sample.to(memory_format=torch.channels_last)
             if not no_half:
                 sample = sample.half()
@@ -628,7 +620,7 @@ def estimateboost(img, model, model_type, pix2pixmodel, whole_size_threshold):
         patch_netsize = 2 * net_receptive_field_size
 
     gc.collect()
-    devices.torch_gc()
+    backbone.torch_gc()
 
     # Generate mask used to smoothly blend the local pathc estimations to the base estimate.
     # It is arbitrarily large to avoid artifacts during rescaling for each crop.
@@ -1034,8 +1026,8 @@ def estimatemidasBoost(img, model, w, h):
 
     # compute
     with torch.no_grad():
-        sample = torch.from_numpy(img_input).to(device).unsqueeze(0)
-        if device == torch.device("cuda"):
+        sample = torch.from_numpy(img_input).to(depthmap_device).unsqueeze(0)
+        if depthmap_device == torch.device("cuda"):
             sample = sample.to(memory_format=torch.channels_last)
         prediction = model.forward(sample)
 

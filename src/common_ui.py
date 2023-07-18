@@ -105,7 +105,8 @@ def main_ui_panel(is_depth_tab):
                     gr.HTML("More options for generating video can be found in the Generate video tab")
 
         with gr.Group():
-            # TODO: it should be clear from the UI that the background removal does not use the model selected above
+            # TODO: it should be clear from the UI that there is an option of the background removal
+            #  that does not use the model selected above
             with gr.Row():
                 inp += "background_removal", gr.Checkbox(label="Remove background", value=False)
             with gr.Row(visible=False) as bgrem_options_row_1:
@@ -236,7 +237,7 @@ def on_ui_tabs():
                                           **backbone.get_hide_dirs(),
                                           placeholder="A directory on the same machine where the server is running.")
                         inp += gr.Textbox(elem_id="depthmap_batch_output_dir", label="Output directory",
-                                          **backbone.get_hide_dirs,
+                                          **backbone.get_hide_dirs(),
                                           placeholder="Leave blank to save images to the default path.")
                         gr.HTML("Files in the output directory may be overwritten.")
                         inp += gr.Checkbox(elem_id="depthmap_batch_reuse",
@@ -273,7 +274,7 @@ def on_ui_tabs():
                             with gr.Column():
                                 vid_html_info_x = gr.HTML()
                                 vid_html_info = gr.HTML()
-                                fn_mesh = gr.Textbox(label="Input Mesh (.ply | .obj)", **shared.hide_dirs,
+                                fn_mesh = gr.Textbox(label="Input Mesh (.ply | .obj)", **backbone.get_hide_dirs(),
                                                      placeholder="A file on the same machine where "
                                                                  "the server is running.")
                             with gr.Row():
@@ -377,7 +378,7 @@ def run_generate(*inputs):
     if depthmap_mode == '2' and depthmap_batch_output_dir != '':
         outpath = depthmap_batch_output_dir
     else:
-        outpath = backbone.opts.outdir_samples or backbone.opts.outdir_extras_samples
+        outpath = backbone.get_outpath()
 
     if depthmap_mode == '0':  # Single image
         if depthmap_input_image is None:
@@ -399,7 +400,7 @@ def run_generate(*inputs):
             inputimages.append(image)
             inputnames.append(os.path.splitext(img.orig_name)[0])
     elif depthmap_mode == '2':  # Batch from Directory
-        assert not backbone.cmd_opts.hide_ui_dir_config, '--hide-ui-dir-config option must be disabled'
+        assert not backbone.get_opt('hide_ui_dir_config', False), '--hide-ui-dir-config option must be disabled'
         if depthmap_batch_input_dir == '':
             return [], None, None, "Please select an input directory."
         if depthmap_batch_input_dir == depthmap_batch_output_dir:
@@ -414,9 +415,9 @@ def run_generate(*inputs):
                 if depthmap_batch_reuse:
                     basename = Path(path).stem
                     # Custom names are not used in samples directory
-                    if outpath != backbone.opts.outdir_extras_samples:
+                    if outpath != backbone.get_opt('outdir_extras_samples', None):
                         # Possible filenames that the custom depthmaps may have
-                        name_candidates = [f'{basename}-0000.{backbone.opts.samples_format}',  # current format
+                        name_candidates = [f'{basename}-0000.{backbone.get_opt("samples_format", "png")}',  # current format
                                            f'{basename}.png',  # human-intuitive format
                                            f'{Path(path).name}']  # human-intuitive format (worse)
                         for fn_cand in name_candidates:
@@ -430,22 +431,22 @@ def run_generate(*inputs):
         inputdepthmaps_n = len([1 for x in inputdepthmaps if x is not None])
         print(f'{len(inputimages)} images will be processed, {inputdepthmaps_n} existing depthmaps will be reused')
 
-    outputs, mesh_fi, meshsimple_fi = core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inputs, backbone.gather_ops())
+    outputs, fn_mesh, display_mesh = core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inputs, backbone.gather_ops())
 
     # Saving images
     show_images = []
     for input_i, imgs in enumerate(outputs):
         basename = 'depthmap'
-        if depthmap_mode == '2' and inputnames[input_i] is not None and outpath != backbone.opts.outdir_extras_samples:
+        if depthmap_mode == '2' and inputnames[input_i] is not None and outpath != backbone.get_opt('outdir_extras_samples', None):
             basename = Path(inputnames[input_i]).stem
 
         for image_type, image in list(imgs.items()):
             show_images += [image]
             if inputs["save_outputs"]:
                 try:
-                    suffix = "" if image_type == "depth" else f"_{image_type}"
+                    suffix = "" if image_type == "depth" else f"{image_type}"
                     backbone.save_image(image, path=outpath, basename=basename, seed=None,
-                               prompt=None, extension=backbone.opts.samples_format, short_filename=True,
+                               prompt=None, extension=backbone.get_opt('samples_format', 'png'), short_filename=True,
                                no_prompt=True, grid=False, pnginfo_section_name="extras",
                                suffix=suffix)
                 except Exception as e:
@@ -454,12 +455,12 @@ def run_generate(*inputs):
                     print('Catched exception: image has wrong mode!')
                     traceback.print_exc()
 
+    display_mesh = None
     # use inpainted 3d mesh to show in 3d model output when enabled in settings
-    if hasattr(backbone.opts, 'depthmap_script_show_3d_inpaint') and backbone.opts.depthmap_script_show_3d_inpaint \
-            and mesh_fi is not None and len(mesh_fi) > 0:
-        meshsimple_fi = mesh_fi
+    if backbone.get_opt('depthmap_script_show_3d_inpaint', True) and fn_mesh is not None and len(fn_mesh) > 0:
+        display_mesh = fn_mesh
     # however, don't show 3dmodel when disabled in settings
-    if hasattr(backbone.opts, 'depthmap_script_show_3d') and not backbone.opts.depthmap_script_show_3d:
-        meshsimple_fi = None
+    if not backbone.get_opt('depthmap_script_show_3d', True):
+        display_mesh = None
     # TODO: return more info
-    return show_images, mesh_fi, meshsimple_fi, 'Generated!'
+    return show_images, fn_mesh, display_mesh, 'Generated!'

@@ -59,7 +59,7 @@ def reload_sd_model():
         shared.sd_model.first_stage_model.to(devices.device)
 
 
-def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp):
+def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp, ops=None):
     if len(inputimages) == 0 or inputimages[0] is None:
         return [], '', ''
     if inputdepthmaps is None or len(inputdepthmaps) == 0:
@@ -96,6 +96,8 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     stereo_fill = inp["stereo_fill"]
     stereo_modes = inp["stereo_modes"]
     stereo_separation = inp["stereo_separation"]
+
+    model_holder.update_settings(**ops)
 
     # TODO: ideally, run_depthmap should not save meshes - that makes the function not pure
     print(SCRIPT_FULL_NAME)

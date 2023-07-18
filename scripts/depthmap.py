@@ -1,12 +1,9 @@
 import gradio as gr
 import traceback
-import modules.scripts as scripts
-from modules import processing, images, shared
-from modules import script_callbacks
+
+from modules import shared
+from modules.images import save_image
 from modules.call_queue import wrap_gradio_gpu_call
-from modules.processing import create_infotext
-from modules.shared import opts
-from modules.ui import plaintext_to_html
 from pathlib import Path
 from PIL import Image
 
@@ -25,8 +22,19 @@ def ensure_gradio_temp_directory():
             os.mkdir(path)
     except Exception as e:
         traceback.print_exc()
+
+
 ensure_gradio_temp_directory()
 
+
+def gather_ops():
+    from modules.shared import opts, cmd_opts
+    ops = {}
+    if hasattr(opts, 'depthmap_script_boost_rmax'):
+        ops['boost_whole_size_threshold'] = opts.depthmap_script_boost_rmax
+    ops['precision'] = cmd_opts.precision
+    ops['no_half'] = cmd_opts.no_half
+    return ops
 
 def main_ui_panel(is_depth_tab):
     inp = GradioComponentBundle()
@@ -146,6 +154,7 @@ def main_ui_panel(is_depth_tab):
         def update_delault_net_size(model_type):
             w, h = ModelHolder.get_default_net_size(model_type)
             return inp['net_width'].update(value=w), inp['net_height'].update(value=h)
+
         inp['model_type'].change(
             fn=update_delault_net_size,
             inputs=inp['model_type'],
@@ -230,6 +239,7 @@ def main_ui_panel(is_depth_tab):
     return inp
 
 
+import modules.scripts as scripts
 class Script(scripts.Script):
     def title(self):
         return SCRIPT_NAME
@@ -247,6 +257,9 @@ class Script(scripts.Script):
 
     # run from script in txt2img or img2img
     def run(self, p, *inputs):
+        from modules import processing
+        from modules.processing import create_infotext
+
         inputs = GradioComponentBundle.enkey_to_dict(inputs)
 
         # sd process
@@ -256,15 +269,15 @@ class Script(scripts.Script):
         inputimages = []
         for count in range(0, len(processed.images)):
             # skip first grid image
-            if count == 0 and len(processed.images) > 1 and opts.return_grid:
+            if count == 0 and len(processed.images) > 1 and shared.opts.return_grid:
                 continue
             inputimages.append(processed.images[count])
 
-        outputs, mesh_fi, meshsimple_fi = core_generation_funnel(p.outpath_samples, inputimages, None, None, inputs)
+        outputs, mesh_fi, meshsimple_fi = core_generation_funnel(p.outpath_samples, inputimages, None, None, inputs, gather_ops())
 
         for input_i, imgs in enumerate(outputs):
             # get generation parameters
-            if hasattr(processed, 'all_prompts') and opts.enable_pnginfo:
+            if hasattr(processed, 'all_prompts') and shared.opts.enable_pnginfo:
                 info = create_infotext(processed, processed.all_prompts, processed.all_seeds, processed.all_subseeds,
                                        "", 0, input_i)
             else:
@@ -274,11 +287,11 @@ class Script(scripts.Script):
                 if inputs["save_outputs"]:
                     try:
                         suffix = "" if image_type == "depth" else f"_{image_type}"
-                        images.save_image(image, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
-                                          prompt=processed.all_prompts[input_i], extension=opts.samples_format,
-                                          info=info,
-                                          p=processed,
-                                          suffix=suffix)
+                        save_image(image, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
+                                   prompt=processed.all_prompts[input_i], extension=shared.opts.samples_format,
+                                   info=info,
+                                   p=processed,
+                                   suffix=suffix)
                     except Exception as e:
                         if not ('image has wrong mode' in str(e) or 'I;16' in str(e)):
                             raise e
@@ -352,7 +365,6 @@ def on_ui_tabs():
                             result_images = gr.Gallery(label='Output', show_label=False,
                                                        elem_id=f"depthmap_gallery").style(grid=4)
                         with gr.Column():
-                            html_info_x = gr.HTML()
                             html_info = gr.HTML()
 
                     with gr.TabItem('3D Mesh'):
@@ -429,7 +441,6 @@ def on_ui_tabs():
                 result_images,
                 fn_mesh,
                 result_depthmesh,
-                html_info_x,
                 html_info
             ]
         )
@@ -454,7 +465,7 @@ def on_ui_tabs():
             ]
         )
 
-    return (depthmap_interface, "Depth", "depthmap_interface"),
+    return depthmap_interface
 
 
 # called from depth tab
@@ -478,17 +489,17 @@ def run_generate(*inputs):
     if depthmap_mode == '2' and depthmap_batch_output_dir != '':
         outpath = depthmap_batch_output_dir
     else:
-        outpath = opts.outdir_samples or opts.outdir_extras_samples
+        outpath = shared.opts.outdir_samples or shared.opts.outdir_extras_samples
 
     if depthmap_mode == '0':  # Single image
         if depthmap_input_image is None:
-            return [], None, None, "Please select an input image!", ""
+            return [], None, None, "Please select an input image!"
         inputimages.append(depthmap_input_image)
         inputnames.append(None)
         if custom_depthmap:
             if custom_depthmap_img is None:
-                return [], None, None,\
-                    "Custom depthmap is not specified. Please either supply it or disable this option.", ""
+                return [], None, None, \
+                    "Custom depthmap is not specified. Please either supply it or disable this option."
             inputdepthmaps.append(Image.open(os.path.abspath(custom_depthmap_img.name)))
         else:
             inputdepthmaps.append(None)
@@ -502,9 +513,9 @@ def run_generate(*inputs):
     elif depthmap_mode == '2':  # Batch from Directory
         assert not shared.cmd_opts.hide_ui_dir_config, '--hide-ui-dir-config option must be disabled'
         if depthmap_batch_input_dir == '':
-            return [], None, None, "Please select an input directory.", ""
+            return [], None, None, "Please select an input directory."
         if depthmap_batch_input_dir == depthmap_batch_output_dir:
-            return [], None, None, "Please pick different directories for batch processing.", ""
+            return [], None, None, "Please pick different directories for batch processing."
         image_list = shared.listfiles(depthmap_batch_input_dir)
         for path in image_list:
             try:
@@ -515,9 +526,9 @@ def run_generate(*inputs):
                 if depthmap_batch_reuse:
                     basename = Path(path).stem
                     # Custom names are not used in samples directory
-                    if outpath != opts.outdir_extras_samples:
+                    if outpath != shared.opts.outdir_extras_samples:
                         # Possible filenames that the custom depthmaps may have
-                        name_candidates = [f'{basename}-0000.{opts.samples_format}',  # current format
+                        name_candidates = [f'{basename}-0000.{shared.opts.samples_format}',  # current format
                                            f'{basename}.png',  # human-intuitive format
                                            f'{Path(path).name}']  # human-intuitive format (worse)
                         for fn_cand in name_candidates:
@@ -531,13 +542,13 @@ def run_generate(*inputs):
         inputdepthmaps_n = len([1 for x in inputdepthmaps if x is not None])
         print(f'{len(inputimages)} images will be processed, {inputdepthmaps_n} existing depthmaps will be reused')
 
-    outputs, mesh_fi, meshsimple_fi = core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inputs)
+    outputs, mesh_fi, meshsimple_fi = core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inputs, gather_ops())
     show_images = []
 
     # Saving images
     for input_i, imgs in enumerate(outputs):
         basename = 'depthmap'
-        if depthmap_mode == '2' and inputnames[input_i] is not None and outpath != opts.outdir_extras_samples:
+        if depthmap_mode == '2' and inputnames[input_i] is not None and outpath != shared.opts.outdir_extras_samples:
             basename = Path(inputnames[input_i]).stem
 
         for image_type, image in list(imgs.items()):
@@ -545,10 +556,10 @@ def run_generate(*inputs):
             if inputs["save_outputs"]:
                 try:
                     suffix = "" if image_type == "depth" else f"_{image_type}"
-                    images.save_image(image, path=outpath, basename=basename, seed=None,
-                                      prompt=None, extension=opts.samples_format, short_filename=True,
-                                      no_prompt=True, grid=False, pnginfo_section_name="extras",
-                                      suffix=suffix)
+                    save_image(image, path=outpath, basename=basename, seed=None,
+                               prompt=None, extension=shared.opts.samples_format, short_filename=True,
+                               no_prompt=True, grid=False, pnginfo_section_name="extras",
+                               suffix=suffix)
                 except Exception as e:
                     if not ('image has wrong mode' in str(e) or 'I;16' in str(e)):
                         raise e
@@ -556,15 +567,16 @@ def run_generate(*inputs):
                     traceback.print_exc()
 
     # use inpainted 3d mesh to show in 3d model output when enabled in settings
-    if hasattr(opts, 'depthmap_script_show_3d_inpaint') and opts.depthmap_script_show_3d_inpaint \
+    if hasattr(shared.opts, 'depthmap_script_show_3d_inpaint') and shared.opts.depthmap_script_show_3d_inpaint \
             and mesh_fi is not None and len(mesh_fi) > 0:
         meshsimple_fi = mesh_fi
     # however, don't show 3dmodel when disabled in settings
-    if hasattr(opts, 'depthmap_script_show_3d') and not opts.depthmap_script_show_3d:
+    if hasattr(shared.opts, 'depthmap_script_show_3d') and not shared.opts.depthmap_script_show_3d:
         meshsimple_fi = None
     # TODO: return more info
-    return show_images, mesh_fi, meshsimple_fi, plaintext_to_html('info'), ''
+    return show_images, mesh_fi, meshsimple_fi, 'Generated!'
 
 
+from modules import script_callbacks
 script_callbacks.on_ui_settings(on_ui_settings)
-script_callbacks.on_ui_tabs(on_ui_tabs)
+script_callbacks.on_ui_tabs(lambda: [(on_ui_tabs(), "Depth", "depthmap_interface")])

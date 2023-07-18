@@ -4,8 +4,7 @@ from PIL import Image
 from torchvision.transforms import Compose, transforms
 
 # TODO: depthmap_generation should not depend on WebUI
-from modules import shared, devices
-from modules.shared import opts, cmd_opts
+from modules import devices
 
 import torch, gc
 import cv2
@@ -47,6 +46,20 @@ class ModelHolder():
         # Extra stuff
         self.resize_mode = None
         self.normalization = None
+
+        # Settings (initialized to sensible values, should be updated)
+        self.boost_whole_size_threshold = 1600  # R_max from the paper by default
+        self.no_half = False
+        self.precision = "autocast"
+
+    def update_settings(self, boost_whole_size_threshold=None, no_half=None, precision=None):
+        if boost_whole_size_threshold is not None:
+            self.boost_whole_size_threshold = boost_whole_size_threshold
+        if no_half is not None:
+            self.no_half = no_half
+        if precision is not None:
+            self.precision = precision
+
 
     def ensure_models(self, model_type, device: torch.device, boost: bool):
         # TODO: could make it more granular
@@ -191,7 +204,7 @@ class ModelHolder():
         # optimize
         if device == torch.device("cuda") and model_type in [0, 1, 2, 3, 4, 5, 6]:
             model = model.to(memory_format=torch.channels_last)
-            if not cmd_opts.no_half and model_type != 0 and not boost:  # TODO: zoedepth, too?
+            if not self.no_half and model_type != 0 and not boost:  # TODO: zoedepth, too?
                 model = model.half()
         model.to(device)  # to correct device
 
@@ -221,7 +234,6 @@ class ModelHolder():
 
     @staticmethod
     def get_default_net_size(model_type):
-        # TODO: fill in, use in the GUI
         sizes = {
             0: [448, 448],
             1: [512, 512],
@@ -285,9 +297,11 @@ class ModelHolder():
                 raw_prediction = estimatezoedepth(input, self.depth_model, net_width, net_height)
             else:
                 raw_prediction = estimatemidas(img, self.depth_model, net_width, net_height,
-                                               self.resize_mode, self.normalization)
+                                               self.resize_mode, self.normalization, self.no_half,
+                                               self.precision == "autocast")
         else:
-            raw_prediction = estimateboost(img, self.depth_model, self.depth_model_type, self.pix2pix_model)
+            raw_prediction = estimateboost(img, self.depth_model, self.depth_model_type, self.pix2pix_model,
+                                           self.boost_whole_size_threshold)
         raw_prediction_invert = self.depth_model_type in [0, 7, 8, 9]
         return raw_prediction, raw_prediction_invert
 
@@ -341,7 +355,7 @@ def estimatezoedepth(img, model, w, h):
     return prediction
 
 
-def estimatemidas(img, model, w, h, resize_mode, normalization):
+def estimatemidas(img, model, w, h, resize_mode, normalization, no_half, precision_is_autocast):
     import contextlib
     # init transform
     transform = Compose(
@@ -364,13 +378,13 @@ def estimatemidas(img, model, w, h, resize_mode, normalization):
     img_input = transform({"image": img})["image"]
 
     # compute
-    precision_scope = torch.autocast if shared.cmd_opts.precision == "autocast" and device == torch.device(
+    precision_scope = torch.autocast if precision_is_autocast and device == torch.device(
         "cuda") else contextlib.nullcontext
     with torch.no_grad(), precision_scope("cuda"):
         sample = torch.from_numpy(img_input).to(device).unsqueeze(0)
         if device == torch.device("cuda"):
             sample = sample.to(memory_format=torch.channels_last)
-            if not cmd_opts.no_half:
+            if not no_half:
                 sample = sample.half()
         prediction = model.forward(sample)
         prediction = (
@@ -600,12 +614,8 @@ class ImageandPatchs:
         return self.opt
 
 
-def estimateboost(img, model, model_type, pix2pixmodel):
-    pix2pixsize = 1024  # TODO: to setting?
-    whole_size_threshold = 1600  # R_max from the paper  # TODO: to setting?
-    # get settings
-    if hasattr(opts, 'depthmap_script_boost_rmax'):
-        whole_size_threshold = opts.depthmap_script_boost_rmax
+def estimateboost(img, model, model_type, pix2pixmodel, whole_size_threshold):
+    pix2pixsize = 1024  # TODO: pix2pixsize and whole_size_threshold to setting?
 
     if model_type == 0:  # leres
         net_receptive_field_size = 448

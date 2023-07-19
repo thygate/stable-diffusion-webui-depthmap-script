@@ -2,6 +2,7 @@ import traceback
 import gradio as gr
 from modules import shared
 import modules.scripts as scripts
+from PIL import Image
 
 from src import backbone
 from src import common_ui
@@ -46,8 +47,8 @@ class Script(scripts.Script):
         gen_obj = core_generation_funnel(p.outpath_samples, inputimages, None, None, inputs, backbone.gather_ops())
 
         for input_i, type, result in gen_obj:
-            if type in ['simple_mesh', 'inpainted_mesh']:
-                continue  # We are in script mode: do nothing with the filenames
+            if not isinstance(result, Image.Image):
+                continue
 
             # get generation parameters
             # TODO: could reuse

@@ -248,7 +248,7 @@ class ModelHolder():
         """Undoes offload"""
         if self.offloaded:
             self.move_models_to(self.device)
-            self.offloaded = True
+            self.offloaded = False
 
     def move_models_to(self, device):
         if self.depth_model is not None:

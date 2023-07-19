@@ -217,6 +217,25 @@ def main_ui_panel(is_depth_tab):
 
     return inp
 
+def open_folder_action():
+    # Adapted from stable-diffusion-webui
+    f = backbone.get_outpath()
+    if backbone.get_cmd_opt('hide_ui_dir_config', False):
+        return
+    if not os.path.exists(f) or not os.path.isdir(f):
+        raise "Couldn't open output folder"  # .isdir is security-related, do not remove!
+    import platform
+    import subprocess as sp
+    path = os.path.normpath(f)
+    if platform.system() == "Windows":
+        os.startfile(path)
+    elif platform.system() == "Darwin":
+        sp.Popen(["open", path])
+    elif "microsoft-standard-WSL2" in platform.uname().release:
+        sp.Popen(["wsl-open", path])
+    else:
+        sp.Popen(["xdg-open", path])
+
 def on_ui_tabs():
     inp = GradioComponentBundle()
     with gr.Blocks(analytics_enabled=False, title="DepthMap") as depthmap_interface:
@@ -260,6 +279,10 @@ def on_ui_tabs():
                                                        elem_id=f"depthmap_gallery").style(grid=4)
                         with gr.Column():
                             html_info = gr.HTML()
+                        folder_symbol = '\U0001f4c2'  # 📂
+                        gr.Button(folder_symbol, visible=not backbone.get_cmd_opt('hide_ui_dir_config', False)).click(
+                            fn=lambda: open_folder_action(), inputs=[], outputs=[],
+                        )
 
                     with gr.TabItem('3D Mesh'):
                         with gr.Group():
@@ -300,6 +323,7 @@ def on_ui_tabs():
                             with gr.Row():
                                 submit_vid = gr.Button('Generate Video', elem_id="depthmap_generatevideo",
                                                        variant='primary')
+
 
         inp += inp.enkey_tail()
 
@@ -401,7 +425,7 @@ def run_generate(*inputs):
             inputimages.append(image)
             inputnames.append(os.path.splitext(img.orig_name)[0])
     elif depthmap_mode == '2':  # Batch from Directory
-        assert not backbone.get_opt('hide_ui_dir_config', False), '--hide-ui-dir-config option must be disabled'
+        assert not backbone.get_cmd_opt('hide_ui_dir_config', False), '--hide-ui-dir-config option must be disabled'
         if depthmap_batch_input_dir == '':
             return [], None, None, "Please select an input directory."
         if depthmap_batch_input_dir == depthmap_batch_output_dir:

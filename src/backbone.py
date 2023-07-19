@@ -12,13 +12,19 @@ try:
 
     def get_opt(name, default):
         from modules.shared import opts
-
         if hasattr(opts, name):
             return opts.__getattr__(name)
         return default
 
+    def get_cmd_opt(name, default):
+        """Get command line argument"""
+        from modules.shared import cmd_opts
+        if hasattr(cmd_opts, name):
+            return cmd_opts.__getattribute__(name)
+        return default
 
     def gather_ops():
+        """Parameters for depthmap generation"""
         from modules.shared import cmd_opts
         ops = {}
         if get_opt('depthmap_script_boost_rmax', None) is not None:
@@ -29,6 +35,7 @@ try:
 
 
     def get_outpath():
+        """Get path where results are saved by default"""
         path = get_opt('outdir_samples', None)
         if path is None or len(path) == 0:
             path = get_opt('outdir_extras_samples', None)
@@ -86,6 +93,9 @@ except:
         return [file for file in filenames if os.path.isfile(file)]
 
     def get_opt(name, default): return default  # Configuring is not supported
+
+
+    def get_cmd_opt(name, default): return default  # Configuring is not supported
 
     def gather_ops(): return {}  # Configuring is not supported
 

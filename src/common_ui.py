@@ -68,11 +68,6 @@ def main_ui_panel(is_depth_tab):
 
         with gr.Box():
             with gr.Row():
-                inp += "show_heat", gr.Checkbox(label="Generate HeatMap", value=False)
-                # gr.Checkbox(label="Generate NormalMap", value=False)  # TODO: this is a fake door
-
-        with gr.Box():
-            with gr.Row():
                 inp += "gen_stereo", gr.Checkbox(label="Generate stereoscopic image(s)", value=False)
             with gr.Column(visible=False) as stereo_options:
                 with gr.Row():
@@ -94,6 +89,26 @@ def main_ui_panel(is_depth_tab):
                     inp += "stereo_balance", gr.Slider(minimum=-1.0, maximum=1.0, step=0.05,
                                                        label='Balance between eyes',
                                                        value=0.0)
+
+        with gr.Box():
+            with gr.Row():
+                inp += "gen_normalmap", gr.Checkbox(label="Generate NormalMap", value=False)
+            with gr.Column(visible=False) as normalmap_options:
+                with gr.Row():
+                    inp += 'normalmap_pre_blur', gr.Checkbox(label="Smooth before calculating normals", value=False)
+                    inp += 'normalmap_pre_blur_kernel', gr.Slider(minimum=1, maximum=31, step=2, label='Pre-smooth kernel size', value=3)
+                with gr.Row():
+                    inp += 'normalmap_sobel', gr.Checkbox(label="Sobel gradient", value=True)
+                    inp += 'normalmap_sobel_kernel', gr.Slider(minimum=1, maximum=31, step=2, label='Sobel kernel size', value=3)
+                with gr.Row():
+                    inp += 'normalmap_post_blur', gr.Checkbox(label="Smooth after calculating normals", value=False)
+                    inp += 'normalmap_post_blur_kernel', gr.Slider(minimum=1, maximum=31, step=2, label='Post-smooth kernel size', value=3)
+                with gr.Row():
+                    inp += 'normalmap_invert', gr.Checkbox(label="Invert", value=False)
+
+        with gr.Box():
+            with gr.Row():
+                inp += "show_heat", gr.Checkbox(label="Generate HeatMap", value=False)
 
         with gr.Box():
             with gr.Column():
@@ -194,6 +209,12 @@ def main_ui_panel(is_depth_tab):
             fn=lambda v: stereo_options.update(visible=v),
             inputs=[inp['gen_stereo']],
             outputs=[stereo_options]
+        )
+
+        inp['gen_normalmap'].change(
+            fn=lambda v: normalmap_options.update(visible=v),
+            inputs=[inp['gen_normalmap']],
+            outputs=[normalmap_options]
         )
 
         inp['gen_mesh'].change(

@@ -18,6 +18,7 @@ import traceback
 # Our code
 from src.misc import *
 from src.stereoimage_generation import create_stereoimages
+from src.normalmap_generation import create_normalmap
 from src.depthmap_generation import ModelHolder
 from src import backbone
 
@@ -60,7 +61,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     combine_output_axis = inp["combine_output_axis"]
     depthmap_compute_device = inp["compute_device"]
     gen_mesh = inp["gen_mesh"]
-    gen_normal = inp["gen_normal"] if "gen_normal" in inp else False
+    gen_normalmap = inp["gen_normalmap"] if "gen_normalmap" in inp else False
     gen_stereo = inp["gen_stereo"]
     inpaint = inp["inpaint"] if "inpaint" in inp else False
     inpaint_vids = inp["inpaint_vids"] if "inpaint_vids" in inp else False
@@ -71,6 +72,13 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     model_type = inp["model_type"]
     net_height = inp["net_height"]
     net_width = inp["net_width"]
+    normalmap_pre_blur = inp["normalmap_pre_blur"]
+    normalmap_pre_blur_kernel = inp["normalmap_pre_blur_kernel"]
+    normalmap_sobel = inp["normalmap_sobel"]
+    normalmap_sobel_kernel = inp["normalmap_sobel_kernel"]
+    normalmap_post_blur = inp["normalmap_post_blur"]
+    normalmap_post_blur_kernel = inp["normalmap_post_blur_kernel"]
+    normalmap_invert = inp['normalmap_invert']
     pre_depth_background_removal = inp["pre_depth_background_removal"]
     save_background_removal_masks = inp["save_background_removal_masks"]
     output_depth = inp["output_depth"]
@@ -218,11 +226,6 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     else:
                         generated_images[count]['depth'] = Image.fromarray(img_depth)
 
-            if show_heat:
-                from dzoedepth.utils.misc import colorize
-                heatmap = Image.fromarray(colorize(img_output, cmap='inferno'))
-                generated_images[count]['heatmap'] = heatmap
-
             if gen_stereo:
                 print("Generating stereoscopic images..")
                 stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, stereo_separation,
@@ -230,26 +233,19 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                 for c in range(0, len(stereoimages)):
                     generated_images[count][stereo_modes[c]] = stereoimages[c]
 
-            if gen_normal:  # TODO: should be moved into a separate file when redesigned
-                # taken from @graemeniedermayer
-                # take gradients
-                zx = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 1, 0, ksize=3)  # TODO: CV_64F ?
-                zy = cv2.Sobel(np.float64(img_output), cv2.CV_64F, 0, 1, ksize=3)
+            if gen_normalmap:
+                generated_images[count]['normalmap'] = create_normalmap(
+                    img_output,
+                    normalmap_pre_blur_kernel if normalmap_pre_blur else None,
+                    normalmap_sobel_kernel if normalmap_sobel else None,
+                    normalmap_post_blur_kernel if normalmap_post_blur else None,
+                    normalmap_invert
+                )
 
-                # combine and normalize gradients.
-                normal = np.dstack((zx, -zy, np.ones_like(img_output)))
-                n = np.linalg.norm(normal, axis=2)
-                normal[:, :, 0] /= n
-                normal[:, :, 1] /= n
-                normal[:, :, 2] /= n
-
-                # offset and rescale values to be in 0-255
-                normal += 1
-                normal /= 2
-                normal *= 255
-                normal = normal.astype(np.uint8)
-
-                generated_images[count]['normal'] = Image.fromarray(normal)
+            if show_heat:
+                from dzoedepth.utils.misc import colorize
+                heatmap = Image.fromarray(colorize(img_output, cmap='inferno'))
+                generated_images[count]['heatmap'] = heatmap
 
             # gen mesh
             if gen_mesh:

@@ -63,7 +63,7 @@ except:
     # Standalone backbone
     print("DepthMap did not detect stable-duiffusion-webui; launching with the standalone backbone.\n"
           "The standalone backbone is not on par with the stable-duiffusion-webui backbone.\n"
-          "Some features may be missing or work differently.\n")
+          "Some features may be missing or work differently. Please report bugs.\n")
 
     def save_image(image, path, basename, **kwargs):
         import os
@@ -79,11 +79,11 @@ except:
                 torch.cuda.empty_cache()
                 torch.cuda.ipc_collect()
 
-    def get_next_sequence_number():
+    def get_next_sequence_number(outpath=None, basename=None):
         # Don't really care what the number will be... As long as it is unique.
         from datetime import datetime, timezone
         import random
-        return f"{int(datetime.now(timezone.utc).timestamp())}-{random.randint(1000,9999)}"
+        return int(f"{int(datetime.now(timezone.utc).timestamp())}{random.randint(1000,9999)}")
 
     def wrap_gradio_gpu_call(f): return f  # Displaying various stats is not supported
 

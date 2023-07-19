@@ -1,25 +1,34 @@
-from numba import njit, prange
+try:
+    from numba import njit, prange
+except Exception as e:
+    print(f"WARINING! Numba failed to import! Stereoimage generation will be much slower! ({str(e)})")
+    from builtins import range as prange
+    def njit(parallel=False):
+        def Inner(func): return lambda *args, **kwargs: func(*args, **kwargs)
+        return Inner
 import numpy as np
 from PIL import Image
+
 
 def create_stereoimages(original_image, depthmap, divergence, separation=0.0, modes=None, stereo_balance=0.0,
                         fill_technique='polylines_sharp'):
     """Creates stereoscopic images.
-    An effort is made to make them look nice, but beware that the resulting image will have some distortion .
+    An effort is made to make them look nice, but beware that the resulting image will have some distortion.
+    The correctness was not rigorously tested.
 
     :param original_image: original image from which the 3D image (stereoimage) will be created
     :param depthmap: depthmap corresponding to the original image. White = near, black = far.
     :param float divergence: the measure of 3D effect, in percentages.
       A good value will likely be somewhere in the [0.05; 10.0) interval.
-    :param float separation: measure by how much to move two halfs of the spereoimage apart from eachother.
-      Measured in percentages. Negative values move two parts closer togethert.
+    :param float separation: measure by how much to move two halves of the stereoimage apart from each-other.
+      Measured in percentages. Negative values move two parts closer together.
       Affects which parts of the image will be visible in left and/or right half.
     :param list modes: how the result will look like. By default only 'left-right' is generated
-      - a picture for the left eye will be on the left and the picture from the right eye - on the rigth.
+      - a picture for the left eye will be on the left and the picture from the right eye - on the right.
       The supported modes are: 'left-right', 'right-left', 'top-bottom', 'bottom-top', 'red-cyan-anaglyph'.
     :param float stereo_balance: has to do with how the divergence will be split among the two parts of the image,
       must be in the [-1.0; 1.0] interval.
-    :param str fill_technique: applying divergence inevidably creates some gaps in the image.
+    :param str fill_technique: applying divergence inevitably creates some gaps in the image.
       This parameter specifies the technique that will be used to fill in the blanks in the two resulting images.
       Must be one of the following: 'none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'.
     """
@@ -27,6 +36,8 @@ def create_stereoimages(original_image, depthmap, divergence, separation=0.0, mo
         modes = ['left-right']
     if not isinstance(modes, list):
         modes = [modes]
+    if len(modes) == 0:
+        return []
 
     original_image = np.asarray(original_image)
     balance = (stereo_balance + 1) / 2
@@ -69,7 +80,7 @@ def apply_stereo_divergence(original_image, depth, divergence, separation, fill_
         )
 
 
-@njit
+@njit(parallel=False)
 def apply_stereo_divergence_naive(
         original_image, normalized_depth, divergence_px: float, separation_px: float, fill_technique):
     h, w, c = original_image.shape
@@ -182,7 +193,7 @@ def apply_stereo_divergence_polylines(
         # Since the proportions are equal, these lines have the same angle with an axe and are parallel.
         # So, these lines do not intersect. Now rotate the plot by 45 or -45 degrees and observe that
         # each dot of the polyline is further right from the last dot,
-        # which makes it impossible for the polyline to self-interset. QED.
+        # which makes it impossible for the polyline to self-intersect. QED.
 
         # sort segments and points using insertion sort
         # has a very good performance in practice, since these are almost sorted to begin with
@@ -200,7 +211,7 @@ def apply_stereo_divergence_polylines(
         sg_pointer: int = 0
         # and index of the point that should be processed next
         pt_i: int = 0
-        for col in range(w):  # iterate over regions (that will be rasterizeed into pixels)
+        for col in range(w):  # iterate over regions (that will be rasterized into pixels)
             color = np.full(c, 0.5, dtype=np.float_)  # we start with 0.5 because of how floats are converted to ints
             while pt[pt_i][0] < col:
                 pt_i += 1
@@ -213,7 +224,7 @@ def apply_stereo_divergence_polylines(
                 # the color at center point is the same as the average of color of segment part
                 coord_center = coord_from + 0.5 * significance
 
-                # adding semgents that now may contribute
+                # adding segments that now may contribute
                 while sg_pointer < sg_end and sg[sg_pointer][0] < coord_center:
                     csg[csg_end] = sg[sg_pointer]
                     sg_pointer += 1

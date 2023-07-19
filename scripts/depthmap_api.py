@@ -67,8 +67,9 @@ def depth_api(_: gr.Blocks, app: FastAPI):
 
         results_based = []
         for count, type, result in gen_obj:
-            if type not in ['simple_mesh', 'inpainted_mesh']:
-                results_based += [encode_to_base64(result)]
+            if not isinstance(result, Image.Image):
+                continue
+            results_based += [encode_to_base64(result)]
         return {"images": results_based, "info": "Success"}
 
 

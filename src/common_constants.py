@@ -25,7 +25,8 @@ class GenerationOptions(enum.Enum):
     DO_OUTPUT_DEPTH = True
     OUTPUT_DEPTH_INVERT = False
     OUTPUT_DEPTH_COMBINE = False
-    OUTPUT_DEPTH_COMBINE_AXIS = "Horizontal"
+    OUTPUT_DEPTH_COMBINE_AXIS = "Horizontal"  # Format (str) is subject to change
+    DO_OUTPUT_DEPTH_PREDICTION = False  # Hidden, do not use, subject to change
 
     CLIPDEPTH = False
     CLIPDEPTH_FAR = 0.0

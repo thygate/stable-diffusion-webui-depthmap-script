@@ -3,7 +3,7 @@ from pathlib import Path
 import gradio as gr
 from PIL import Image
 
-from src import backbone
+from src import backbone, video_mode
 from src.core import core_generation_funnel, unload_models, run_makevideo
 from src.depthmap_generation import ModelHolder
 from src.gradio_args_transport import GradioComponentBundle
@@ -217,6 +217,33 @@ def open_folder_action():
     else:
         sp.Popen(["xdg-open", path])
 
+
+def depthmap_mode_video(inp):
+    inp += gr.File(elem_id='depthmap_input_video', label="Video or animated file",
+                   file_count="single", interactive=True, type="file")
+    inp += gr.Checkbox(elem_id="depthmap_vm_custom_checkbox",
+                       label="Use custom/pregenerated DepthMap video", value=False)
+    inp += gr.File(elem_id='depthmap_vm_custom', file_count="single",
+                   interactive=True, type="file", visible=False)
+    with gr.Row():
+        inp += gr.Checkbox(elem_id='depthmap_vm_compress_checkbox', label="Compress colorvideos?", value=False)
+        inp += gr.Slider(elem_id='depthmap_vm_compress_bitrate', label="Bitrate (kbit)", visible=False,
+                         minimum=1000, value=15000, maximum=50000, step=250)
+
+    inp['depthmap_vm_custom_checkbox'].change(
+        fn=lambda v: inp['depthmap_vm_custom'].update(visible=v),
+        inputs=[inp['depthmap_vm_custom_checkbox']],
+        outputs=[inp['depthmap_vm_custom']]
+    )
+
+    inp['depthmap_vm_compress_checkbox'].change(
+        fn=lambda v: inp['depthmap_vm_compress_bitrate'].update(visible=v),
+        inputs=[inp['depthmap_vm_compress_checkbox']],
+        outputs=[inp['depthmap_vm_compress_bitrate']]
+    )
+
+    return inp
+
 def on_ui_tabs():
     inp = GradioComponentBundle()
     with gr.Blocks(analytics_enabled=False, title="DepthMap") as depthmap_interface:
@@ -248,6 +275,8 @@ def on_ui_tabs():
                                            label="Skip generation and use (edited/custom) depthmaps "
                                                  "in output directory when a file already exists.",
                                            value=True)
+                    with gr.TabItem('Single Video') as depthmap_mode_3:
+                        inp = depthmap_mode_video(inp)
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
                 inp |= main_ui_panel(True)  # Main panel is inserted here
                 unloadmodels = gr.Button('Unload models', elem_id="depthmap_unloadmodels")
@@ -310,6 +339,7 @@ def on_ui_tabs():
         depthmap_mode_0.select(lambda: '0', None, inp['depthmap_mode'])
         depthmap_mode_1.select(lambda: '1', None, inp['depthmap_mode'])
         depthmap_mode_2.select(lambda: '2', None, inp['depthmap_mode'])
+        depthmap_mode_3.select(lambda: '3', None, inp['depthmap_mode'])
 
         def custom_depthmap_change_fn(turned_on):
             return inp['custom_depthmap_img'].update(visible=turned_on), \
@@ -369,6 +399,18 @@ def on_ui_tabs():
     return depthmap_interface
 
 
+def format_exception(e: Exception):
+    traceback.print_exc()
+    msg = '<h3>' + 'ERROR: ' + str(e) + '</h3>' + '\n'
+    if 'out of GPU memory' not in msg:
+        msg += \
+            'Please report this issue ' \
+            f'<a href="https://github.com/thygate/{REPOSITORY_NAME}/issues">here</a>. ' \
+            'Make sure to provide the full stacktrace: \n'
+        msg += '<code style="white-space: pre;">' + traceback.format_exc() + '</code>'
+    return msg
+
+
 def run_generate(*inputs):
     inputs = GradioComponentBundle.enkey_to_dict(inputs)
     depthmap_mode = inputs['depthmap_mode']
@@ -381,10 +423,21 @@ def run_generate(*inputs):
     custom_depthmap_img = inputs['custom_depthmap_img']
 
     inputimages = []
-    # Allow supplying custom depthmaps
-    inputdepthmaps = []
-    # Also keep track of original file names
-    inputnames = []
+    inputdepthmaps = []  # Allow supplying custom depthmaps
+    inputnames = []  # Also keep track of original file names
+
+    if depthmap_mode == '3':
+        try:
+            custom_depthmap = inputs['depthmap_vm_custom'] \
+                if inputs['depthmap_vm_custom_checkbox'] else None
+            colorvids_bitrate = inputs['depthmap_vm_compress_bitrate'] \
+                if inputs['depthmap_vm_compress_checkbox'] else None
+            ret = video_mode.gen_video(
+                inputs['depthmap_input_video'], backbone.get_outpath(), inputs, custom_depthmap, colorvids_bitrate)
+            return [], None, None, ret
+        except Exception as e:
+            ret = format_exception(e)
+        return [], None, None, ret
 
     if depthmap_mode == '2' and depthmap_batch_output_dir != '':
         outpath = depthmap_batch_output_dir
@@ -410,7 +463,9 @@ def run_generate(*inputs):
             image = Image.open(os.path.abspath(img.name))
             inputimages.append(image)
             inputnames.append(os.path.splitext(img.orig_name)[0])
+        print(f'{len(inputimages)} images will be processed')
     elif depthmap_mode == '2':  # Batch from Directory
+        # TODO: There is a RAM leak when we process batches, I can smell it! Or maybe it is gone.
         assert not backbone.get_cmd_opt('hide_ui_dir_config', False), '--hide-ui-dir-config option must be disabled'
         if depthmap_batch_input_dir == '':
             return [], None, None, "Please select an input directory."
@@ -444,25 +499,22 @@ def run_generate(*inputs):
 
     gen_obj = core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inputs, backbone.gather_ops())
 
-    show_images = []
+    # Saving images
+    img_results = []
+    results_total = 0
     inpainted_mesh_fi = mesh_simple_fi = None
     msg = ""  # Empty string is never returned
     while True:
         try:
             input_i, type, result = next(gen_obj)
+            results_total += 1
         except StopIteration:
             # TODO: return more info
-            msg = '<h3>Successfully generated.</h3>'
+            msg = '<h3>Successfully generated</h3>' if results_total > 0 else \
+                '<h3>Successfully generated nothing - please check the settings and try again</h3>'
             break
         except Exception as e:
-            traceback.print_exc()
-            msg = '<h3>' + 'ERROR: ' + str(e) + '</h3>' + '\n'
-            if 'out of GPU memory' not in msg:
-                msg +=\
-                    'Please report this issue ' \
-                    f'<a href="https://github.com/thygate/{REPOSITORY_NAME}/issues">here</a>. ' \
-                    'Make sure to provide the full stacktrace: \n'
-                msg += '<code style="white-space: pre;">' + traceback.format_exc() + '</code>'
+            msg = format_exception(e)
             break
         if type == 'simple_mesh':
             mesh_simple_fi = result
@@ -470,14 +522,17 @@ def run_generate(*inputs):
         if type == 'inpainted_mesh':
             inpainted_mesh_fi = result
             continue
+        if not isinstance(result, Image.Image):
+            print(f'This is not supposed to happen! Somehow output type {type} is not supported! Input_i: {input_i}.')
+            continue
+        img_results += [(input_i, type, result)]
 
-        basename = 'depthmap'
-        if depthmap_mode == '2' and inputnames[input_i] is not None and outpath != backbone.get_opt('outdir_extras_samples', None):
-            basename = Path(inputnames[input_i]).stem
-
-        show_images += [result]
         if inputs["save_outputs"]:
             try:
+                basename = 'depthmap'
+                if depthmap_mode == '2' and inputnames[input_i] is not None:
+                    if outpath != backbone.get_opt('outdir_extras_samples', None):
+                        basename = Path(inputnames[input_i]).stem
                 suffix = "" if type == "depth" else f"{type}"
                 backbone.save_image(result, path=outpath, basename=basename, seed=None,
                            prompt=None, extension=backbone.get_opt('samples_format', 'png'), short_filename=True,
@@ -496,4 +551,4 @@ def run_generate(*inputs):
         if backbone.get_opt('depthmap_script_show_3d_inpaint', True):
             if inpainted_mesh_fi is not None and len(inpainted_mesh_fi) > 0:
                 display_mesh_fi = inpainted_mesh_fi
-    return show_images, inpainted_mesh_fi, display_mesh_fi, msg.replace('\n', '<br>')
+    return map(lambda x: x[2], img_results), inpainted_mesh_fi, display_mesh_fi, msg.replace('\n', '<br>')

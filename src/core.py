@@ -1,10 +1,5 @@
 from pathlib import Path
-
 from PIL import Image
-
-from modules import shared, devices
-from modules.images import get_next_sequence_number
-from modules.shared import opts, cmd_opts
 
 try:
     from tqdm import trange
@@ -21,9 +16,10 @@ import math
 import traceback
 
 # Our code
-from src.main import *
+from src.misc import *
 from src.stereoimage_generation import create_stereoimages
 from src.depthmap_generation import ModelHolder
+from src import backbone
 
 # 3d-photo-inpainting imports
 from inpaint.mesh import write_mesh, read_mesh, output_3d_photo
@@ -47,19 +43,7 @@ def convert_i16_to_rgb(image, like):
     return output
 
 
-def unload_sd_model():
-    if shared.sd_model is not None:
-        shared.sd_model.cond_stage_model.to(devices.cpu)
-        shared.sd_model.first_stage_model.to(devices.cpu)
-
-
-def reload_sd_model():
-    if shared.sd_model is not None:
-        shared.sd_model.cond_stage_model.to(devices.device)
-        shared.sd_model.first_stage_model.to(devices.device)
-
-
-def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp):
+def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp, ops=None):
     if len(inputimages) == 0 or inputimages[0] is None:
         return [], '', ''
     if inputdepthmaps is None or len(inputdepthmaps) == 0:
@@ -97,10 +81,14 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     stereo_modes = inp["stereo_modes"]
     stereo_separation = inp["stereo_separation"]
 
+    if ops is None:
+        ops = {}
+    model_holder.update_settings(**ops)
+
     # TODO: ideally, run_depthmap should not save meshes - that makes the function not pure
     print(SCRIPT_FULL_NAME)
 
-    unload_sd_model()
+    backbone.unload_sd_model()
 
     # TODO: this still should not be here
     background_removed_images = []
@@ -306,7 +294,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
         else:
             raise e
     finally:
-        if hasattr(opts, 'depthmap_script_keepmodels') and opts.depthmap_script_keepmodels:
+        if backbone.get_opt('depthmap_script_keepmodels', True):
             model_holder.offload()  # Swap to CPU memory
         else:
             if 'model' in locals():
@@ -316,7 +304,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
             model_holder.unload_models()
 
         gc.collect()
-        devices.torch_gc()
+        backbone.torch_gc()
 
     # TODO: This should not be here
     mesh_fi = None
@@ -326,14 +314,14 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
         except Exception as e:
             print(f'{str(e)}, some issue with generating inpainted mesh')
 
-    reload_sd_model()
+    backbone.reload_sd_model()
     print("All done.\n")
     return generated_images, mesh_fi, meshsimple_fi
 
 
 def get_uniquefn(outpath, basename, ext):
     # Inefficient and may fail, maybe use unbounded binary search?
-    basecount = get_next_sequence_number(outpath, basename)
+    basecount = backbone.get_next_sequence_number(outpath, basename)
     if basecount > 0: basecount = basecount - 1
     fullfn = None
     for i in range(500):
@@ -401,10 +389,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, inpaint_vids, v
         config['repeat_inpaint_edge'] = True
         config['ply_fmt'] = "bin"
 
-        config['save_ply'] = False
-        if hasattr(opts, 'depthmap_script_save_ply') and opts.depthmap_script_save_ply:
-            config['save_ply'] = True
-
+        config['save_ply'] = backbone.get_opt('depthmap_script_save_ply', False)
         config['save_obj'] = True
 
         if device == torch.device("cpu"):
@@ -471,7 +456,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, inpaint_vids, v
                                    [-0.05, -0.05, -0.05, -0.05],
                                    ['dolly-zoom-in', 'zoom-in', 'circle', 'swing'], False, vid_format, vid_ssaa)
 
-            devices.torch_gc()
+            backbone.torch_gc()
 
     finally:
         del rgb_model
@@ -480,7 +465,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, inpaint_vids, v
         depth_edge_model = None
         del depth_feat_model
         depth_feat_model = None
-        devices.torch_gc()
+        backbone.torch_gc()
 
     return mesh_fi
 
@@ -602,9 +587,9 @@ def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_bord
 
     # output path and filename mess ..
     basename = Path(fn_mesh).stem
-    outpath = opts.outdir_samples or opts.outdir_extras_samples
+    outpath = backbone.get_outpath()
     # unique filename
-    basecount = get_next_sequence_number(outpath, basename)
+    basecount = backbone.get_next_sequence_number(outpath, basename)
     if basecount > 0: basecount = basecount - 1
     fullfn = None
     for i in range(500):
@@ -697,9 +682,7 @@ def depth_edges_mask(depth):
 def create_mesh(image, depth, keep_edges=False, spherical=False):
     import trimesh
     from dzoedepth.utils.geometry import depth_to_points, create_triangles
-    maxsize = 1024
-    if hasattr(opts, 'depthmap_script_mesh_maxsize'):
-        maxsize = opts.depthmap_script_mesh_maxsize
+    maxsize = backbone.get_opt('depthmap_script_mesh_maxsize', 2048)
 
     # limit the size of the input image
     image.thumbnail((maxsize, maxsize))

@@ -1,27 +1,36 @@
 import subprocess
 import os
 import pathlib
-import torch
+import builtins
 
 def get_commit_hash():
-    try:
+    def call_git(dir):
         return subprocess.check_output(
             [os.environ.get("GIT", "git"), "rev-parse", "HEAD"],
-            cwd=pathlib.Path.cwd().joinpath('extensions/stable-diffusion-webui-depthmap-script/'),
-            shell=False,
-            stderr=subprocess.DEVNULL,
-            encoding='utf8').strip()[0:8]
+            cwd=dir, shell=False, stderr=subprocess.DEVNULL, encoding='utf8').strip()[0:8]
+
+    try:
+        file_path = pathlib.Path(__file__)
+        path = file_path.parts
+        while len(path) > 0 and path[-1] != REPOSITORY_NAME:
+            path = path[:-1]
+        if len(path) >= 2 and path[-1] == REPOSITORY_NAME and path[-2] == "extensions":
+            return call_git(str(pathlib.Path(*path)))
+
+        return call_git(pathlib.Path.cwd().joinpath('extensions/stable-diffusion-webui-depthmap-script/'))
     except Exception:
         return "<none>"
 
 
+REPOSITORY_NAME = "stable-diffusion-webui-depthmap-script"
 SCRIPT_NAME = "DepthMap"
 SCRIPT_VERSION = "v0.4.1"
 SCRIPT_FULL_NAME = f"{SCRIPT_NAME} {SCRIPT_VERSION} ({get_commit_hash()})"
 
 
 def ensure_file_downloaded(filename, url, sha256_hash_prefix=None):
-    # Do not check the hash every time - it is somewhat time-consuming
+    import torch
+    # Do not check the hash every time - it is somewhat time-consumin
     if os.path.exists(filename):
         return
 

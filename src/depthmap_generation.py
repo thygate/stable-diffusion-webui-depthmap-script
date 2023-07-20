@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import skimage.measure
 from PIL import Image
+import torch
 from torchvision.transforms import Compose, transforms
 
 # midas imports

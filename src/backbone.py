@@ -1,6 +1,8 @@
 # DepthMap can be run inside stable-duiffusion-webui, but also separately.
 # All the stable-duiffusion-webui stuff that the DepthMap relies on
 # must be resided in this file (or in the scripts folder).
+import pathlib
+from datetime import datetime
 
 try:
     # stable-duiffusion-webui backbone
@@ -61,15 +63,21 @@ try:
         return modules.shared.hide_dirs
 except:
     # Standalone backbone
-    print("DepthMap did not detect stable-duiffusion-webui; launching with the standalone backbone.\n"
-          "The standalone backbone is not on par with the stable-duiffusion-webui backbone.\n"
-          "Some features may be missing or work differently. Please report bugs.\n")
+    print(  # "  DepthMap did not detect stable-duiffusion-webui; launching with the standalone backbone.\n"
+          "  The standalone mode is not on par with the stable-duiffusion-webui mode.\n"
+          "  Some features may be missing or work differently. Please report bugs.\n")
 
     def save_image(image, path, basename, **kwargs):
         import os
         os.makedirs(path, exist_ok=True)
-        fullfn = os.path.join(path, f"{get_next_sequence_number()}-{basename}.{kwargs['extension']}")
-        image.save(fullfn, format=get_opt('samples_format', 'png'))
+        if 'suffix' not in kwargs or len(kwargs['suffix']) == 0:
+            kwargs['suffix'] = ''
+        else:
+            kwargs['suffix'] = f"-{kwargs['suffix']}"
+        format = get_opt('samples_format', kwargs['extension'])
+        fullfn = os.path.join(
+            path, f"{basename}-{get_next_sequence_number(path, basename)}{kwargs['suffix']}.{format}")
+        image.save(fullfn, format=format)
 
     def torch_gc():
         # TODO: is this really sufficient?
@@ -79,11 +87,13 @@ except:
                 torch.cuda.empty_cache()
                 torch.cuda.ipc_collect()
 
+    launched_at = int(datetime.now().timestamp())
+    backbone_current_seq_number = 0
+
     def get_next_sequence_number(outpath=None, basename=None):
-        # Don't really care what the number will be... As long as it is unique.
-        from datetime import datetime, timezone
-        import random
-        return int(f"{int(datetime.now(timezone.utc).timestamp())}{random.randint(1000,9999)}")
+        global backbone_current_seq_number
+        backbone_current_seq_number += 1
+        return int(f"{launched_at}{backbone_current_seq_number:04}")
 
     def wrap_gradio_gpu_call(f): return f  # Displaying various stats is not supported
 
@@ -99,7 +109,7 @@ except:
 
     def gather_ops(): return {}  # Configuring is not supported
 
-    def get_outpath(): return '.'
+    def get_outpath(): return str(pathlib.Path('.', 'outputs'))
 
     def unload_sd_model(): pass  # Not needed
 

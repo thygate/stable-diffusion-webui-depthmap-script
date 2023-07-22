@@ -3,7 +3,7 @@ import cv2
 from PIL import Image
 
 def create_normalmap(depthmap,
-                     pre_blur: int | None = None, sobel_gradient: int | None = 3, post_blur: int | None = None,
+                     pre_blur = None, sobel_gradient = 3, post_blur = None,
                      invert=False):
     """Generates normalmaps.
     :param depthmap: depthmap that will be used to generate normalmap
@@ -16,7 +16,9 @@ def create_normalmap(depthmap,
     # TODO: Tiling can be improved (gradients could be matched).
     # TODO: Implement bilateral filtering (16 bit deflickering)
 
-    normalmap = depthmap * (-1.0) if invert else depthmap
+    # We invert by default, maybe there is a negative sign hiding somewhere
+    normalmap = depthmap if invert else depthmap * (-1.0)
+    normalmap = normalmap / 256.0
     # pre blur (only blurs z-axis)
     if pre_blur is not None and pre_blur > 0:
         normalmap = cv2.GaussianBlur(normalmap, (pre_blur, pre_blur), pre_blur)

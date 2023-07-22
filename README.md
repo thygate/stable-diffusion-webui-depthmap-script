@@ -310,6 +310,18 @@ U2-Net:
 }
 ```
 
+IS-Net:
+
+```
+@InProceedings{qin2022,
+      author={Xuebin Qin and Hang Dai and Xiaobin Hu and Deng-Ping Fan and Ling Shao and Luc Van Gool},
+      title={Highly Accurate Dichotomous Image Segmentation},
+      booktitle={ECCV},
+      year={2022}
+}
+```
+
+
 ZoeDepth :
 
 ```

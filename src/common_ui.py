@@ -144,7 +144,7 @@ def main_ui_panel(is_depth_tab):
                 with gr.Row():
                     inp += "background_removal_model", gr.Dropdown(label="Rembg Model",
                                                                    choices=['u2net', 'u2netp', 'u2net_human_seg',
-                                                                            'silueta'],
+                                                                            'silueta', "isnet-general-use", "isnet-anime"],
                                                                    value='u2net', type="value")
 
         with gr.Box():
@@ -477,17 +477,12 @@ def run_generate(*inputs):
         inputdepthmaps_n = len([1 for x in inputdepthmaps if x is not None])
         print(f'{len(inputimages)} images will be processed, {inputdepthmaps_n} existing depthmaps will be reused')
 
-    outputs, fn_mesh, display_mesh = core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inputs, backbone.gather_ops())
-
-    # Saving images
-    show_images = []
-    for input_i, imgs in enumerate(outputs):
+    def save_img(input_i, imgs):
         basename = 'depthmap'
         if depthmap_mode == '2' and inputnames[input_i] is not None and outpath != backbone.get_opt('outdir_extras_samples', None):
             basename = Path(inputnames[input_i]).stem
 
         for image_type, image in list(imgs.items()):
-            show_images += [image]
             if inputs["save_outputs"]:
                 try:
                     suffix = "" if image_type == "depth" else f"{image_type}"
@@ -500,6 +495,14 @@ def run_generate(*inputs):
                         raise e
                     print('Catched exception: image has wrong mode!')
                     traceback.print_exc()
+
+    outputs, fn_mesh, display_mesh = core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inputs, backbone.gather_ops(), save_img = save_img)
+
+    # Saving images
+    show_images = []
+    for input_i, imgs in enumerate(outputs):
+        for image_type, image in list(imgs.items()):
+            show_images += [image]
 
     display_mesh = None
     # use inpainted 3d mesh to show in 3d model output when enabled in settings

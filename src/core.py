@@ -44,7 +44,7 @@ def convert_i16_to_rgb(image, like):
     return output
 
 
-def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp, ops=None):
+def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp, ops=None, **kwargs):
     if len(inputimages) == 0 or inputimages[0] is None:
         return [], '', ''
     if inputdepthmaps is None or len(inputdepthmaps) == 0:
@@ -276,6 +276,9 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
 
                 mesh = create_mesh(inputimages[count], depthi, keep_edges=not mesh_occlude, spherical=mesh_spherical)
                 mesh.export(meshsimple_fi)
+            
+            if "save_img" in kwargs:
+                kwargs.get("save_img")(count, generated_images[count])
 
         print("Computing output(s) done.")
     except RuntimeError as e:

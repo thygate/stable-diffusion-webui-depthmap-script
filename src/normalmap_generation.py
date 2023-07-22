@@ -16,8 +16,9 @@ def create_normalmap(depthmap,
     # TODO: Tiling can be improved (gradients could be matched).
     # TODO: Implement bilateral filtering (16 bit deflickering)
 
+    # We invert by default, maybe there is a negative sign hiding somewhere
     normalmap = depthmap if invert else depthmap * (-1.0)
-    normalmap = normalmap/256
+    normalmap = normalmap / 256.0
     # pre blur (only blurs z-axis)
     if pre_blur is not None and pre_blur > 0:
         normalmap = cv2.GaussianBlur(normalmap, (pre_blur, pre_blur), pre_blur)

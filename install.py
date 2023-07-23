@@ -32,7 +32,7 @@ ensure('trimesh')
 ensure('numba', '0.57.0')
 ensure('vispy', '0.13.0')
 
-ensure('rembg')
+ensure('rembg', '2.0.50')
 
 if not launch.is_installed("moviepy"):
     launch.run_pip('install "moviepy==1.0.2"', "moviepy requirement for depthmap script")

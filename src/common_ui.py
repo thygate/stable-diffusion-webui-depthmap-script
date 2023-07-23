@@ -144,7 +144,7 @@ def main_ui_panel(is_depth_tab):
                 with gr.Row():
                     inp += "background_removal_model", gr.Dropdown(label="Rembg Model",
                                                                    choices=['u2net', 'u2netp', 'u2net_human_seg',
-                                                                            'silueta'],
+                                                                            'silueta', "isnet-general-use", "isnet-anime"],
                                                                    value='u2net', type="value")
 
         with gr.Box():

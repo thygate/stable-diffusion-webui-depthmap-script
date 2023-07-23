@@ -72,10 +72,6 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     inputdepthmaps_complete = all([x is not None for x in inputdepthmaps])
 
     inp = CoreGenerationFunnelInp(inp)
-    depthmap_compute_device = inp[go.COMPUTE_DEVICE]
-    net_height = inp[go.NET_HEIGHT]
-    net_width = inp[go.NET_WIDTH]
-    stereo_separation = inp[go.STEREO_SEPARATION]
 
     if ops is None:
         ops = {}
@@ -97,11 +93,12 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
             background_removed_images = batched_background_removal(inputimages, inp[go.REMBG_MODEL])
 
     # init torch device
-    if depthmap_compute_device == 'GPU' and not torch.cuda.is_available():
-        print('WARNING: Cuda device was not found, cpu will be used')
-        depthmap_compute_device = 'CPU'
-    if depthmap_compute_device == 'GPU':
-        device = torch.device("cuda")
+    if inp[go.COMPUTE_DEVICE] == 'GPU':
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        else:
+            print('WARNING: Cuda device was not found, cpu will be used')
+            device = torch.device("cpu")
     else:
         device = torch.device("cpu")
     print("device: %s" % device)
@@ -152,6 +149,9 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     # Round up to a multiple of 32 to avoid potential issues
                     net_width = (inputimages[count].width + 31) // 32 * 32
                     net_height = (inputimages[count].height + 31) // 32 * 32
+                else:
+                    net_width = inp[go.NET_WIDTH]
+                    net_height = inp[go.NET_HEIGHT]
                 raw_prediction, raw_prediction_invert = \
                     model_holder.get_raw_prediction(inputimages[count], net_width, net_height)
 
@@ -217,9 +217,10 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
 
             if inp[go.GEN_STEREO]:
                 print("Generating stereoscopic images..")
-                stereoimages = create_stereoimages(inputimages[count], img_output, inp[go.STEREO_DIVERGENCE], inp,
-                                                   inp[go.STEREO_MODES], inp[go.STEREO_BALANCE],
-                                                   inp[go.STEREO_FILL_ALGO])
+                stereoimages = create_stereoimages(
+                    inputimages[count], img_output,
+                    inp[go.STEREO_DIVERGENCE], inp[go.STEREO_SEPARATION],
+                    inp[go.STEREO_MODES], inp[go.STEREO_BALANCE], inp[go.STEREO_FILL_ALGO])
                 for c in range(0, len(stereoimages)):
                     generated_images[count][inp[go.STEREO_MODES][c]] = stereoimages[c]
 

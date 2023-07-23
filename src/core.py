@@ -17,6 +17,8 @@ import traceback
 
 # Our code
 from src.misc import *
+from src.common_constants import GenerationOptions as go
+from src.common_constants import *
 from src.stereoimage_generation import create_stereoimages
 from src.normalmap_generation import create_normalmap
 from src.depthmap_generation import ModelHolder
@@ -44,6 +46,24 @@ def convert_i16_to_rgb(image, like):
     return output
 
 
+class CoreGenerationFunnelInp:
+    """This class takes a dictionary and creates a core_generation_funnel inp.
+    Non-applicable parameters are silently discarded (no error)"""
+    def __init__(self, values):
+        self.values = {}
+        for setting in GenerationOptions:
+            name = setting.name.lower()
+            self.values[name] = values[name] if name in values else name.df
+
+    def __getitem__(self, item):
+        if isinstance(item, GenerationOptions):
+            return self.values[item.name.lower()]
+        return self.values[item]
+
+    def __getattr__(self, item):
+        return self[item]
+
+
 def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp, ops=None):
     if len(inputimages) == 0 or inputimages[0] is None:
         return [], '', ''
@@ -51,43 +71,44 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
         inputdepthmaps: list[Image] = [None for _ in range(len(inputimages))]
     inputdepthmaps_complete = all([x is not None for x in inputdepthmaps])
 
-    gen_rembg = inp["gen_rembg"]
-    rembg_model = inp["rembg_model"]
-    boost = inp["boost"]
-    clipdepth = inp["clipdepth"]
-    clipdepth_far = inp["clipdepth_far"]
-    clipdepth_near = inp["clipdepth_near"]
-    output_depth_combine = inp["output_depth_combine"]
-    output_depth_combine_axis = inp["output_depth_combine_axis"]
-    depthmap_compute_device = inp["compute_device"]
-    gen_simple_mesh = inp["gen_simple_mesh"]
-    gen_normalmap = inp["gen_normalmap"]
-    gen_stereo = inp["gen_stereo"]
-    gen_inpainted_mesh = inp["gen_inpainted_mesh"] if "gen_inpainted_mesh" in inp else False
-    gen_inpainted_mesh_demos = inp["gen_inpainted_mesh_demos"] if "gen_inpainted_mesh_demos" in inp else False
-    output_depth_invert = inp["output_depth_invert"]
-    net_size_match = inp["net_size_match"]
-    simple_mesh_occlude = inp["simple_mesh_occlude"]
-    simple_mesh_spherical = inp["simple_mesh_spherical"]
-    model_type = inp["model_type"]
-    net_height = inp["net_height"]
-    net_width = inp["net_width"]
-    normalmap_pre_blur = inp["normalmap_pre_blur"]
-    normalmap_pre_blur_kernel = inp["normalmap_pre_blur_kernel"]
-    normalmap_sobel = inp["normalmap_sobel"]
-    normalmap_sobel_kernel = inp["normalmap_sobel_kernel"]
-    normalmap_post_blur = inp["normalmap_post_blur"]
-    normalmap_post_blur_kernel = inp["normalmap_post_blur_kernel"]
-    normalmap_invert = inp['normalmap_invert']
-    pre_depth_background_removal = inp["pre_depth_background_removal"]
-    save_background_removal_masks = inp["save_background_removal_masks"]
-    do_output_depth = inp["do_output_depth"]
-    gen_heatmap = inp["gen_heatmap"]
-    stereo_balance = inp["stereo_balance"]
-    stereo_divergence = inp["stereo_divergence"]
-    stereo_fill_algo = inp["stereo_fill_algo"]
-    stereo_modes = inp["stereo_modes"]
-    stereo_separation = inp["stereo_separation"]
+    inp = CoreGenerationFunnelInp(inp)
+    gen_rembg = inp[go.GEN_REMBG]
+    rembg_model = inp[go.REMBG_MODEL]
+    boost = inp[go.BOOST]
+    clipdepth = inp[go.CLIPDEPTH]
+    clipdepth_far = inp[go.CLIPDEPTH_FAR]
+    clipdepth_near = inp[go.CLIPDEPTH_NEAR]
+    output_depth_combine = inp[go.OUTPUT_DEPTH_COMBINE]
+    output_depth_combine_axis = inp[go.OUTPUT_DEPTH_COMBINE_AXIS]
+    depthmap_compute_device = inp[go.COMPUTE_DEVICE]
+    gen_simple_mesh = inp[go.GEN_SIMPLE_MESH]
+    gen_normalmap = inp[go.GEN_NORMALMAP]
+    gen_stereo = inp[go.GEN_STEREO]
+    gen_inpainted_mesh = inp[go.GEN_INPAINTED_MESH]
+    gen_inpainted_mesh_demos = inp[go.GEN_INPAINTED_MESH_DEMOS]
+    output_depth_invert = inp[go.OUTPUT_DEPTH_INVERT]
+    net_size_match = inp[go.NET_SIZE_MATCH]
+    simple_mesh_occlude = inp[go.SIMPLE_MESH_OCCLUDE]
+    simple_mesh_spherical = inp[go.SIMPLE_MESH_SPHERICAL]
+    model_type = inp[go.MODEL_TYPE]
+    net_height = inp[go.NET_HEIGHT]
+    net_width = inp[go.NET_WIDTH]
+    normalmap_pre_blur = inp[go.NORMALMAP_PRE_BLUR]
+    normalmap_pre_blur_kernel = inp[go.NORMALMAP_PRE_BLUR_KERNEL]
+    normalmap_sobel = inp[go.NORMALMAP_SOBEL]
+    normalmap_sobel_kernel = inp[go.NORMALMAP_SOBEL_KERNEL]
+    normalmap_post_blur = inp[go.NORMALMAP_POST_BLUR]
+    normalmap_post_blur_kernel = inp[go.NORMALMAP_POST_BLUR_KERNEL]
+    normalmap_invert = inp[go.NORMALMAP_INVERT]
+    pre_depth_background_removal = inp[go.PRE_DEPTH_BACKGROUND_REMOVAL]
+    save_background_removal_masks = inp[go.SAVE_BACKGROUND_REMOVAL_MASKS]
+    do_output_depth = inp[go.DO_OUTPUT_DEPTH]
+    gen_heatmap = inp[go.GEN_HEATMAP]
+    stereo_balance = inp[go.STEREO_BALANCE]
+    stereo_divergence = inp[go.STEREO_DIVERGENCE]
+    stereo_fill_algo = inp[go.STEREO_FILL_ALGO]
+    stereo_modes = inp[go.STEREO_MODES]
+    stereo_separation = inp[go.STEREO_SEPARATION]
 
     if ops is None:
         ops = {}
@@ -229,7 +250,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
 
             if gen_stereo:
                 print("Generating stereoscopic images..")
-                stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, stereo_separation,
+                stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, inp,
                                                    stereo_modes, stereo_balance, stereo_fill_algo)
                 for c in range(0, len(stereoimages)):
                     generated_images[count][stereo_modes[c]] = stereoimages[c]

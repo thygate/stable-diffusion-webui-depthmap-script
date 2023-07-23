@@ -137,10 +137,9 @@ def main_ui_panel(is_depth_tab):
                     inp += go.SAVE_BACKGROUND_REMOVAL_MASKS, gr.Checkbox(label="Save the foreground masks")
                     inp += go.PRE_DEPTH_BACKGROUND_REMOVAL, gr.Checkbox(label="Pre-depth background removal")
                 with gr.Row():
-                    inp += go.REMBG_MODEL, gr.Dropdown(label="Rembg Model",
-                                                                   choices=['u2net', 'u2netp', 'u2net_human_seg',
-                                                                            'silueta', "isnet-general-use", "isnet-anime"],
-                                                                   type="value")
+                    inp += go.REMBG_MODEL, gr.Dropdown(
+                        label="Rembg Model", type="value",
+                        choices=['u2net', 'u2netp', 'u2net_human_seg', 'silueta', "isnet-general-use", "isnet-anime"])
 
         with gr.Box():
             gr.HTML(f"{SCRIPT_FULL_NAME}<br/>")
@@ -150,23 +149,23 @@ def main_ui_panel(is_depth_tab):
 
         def update_default_net_size(model_type):
             w, h = ModelHolder.get_default_net_size(model_type)
-            return inp['net_width'].update(value=w), inp['net_height'].update(value=h)
+            return inp[go.NET_WIDTH].update(value=w), inp[go.NET_HEIGHT].update(value=h)
 
-        inp['model_type'].change(
+        inp[go.MODEL_TYPE].change(
             fn=update_default_net_size,
-            inputs=inp['model_type'],
-            outputs=[inp['net_width'], inp['net_height']]
+            inputs=inp[go.MODEL_TYPE],
+            outputs=[inp[go.NET_WIDTH], inp[go.NET_HEIGHT]]
         )
 
-        inp['boost'].change(
-            fn=lambda a, b: (inp['net_size_match'].update(visible=not a),
+        inp[go.BOOST].change(  # Go boost! Wroom!..
+            fn=lambda a, b: (inp[go.NET_SIZE_MATCH].update(visible=not a),
                              options_depend_on_match_size.update(visible=not a and not b)),
-            inputs=[inp['boost'], inp['net_size_match']],
-            outputs=[inp['net_size_match'], options_depend_on_match_size]
+            inputs=[inp[go.BOOST], inp[go.NET_SIZE_MATCH]],
+            outputs=[inp[go.NET_SIZE_MATCH], options_depend_on_match_size]
         )
-        inp['net_size_match'].change(
+        inp[go.NET_SIZE_MATCH].change(
             fn=lambda a, b: options_depend_on_match_size.update(visible=not a and not b),
-            inputs=[inp['boost'], inp['net_size_match']],
+            inputs=[inp[go.BOOST], inp[go.NET_SIZE_MATCH]],
             outputs=[options_depend_on_match_size]
         )
 
@@ -182,50 +181,50 @@ def main_ui_panel(is_depth_tab):
             outputs=[inp[go.OUTPUT_DEPTH_COMBINE_AXIS]]
         )
 
-        inp['clipdepth'].change(
+        inp[go.CLIPDEPTH].change(
             fn=lambda v: clip_options_row_1.update(visible=v),
-            inputs=[inp['clipdepth']],
+            inputs=[inp[go.CLIPDEPTH]],
             outputs=[clip_options_row_1]
         )
-        inp['clipdepth_far'].change(
+        inp[go.CLIPDEPTH_FAR].change(
             fn=lambda a, b: a if b < a else b,
-            inputs=[inp['clipdepth_far'], inp['clipdepth_near']],
-            outputs=[inp['clipdepth_near']]
+            inputs=[inp[go.CLIPDEPTH_FAR], inp[go.CLIPDEPTH_NEAR]],
+            outputs=[inp[go.CLIPDEPTH_NEAR]]
         )
-        inp['clipdepth_near'].change(
+        inp[go.CLIPDEPTH_NEAR].change(
             fn=lambda a, b: a if b > a else b,
-            inputs=[inp['clipdepth_near'], inp['clipdepth_far']],
-            outputs=[inp['clipdepth_far']]
+            inputs=[inp[go.CLIPDEPTH_NEAR], inp[go.CLIPDEPTH_FAR]],
+            outputs=[inp[go.CLIPDEPTH_FAR]]
         )
 
-        inp['gen_stereo'].change(
+        inp[go.GEN_STEREO].change(
             fn=lambda v: stereo_options.update(visible=v),
-            inputs=[inp['gen_stereo']],
+            inputs=[inp[go.GEN_STEREO]],
             outputs=[stereo_options]
         )
 
-        inp['gen_normalmap'].change(
+        inp[go.GEN_NORMALMAP].change(
             fn=lambda v: normalmap_options.update(visible=v),
-            inputs=[inp['gen_normalmap']],
+            inputs=[inp[go.GEN_NORMALMAP]],
             outputs=[normalmap_options]
         )
 
-        inp['gen_simple_mesh'].change(
+        inp[go.GEN_SIMPLE_MESH].change(
             fn=lambda v: mesh_options.update(visible=v),
-            inputs=[inp['gen_simple_mesh']],
+            inputs=[inp[go.GEN_SIMPLE_MESH]],
             outputs=[mesh_options]
         )
 
         if is_depth_tab:
-            inp['gen_inpainted_mesh'].change(
+            inp[go.GEN_INPAINTED_MESH].change(
                 fn=lambda v: inpaint_options_row_0.update(visible=v),
-                inputs=[inp['gen_inpainted_mesh']],
+                inputs=[inp[go.GEN_INPAINTED_MESH]],
                 outputs=[inpaint_options_row_0]
             )
 
-        inp['gen_rembg'].change(
+        inp[go.GEN_REMBG].change(
             fn=lambda v: bgrem_options.update(visible=v),
-            inputs=[inp['gen_rembg']],
+            inputs=[inp[go.GEN_REMBG]],
             outputs=[bgrem_options]
         )
 

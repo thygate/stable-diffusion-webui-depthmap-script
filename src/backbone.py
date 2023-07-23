@@ -1,12 +1,12 @@
-# DepthMap can be run inside stable-duiffusion-webui, but also separately.
-# All the stable-duiffusion-webui stuff that the DepthMap relies on
+# DepthMap can be run inside stable-diffusion-webui, but also separately.
+# All the stable-diffusion-webui stuff that the DepthMap relies on
 # must be resided in this file (or in the scripts folder).
 import pathlib
 from datetime import datetime
 
 try:
-    # stable-duiffusion-webui backbone
-    from modules.images import save_image  # Should fail if not on stable-duiffusion-webui
+    # stable-diffusion-webui backbone
+    from modules.images import save_image  # Should fail if not on stable-diffusion-webui
     from modules.devices import torch_gc  # TODO: is this really sufficient?
     from modules.images import get_next_sequence_number
     from modules.call_queue import wrap_gradio_gpu_call
@@ -63,8 +63,8 @@ try:
         return modules.shared.hide_dirs
 except:
     # Standalone backbone
-    print(  # "  DepthMap did not detect stable-duiffusion-webui; launching with the standalone backbone.\n"
-          "  The standalone mode is not on par with the stable-duiffusion-webui mode.\n"
+    print(  # "  DepthMap did not detect stable-diffusion-webui; launching with the standalone backbone.\n"
+          "  The standalone mode is not on par with the stable-diffusion-webui mode.\n"
           "  Some features may be missing or work differently. Please report bugs.\n")
 
     def save_image(image, path, basename, **kwargs):

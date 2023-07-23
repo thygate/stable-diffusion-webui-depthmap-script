@@ -1,19 +1,23 @@
 import gradio as gr
+import enum
 
 class GradioComponentBundle:
     """Allows easier transportation of massive ammount of named gradio inputs"""
     def __init__(self):
         self.internal = {}
 
-    def append(self, thing):
+    def append(self, thing: (str | enum.Enum, gr.components.Component)):
         if isinstance(thing, GradioComponentBundle):
             keys = list(thing.internal.keys())
             for key in keys:
                 assert key not in self.internal, f"Already bundled component with name {key}."
                 self.internal[key] = thing[key]
         elif isinstance(thing, tuple) and len(thing) == 2 and isinstance(thing[1], gr.components.Component):
-                assert thing[0] not in self.internal, f"Already bundled component with name {thing[0]}."
-                self.internal[thing[0]] = thing[1]
+            name = thing[0] if isinstance(thing[0], str) else thing[0].name.lower()  # .name is for Enums
+            if hasattr(thing[0], 'df') and thing[0].df is not None:
+                thing[1].value = thing[0].df
+            assert name not in self.internal, f"Already bundled component with name {thing[0]}."
+            self.internal[name] = thing[1]
         elif isinstance(thing, gr.components.Component) and thing.elem_id is not None:
             assert thing.elem_id not in self.internal, f"Already bundled component with name {thing.elem_id}."
             self.internal[thing.elem_id] = thing
@@ -26,6 +30,8 @@ class GradioComponentBundle:
 
     def __getitem__(self, key):
         """Return the gradio component elem_id"""
+        if hasattr(key, 'name'):
+            key = key.name.lower()  # for enum elements
         return self.internal[key]
 
     # def send_format(self):

@@ -8,7 +8,7 @@ from src.core import core_generation_funnel, unload_models, run_makevideo
 from src.depthmap_generation import ModelHolder
 from src.gradio_args_transport import GradioComponentBundle
 from src.misc import *
-
+from src.common_constants import GenerationOptions as go
 
 # Ugly workaround to fix gradio tempfile issue
 def ensure_gradio_temp_directory():
@@ -29,123 +29,118 @@ def main_ui_panel(is_depth_tab):
     # TODO: Greater visual separation
     with gr.Blocks():
         with gr.Row():
-            inp += 'compute_device', gr.Radio(label="Compute on", choices=['GPU', 'CPU'], value='GPU')
+            inp += go.COMPUTE_DEVICE, gr.Radio(label="Compute on", choices=['GPU', 'CPU'], value='GPU')
             # TODO: Should return value instead of index. Maybe Enum should be used?
-            inp += 'model_type', gr.Dropdown(label="Model",
+            inp += go.MODEL_TYPE, gr.Dropdown(label="Model",
                                              choices=['res101', 'dpt_beit_large_512 (midas 3.1)',
                                                       'dpt_beit_large_384 (midas 3.1)', 'dpt_large_384 (midas 3.0)',
                                                       'dpt_hybrid_384 (midas 3.0)',
                                                       'midas_v21', 'midas_v21_small',
                                                       'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk'],
-                                             value='res101',
                                              type="index")
         with gr.Box():
             with gr.Row():
-                inp += 'boost', gr.Checkbox(label="BOOST (multi-resolution merging)", value=True)
-                inp += 'match_size', gr.Checkbox(label="Match net size to input size", value=False)
+                inp += go.BOOST, gr.Checkbox(label="BOOST (multi-resolution merging)")
+                inp += go.NET_SIZE_MATCH, gr.Checkbox(label="Match net size to input size")
             with gr.Row(visible=False) as options_depend_on_match_size:
-                inp += 'net_width', gr.Slider(minimum=64, maximum=2048, step=64, label='Net width', value=448)
-                inp += 'net_height', gr.Slider(minimum=64, maximum=2048, step=64, label='Net height', value=448)
+                inp += go.NET_WIDTH, gr.Slider(minimum=64, maximum=2048, step=64, label='Net width')
+                inp += go.NET_HEIGHT, gr.Slider(minimum=64, maximum=2048, step=64, label='Net height')
 
         with gr.Box():
             with gr.Row():
-                with gr.Group():
-                    inp += "save_outputs", gr.Checkbox(label="Save Outputs", value=True)  # 50% of width
                 with gr.Group():  # 50% of width
-                    inp += "output_depth", gr.Checkbox(label="Output DepthMap", value=True)
-                    inp += "invert_depth", gr.Checkbox(label="Invert (black=near, white=far)", value=False)
+                    inp += "save_outputs", gr.Checkbox(label="Save Outputs", value=True)
+                with gr.Group():  # 50% of width
+                    inp += go.DO_OUTPUT_DEPTH, gr.Checkbox(label="Output DepthMap")
+                    inp += go.OUTPUT_DEPTH_INVERT, gr.Checkbox(label="Invert (black=near, white=far)")
             with gr.Row() as options_depend_on_output_depth_1:
-                inp += "combine_output", gr.Checkbox(
-                    label="Combine input and depthmap into one image", value=False)
-                inp += "combine_output_axis", gr.Radio(label="Combine axis", choices=['Vertical', 'Horizontal'],
-                                                       value='Horizontal', type="index", visible=False)
+                inp += go.OUTPUT_DEPTH_COMBINE, gr.Checkbox(
+                    label="Combine input and depthmap into one image")
+                inp += go.OUTPUT_DEPTH_COMBINE_AXIS, gr.Radio(
+                    label="Combine axis", choices=['Vertical', 'Horizontal'], type="value", visible=False)
         with gr.Box():
             with gr.Row():
-                inp += 'clipdepth', gr.Checkbox(label="Clip and renormalize DepthMap", value=False)
+                inp += go.CLIPDEPTH, gr.Checkbox(label="Clip and renormalize DepthMap")
             with gr.Row(visible=False) as clip_options_row_1:
-                inp += "clipthreshold_far", gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip', value=0)
-                inp += "clipthreshold_near", gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip', value=1)
+                inp += go.CLIPDEPTH_FAR, gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip')
+                inp += go.CLIPDEPTH_NEAR, gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip')
 
         with gr.Box():
             with gr.Row():
-                inp += "gen_stereo", gr.Checkbox(label="Generate stereoscopic image(s)", value=False)
+                inp += go.GEN_STEREO, gr.Checkbox(label="Generate stereoscopic image(s)")
             with gr.Column(visible=False) as stereo_options:
                 with gr.Row():
-                    inp += "stereo_modes", gr.CheckboxGroup(
+                    inp += go.STEREO_MODES, gr.CheckboxGroup(
                         ["left-right", "right-left", "top-bottom", "bottom-top", "red-cyan-anaglyph"],
-                        label="Output", value=["left-right", "red-cyan-anaglyph"])
+                        label="Output")
                 with gr.Row():
-                    inp += "stereo_divergence", gr.Slider(minimum=0.05, maximum=10.005, step=0.01,
-                                                          label='Divergence (3D effect)',
-                                                          value=2.5)
-                    inp += "stereo_separation", gr.Slider(minimum=-5.0, maximum=5.0, step=0.01,
-                                                          label='Separation (moves images apart)',
-                                                          value=0.0)
+                    inp += go.STEREO_DIVERGENCE, gr.Slider(minimum=0.05, maximum=10.005, step=0.01,
+                                                          label='Divergence (3D effect)')
+                    inp += go.STEREO_SEPARATION, gr.Slider(minimum=-5.0, maximum=5.0, step=0.01,
+                                                          label='Separation (moves images apart)')
                 with gr.Row():
-                    inp += "stereo_fill", gr.Dropdown(label="Gap fill technique",
+                    inp += go.STEREO_FILL_ALGO, gr.Dropdown(label="Gap fill technique",
                                                       choices=['none', 'naive', 'naive_interpolating', 'polylines_soft',
-                                                               'polylines_sharp'], value='polylines_sharp',
+                                                               'polylines_sharp'],
                                                       type="value")
-                    inp += "stereo_balance", gr.Slider(minimum=-1.0, maximum=1.0, step=0.05,
-                                                       label='Balance between eyes',
-                                                       value=0.0)
+                    inp += go.STEREO_BALANCE, gr.Slider(minimum=-1.0, maximum=1.0, step=0.05,
+                                                       label='Balance between eyes')
 
         with gr.Box():
             with gr.Row():
-                inp += "gen_normalmap", gr.Checkbox(label="Generate NormalMap", value=False)
+                inp += go.GEN_NORMALMAP, gr.Checkbox(label="Generate NormalMap")
             with gr.Column(visible=False) as normalmap_options:
                 with gr.Row():
-                    inp += 'normalmap_pre_blur', gr.Checkbox(label="Smooth before calculating normals", value=False)
-                    inp += 'normalmap_pre_blur_kernel', gr.Slider(minimum=1, maximum=31, step=2, label='Pre-smooth kernel size', value=3)
+                    inp += go.NORMALMAP_PRE_BLUR, gr.Checkbox(label="Smooth before calculating normals")
+                    inp += go.NORMALMAP_PRE_BLUR_KERNEL, gr.Slider(minimum=1, maximum=31, step=2, label='Pre-smooth kernel size')
                 with gr.Row():
-                    inp += 'normalmap_sobel', gr.Checkbox(label="Sobel gradient", value=True)
-                    inp += 'normalmap_sobel_kernel', gr.Slider(minimum=1, maximum=31, step=2, label='Sobel kernel size', value=3)
+                    inp += go.NORMALMAP_SOBEL, gr.Checkbox(label="Sobel gradient")
+                    inp += go.NORMALMAP_SOBEL_KERNEL, gr.Slider(minimum=1, maximum=31, step=2, label='Sobel kernel size')
                 with gr.Row():
-                    inp += 'normalmap_post_blur', gr.Checkbox(label="Smooth after calculating normals", value=False)
-                    inp += 'normalmap_post_blur_kernel', gr.Slider(minimum=1, maximum=31, step=2, label='Post-smooth kernel size', value=3)
+                    inp += go.NORMALMAP_POST_BLUR, gr.Checkbox(label="Smooth after calculating normals")
+                    inp += go.NORMALMAP_POST_BLUR_KERNEL, gr.Slider(minimum=1, maximum=31, step=2, label='Post-smooth kernel size')
                 with gr.Row():
-                    inp += 'normalmap_invert', gr.Checkbox(label="Invert", value=False)
+                    inp += go.NORMALMAP_INVERT, gr.Checkbox(label="Invert")
 
         with gr.Box():
             with gr.Row():
-                inp += "show_heat", gr.Checkbox(label="Generate HeatMap", value=False)
+                inp += go.GEN_HEATMAP, gr.Checkbox(label="Generate HeatMap")
 
         with gr.Box():
             with gr.Column():
-                inp += "gen_mesh", gr.Checkbox(
-                    label="Generate simple 3D mesh", value=False, visible=True)
+                inp += go.GEN_SIMPLE_MESH, gr.Checkbox(label="Generate simple 3D mesh")
             with gr.Column(visible=False) as mesh_options:
                 with gr.Row():
                     gr.HTML(value="Generates fast, accurate only with ZoeDepth models and no boost, no custom maps")
                 with gr.Row():
-                    inp += "mesh_occlude", gr.Checkbox(label="Remove occluded edges", value=True, visible=True)
-                    inp += "mesh_spherical", gr.Checkbox(label="Equirectangular projection", value=False, visible=True)
+                    inp += go.SIMPLE_MESH_OCCLUDE, gr.Checkbox(label="Remove occluded edges")
+                    inp += go.SIMPLE_MESH_SPHERICAL, gr.Checkbox(label="Equirectangular projection")
 
         if is_depth_tab:
             with gr.Box():
                 with gr.Column():
-                    inp += "inpaint", gr.Checkbox(
-                        label="Generate 3D inpainted mesh", value=False)
+                    inp += go.GEN_INPAINTED_MESH, gr.Checkbox(
+                        label="Generate 3D inpainted mesh")
                 with gr.Column(visible=False) as inpaint_options_row_0:
                     gr.HTML("Generation is sloooow, required for generating videos")
-                    inp += "inpaint_vids", gr.Checkbox(
-                        label="Generate 4 demo videos with 3D inpainted mesh.", value=False)
+                    inp += go.GEN_INPAINTED_MESH_DEMOS, gr.Checkbox(
+                        label="Generate 4 demo videos with 3D inpainted mesh.")
                     gr.HTML("More options for generating video can be found in the Generate video tab")
 
         with gr.Box():
             # TODO: it should be clear from the UI that there is an option of the background removal
             #  that does not use the model selected above
             with gr.Row():
-                inp += "background_removal", gr.Checkbox(label="Remove background", value=False)
+                inp += go.GEN_REMBG, gr.Checkbox(label="Remove background")
             with gr.Column(visible=False) as bgrem_options:
                 with gr.Row():
-                    inp += "save_background_removal_masks", gr.Checkbox(label="Save the foreground masks", value=False)
-                    inp += "pre_depth_background_removal", gr.Checkbox(label="Pre-depth background removal", value=False)
+                    inp += go.SAVE_BACKGROUND_REMOVAL_MASKS, gr.Checkbox(label="Save the foreground masks")
+                    inp += go.PRE_DEPTH_BACKGROUND_REMOVAL, gr.Checkbox(label="Pre-depth background removal")
                 with gr.Row():
-                    inp += "background_removal_model", gr.Dropdown(label="Rembg Model",
+                    inp += go.REMBG_MODEL, gr.Dropdown(label="Rembg Model",
                                                                    choices=['u2net', 'u2netp', 'u2net_human_seg',
                                                                             'silueta', "isnet-general-use", "isnet-anime"],
-                                                                   value='u2net', type="value")
+                                                                   type="value")
 
         with gr.Box():
             gr.HTML(f"{SCRIPT_FULL_NAME}<br/>")
@@ -153,40 +148,38 @@ def main_ui_panel(is_depth_tab):
                     "href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>"
                     "https://github.com/thygate/stable-diffusion-webui-depthmap-script</a>")
 
-        inp += "gen_normal", gr.Checkbox(label="Generate Normalmap (hidden! api only)", value=False, visible=False)
-
-        def update_delault_net_size(model_type):
+        def update_default_net_size(model_type):
             w, h = ModelHolder.get_default_net_size(model_type)
             return inp['net_width'].update(value=w), inp['net_height'].update(value=h)
 
         inp['model_type'].change(
-            fn=update_delault_net_size,
+            fn=update_default_net_size,
             inputs=inp['model_type'],
             outputs=[inp['net_width'], inp['net_height']]
         )
 
         inp['boost'].change(
-            fn=lambda a, b: (inp['match_size'].update(visible=not a),
+            fn=lambda a, b: (inp['net_size_match'].update(visible=not a),
                              options_depend_on_match_size.update(visible=not a and not b)),
-            inputs=[inp['boost'], inp['match_size']],
-            outputs=[inp['match_size'], options_depend_on_match_size]
+            inputs=[inp['boost'], inp['net_size_match']],
+            outputs=[inp['net_size_match'], options_depend_on_match_size]
         )
-        inp['match_size'].change(
+        inp['net_size_match'].change(
             fn=lambda a, b: options_depend_on_match_size.update(visible=not a and not b),
-            inputs=[inp['boost'], inp['match_size']],
+            inputs=[inp['boost'], inp['net_size_match']],
             outputs=[options_depend_on_match_size]
         )
 
-        inp['output_depth'].change(
-            fn=lambda a: (inp['invert_depth'].update(visible=a), options_depend_on_output_depth_1.update(visible=a)),
-            inputs=[inp['output_depth']],
-            outputs=[inp['invert_depth'], options_depend_on_output_depth_1]
+        inp[go.DO_OUTPUT_DEPTH].change(
+            fn=lambda a: (inp[go.OUTPUT_DEPTH_INVERT].update(visible=a), options_depend_on_output_depth_1.update(visible=a)),
+            inputs=[inp[go.DO_OUTPUT_DEPTH]],
+            outputs=[inp[go.OUTPUT_DEPTH_INVERT], options_depend_on_output_depth_1]
         )
 
-        inp['combine_output'].change(
-            fn=lambda v: inp['combine_output_axis'].update(visible=v),
-            inputs=[inp['combine_output']],
-            outputs=[inp['combine_output_axis']]
+        inp[go.OUTPUT_DEPTH_COMBINE].change(
+            fn=lambda v: inp[go.OUTPUT_DEPTH_COMBINE_AXIS].update(visible=v),
+            inputs=[inp[go.OUTPUT_DEPTH_COMBINE]],
+            outputs=[inp[go.OUTPUT_DEPTH_COMBINE_AXIS]]
         )
 
         inp['clipdepth'].change(
@@ -194,15 +187,15 @@ def main_ui_panel(is_depth_tab):
             inputs=[inp['clipdepth']],
             outputs=[clip_options_row_1]
         )
-        inp['clipthreshold_far'].change(
+        inp['clipdepth_far'].change(
             fn=lambda a, b: a if b < a else b,
-            inputs=[inp['clipthreshold_far'], inp['clipthreshold_near']],
-            outputs=[inp['clipthreshold_near']]
+            inputs=[inp['clipdepth_far'], inp['clipdepth_near']],
+            outputs=[inp['clipdepth_near']]
         )
-        inp['clipthreshold_near'].change(
+        inp['clipdepth_near'].change(
             fn=lambda a, b: a if b > a else b,
-            inputs=[inp['clipthreshold_near'], inp['clipthreshold_far']],
-            outputs=[inp['clipthreshold_far']]
+            inputs=[inp['clipdepth_near'], inp['clipdepth_far']],
+            outputs=[inp['clipdepth_far']]
         )
 
         inp['gen_stereo'].change(
@@ -217,22 +210,22 @@ def main_ui_panel(is_depth_tab):
             outputs=[normalmap_options]
         )
 
-        inp['gen_mesh'].change(
+        inp['gen_simple_mesh'].change(
             fn=lambda v: mesh_options.update(visible=v),
-            inputs=[inp['gen_mesh']],
+            inputs=[inp['gen_simple_mesh']],
             outputs=[mesh_options]
         )
 
         if is_depth_tab:
-            inp['inpaint'].change(
+            inp['gen_inpainted_mesh'].change(
                 fn=lambda v: inpaint_options_row_0.update(visible=v),
-                inputs=[inp['inpaint']],
+                inputs=[inp['gen_inpainted_mesh']],
                 outputs=[inpaint_options_row_0]
             )
 
-        inp['background_removal'].change(
+        inp['gen_rembg'].change(
             fn=lambda v: bgrem_options.update(visible=v),
-            inputs=[inp['background_removal']],
+            inputs=[inp['gen_rembg']],
             outputs=[bgrem_options]
         )
 

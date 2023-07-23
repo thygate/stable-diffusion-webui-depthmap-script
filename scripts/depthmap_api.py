@@ -1,5 +1,6 @@
-# non-public API (don't host publicly) 
+# Non-public API. Don't host publicly - SECURITY RISKS!
 # (will only be on with --api starting option)
+# Currently no API stability guarantees are provided - API may break on any new commit.
 
 import numpy as np
 from fastapi import FastAPI, Body
@@ -59,9 +60,9 @@ def depth_api(_: gr.Blocks, app: FastAPI):
         model_type:str = Body('zoedepth_n (indoor)', title='depth model', options="'res101', 'dpt_beit_large_512 (midas 3.1)', 'dpt_beit_large_384 (midas 3.1)', 'dpt_large_384 (midas 3.0)', 'dpt_hybrid_384 (midas 3.0)', 'midas_v21', 'midas_v21_small', 'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk'"),
         net_width:int = Body(512, title="net width"), 
         net_height:int = Body(512, title="net height"), 
-        match_size:bool =  Body(True, title="match original image size"), 
+        net_size_match:bool =  Body(True, title="match original image size"),
         boost:bool = Body(False, title="use boost algorithm"), 
-        invert_depth:bool = Body(False, title="invert depthmap")
+        output_depth_invert:bool = Body(False, title="invert depthmap")
     ):
         default_inputs = get_defaults()
         override = {
@@ -74,9 +75,9 @@ def depth_api(_: gr.Blocks, app: FastAPI):
               'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk'].index(model_type),
             'net_width': net_width, 
             'net_height': net_height, 
-            'match_size':  match_size, 
+            'net_size_match': net_size_match,
             'boost': boost, 
-            'invert_depth': invert_depth,
+            'output_depth_invert': output_depth_invert,
         }
 
         for key, value in override.items():

@@ -51,24 +51,24 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
         inputdepthmaps: list[Image] = [None for _ in range(len(inputimages))]
     inputdepthmaps_complete = all([x is not None for x in inputdepthmaps])
 
-    background_removal = inp["background_removal"]
-    background_removal_model = inp["background_removal_model"]
+    gen_rembg = inp["gen_rembg"]
+    rembg_model = inp["rembg_model"]
     boost = inp["boost"]
     clipdepth = inp["clipdepth"]
-    clipthreshold_far = inp["clipthreshold_far"]
-    clipthreshold_near = inp["clipthreshold_near"]
-    combine_output = inp["combine_output"]
-    combine_output_axis = inp["combine_output_axis"]
+    clipdepth_far = inp["clipdepth_far"]
+    clipdepth_near = inp["clipdepth_near"]
+    output_depth_combine = inp["output_depth_combine"]
+    output_depth_combine_axis = inp["output_depth_combine_axis"]
     depthmap_compute_device = inp["compute_device"]
-    gen_mesh = inp["gen_mesh"]
-    gen_normalmap = inp["gen_normalmap"] if "gen_normalmap" in inp else False
+    gen_simple_mesh = inp["gen_simple_mesh"]
+    gen_normalmap = inp["gen_normalmap"]
     gen_stereo = inp["gen_stereo"]
-    inpaint = inp["inpaint"] if "inpaint" in inp else False
-    inpaint_vids = inp["inpaint_vids"] if "inpaint_vids" in inp else False
-    invert_depth = inp["invert_depth"]
-    match_size = inp["match_size"]
-    mesh_occlude = inp["mesh_occlude"]
-    mesh_spherical = inp["mesh_spherical"]
+    gen_inpainted_mesh = inp["gen_inpainted_mesh"] if "gen_inpainted_mesh" in inp else False
+    gen_inpainted_mesh_demos = inp["gen_inpainted_mesh_demos"] if "gen_inpainted_mesh_demos" in inp else False
+    output_depth_invert = inp["output_depth_invert"]
+    net_size_match = inp["net_size_match"]
+    simple_mesh_occlude = inp["simple_mesh_occlude"]
+    simple_mesh_spherical = inp["simple_mesh_spherical"]
     model_type = inp["model_type"]
     net_height = inp["net_height"]
     net_width = inp["net_width"]
@@ -81,11 +81,11 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     normalmap_invert = inp['normalmap_invert']
     pre_depth_background_removal = inp["pre_depth_background_removal"]
     save_background_removal_masks = inp["save_background_removal_masks"]
-    output_depth = inp["output_depth"]
-    show_heat = inp["show_heat"]
+    do_output_depth = inp["do_output_depth"]
+    gen_heatmap = inp["gen_heatmap"]
     stereo_balance = inp["stereo_balance"]
     stereo_divergence = inp["stereo_divergence"]
-    stereo_fill = inp["stereo_fill"]
+    stereo_fill_algo = inp["stereo_fill_algo"]
     stereo_modes = inp["stereo_modes"]
     stereo_separation = inp["stereo_separation"]
 
@@ -101,12 +101,12 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     # TODO: this still should not be here
     background_removed_images = []
     # remove on base image before depth calculation
-    if background_removal:
+    if gen_rembg:
         if pre_depth_background_removal:
-            inputimages = batched_background_removal(inputimages, background_removal_model)
+            inputimages = batched_background_removal(inputimages, rembg_model)
             background_removed_images = inputimages
         else:
-            background_removed_images = batched_background_removal(inputimages, background_removal_model)
+            background_removed_images = batched_background_removal(inputimages, rembg_model)
 
     # init torch device
     if depthmap_compute_device == 'GPU' and not torch.cuda.is_available():
@@ -160,7 +160,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     out = np.asarray(dimg, dtype="float")[:, :, 0]
             else:
                 # override net size (size may be different for different images)
-                if match_size:
+                if net_size_match:
                     # Round up to a multiple of 32 to avoid potential issues
                     net_width = (inputimages[count].width + 31) // 32 * 32
                     net_height = (inputimages[count].height + 31) // 32 * 32
@@ -175,7 +175,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                         out *= -1
                     if clipdepth:
                         out = (out - out.min()) / (out.max() - out.min())  # normalize to [0; 1]
-                        out = np.clip(out, clipthreshold_far, clipthreshold_near)
+                        out = np.clip(out, clipdepth_far, clipdepth_near)
                 else:
                     # Regretfully, the depthmap is broken and will be replaced with a black image
                     out = np.zeros(raw_prediction.shape)
@@ -190,12 +190,12 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
             """Depthmap (near=bright), as uint16"""
 
             # if 3dinpainting, store maps for processing in second pass
-            if inpaint:
+            if gen_inpainted_mesh:
                 inpaint_imgs.append(inputimages[count])
                 inpaint_depths.append(img_output)
 
             # applying background masks after depth
-            if background_removal:
+            if gen_rembg:
                 print('applying background masks')
                 background_removed_image = background_removed_images[count]
                 # maybe a threshold cut would be better on the line below.
@@ -214,14 +214,15 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     generated_images[count]['foreground_mask'] = mask_image
 
             # A weird quirk: if user tries to save depthmap, whereas input depthmap is used,
-            # depthmap will be outputed, even if combine_output is used.
-            if output_depth and inputdepthmaps[count] is None:
-                if output_depth:
-                    img_depth = cv2.bitwise_not(img_output) if invert_depth else img_output
-                    if combine_output:
+            # depthmap will be outputed, even if output_depth_combine is used.
+            if do_output_depth and inputdepthmaps[count] is None:
+                if do_output_depth:
+                    img_depth = cv2.bitwise_not(img_output) if output_depth_invert else img_output
+                    if output_depth_combine:
+                        axis = 1 if output_depth_combine_axis == 'Horizontal' else 0
                         img_concat = Image.fromarray(np.concatenate(
                             (inputimages[count], convert_i16_to_rgb(img_depth, inputimages[count])),
-                            axis=combine_output_axis))
+                            axis=axis))
                         generated_images[count]['concat_depth'] = img_concat
                     else:
                         generated_images[count]['depth'] = Image.fromarray(img_depth)
@@ -229,7 +230,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
             if gen_stereo:
                 print("Generating stereoscopic images..")
                 stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, stereo_separation,
-                                                   stereo_modes, stereo_balance, stereo_fill)
+                                                   stereo_modes, stereo_balance, stereo_fill_algo)
                 for c in range(0, len(stereoimages)):
                     generated_images[count][stereo_modes[c]] = stereoimages[c]
 
@@ -242,13 +243,13 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     normalmap_invert
                 )
 
-            if show_heat:
+            if gen_heatmap:
                 from dzoedepth.utils.misc import colorize
                 heatmap = Image.fromarray(colorize(img_output, cmap='inferno'))
                 generated_images[count]['heatmap'] = heatmap
 
             # gen mesh
-            if gen_mesh:
+            if gen_simple_mesh:
                 print(f"\nGenerating (occluded) mesh ..")
                 basename = 'depthmap'
                 meshsimple_fi = get_uniquefn(outpath, basename, 'obj')
@@ -274,7 +275,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     # offset
                     depthi = depthi + 1.0
 
-                mesh = create_mesh(inputimages[count], depthi, keep_edges=not mesh_occlude, spherical=mesh_spherical)
+                mesh = create_mesh(inputimages[count], depthi, keep_edges=not simple_mesh_occlude, spherical=simple_mesh_spherical)
                 mesh.export(meshsimple_fi)
 
         print("Computing output(s) done.")
@@ -304,9 +305,9 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
 
     # TODO: This should not be here
     mesh_fi = None
-    if inpaint:
+    if gen_inpainted_mesh:
         try:
-            mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, inpaint_vids, 1, "mp4")
+            mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, gen_inpainted_mesh_demos, 1, "mp4")
         except Exception as e:
             print(f'{str(e)}, some issue with generating inpainted mesh')
 
@@ -330,7 +331,7 @@ def get_uniquefn(outpath, basename, ext):
     return basename
 
 
-def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, inpaint_vids, vid_ssaa, vid_format):
+def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, gen_inpainted_mesh_demos, vid_ssaa, vid_format):
     mesh_fi = ''
     try:
         print("Running 3D Photo Inpainting .. ")
@@ -443,7 +444,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, inpaint_vids, v
                                  depth_edge_model,
                                  depth_feat_model)
 
-            if rt_info is not False and inpaint_vids:
+            if rt_info is not False and gen_inpainted_mesh_demos:
                 run_3dphoto_videos(mesh_fi, basename, outpath, 300, 40,
                                    [0.03, 0.03, 0.05, 0.03],
                                    ['double-straight-line', 'double-straight-line', 'circle', 'circle'],

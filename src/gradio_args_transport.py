@@ -6,7 +6,7 @@ class GradioComponentBundle:
     def __init__(self):
         self.internal = {}
 
-    def append(self, thing: (str | enum.Enum, gr.components.Component)):
+    def append(self, thing):  # thing: (str | enum.Enum, gr.components.Component)
         if isinstance(thing, GradioComponentBundle):
             keys = list(thing.internal.keys())
             for key in keys:

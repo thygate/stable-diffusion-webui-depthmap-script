@@ -72,42 +72,9 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     inputdepthmaps_complete = all([x is not None for x in inputdepthmaps])
 
     inp = CoreGenerationFunnelInp(inp)
-    gen_rembg = inp[go.GEN_REMBG]
-    rembg_model = inp[go.REMBG_MODEL]
-    boost = inp[go.BOOST]
-    clipdepth = inp[go.CLIPDEPTH]
-    clipdepth_far = inp[go.CLIPDEPTH_FAR]
-    clipdepth_near = inp[go.CLIPDEPTH_NEAR]
-    output_depth_combine = inp[go.OUTPUT_DEPTH_COMBINE]
-    output_depth_combine_axis = inp[go.OUTPUT_DEPTH_COMBINE_AXIS]
     depthmap_compute_device = inp[go.COMPUTE_DEVICE]
-    gen_simple_mesh = inp[go.GEN_SIMPLE_MESH]
-    gen_normalmap = inp[go.GEN_NORMALMAP]
-    gen_stereo = inp[go.GEN_STEREO]
-    gen_inpainted_mesh = inp[go.GEN_INPAINTED_MESH]
-    gen_inpainted_mesh_demos = inp[go.GEN_INPAINTED_MESH_DEMOS]
-    output_depth_invert = inp[go.OUTPUT_DEPTH_INVERT]
-    net_size_match = inp[go.NET_SIZE_MATCH]
-    simple_mesh_occlude = inp[go.SIMPLE_MESH_OCCLUDE]
-    simple_mesh_spherical = inp[go.SIMPLE_MESH_SPHERICAL]
-    model_type = inp[go.MODEL_TYPE]
     net_height = inp[go.NET_HEIGHT]
     net_width = inp[go.NET_WIDTH]
-    normalmap_pre_blur = inp[go.NORMALMAP_PRE_BLUR]
-    normalmap_pre_blur_kernel = inp[go.NORMALMAP_PRE_BLUR_KERNEL]
-    normalmap_sobel = inp[go.NORMALMAP_SOBEL]
-    normalmap_sobel_kernel = inp[go.NORMALMAP_SOBEL_KERNEL]
-    normalmap_post_blur = inp[go.NORMALMAP_POST_BLUR]
-    normalmap_post_blur_kernel = inp[go.NORMALMAP_POST_BLUR_KERNEL]
-    normalmap_invert = inp[go.NORMALMAP_INVERT]
-    pre_depth_background_removal = inp[go.PRE_DEPTH_BACKGROUND_REMOVAL]
-    save_background_removal_masks = inp[go.SAVE_BACKGROUND_REMOVAL_MASKS]
-    do_output_depth = inp[go.DO_OUTPUT_DEPTH]
-    gen_heatmap = inp[go.GEN_HEATMAP]
-    stereo_balance = inp[go.STEREO_BALANCE]
-    stereo_divergence = inp[go.STEREO_DIVERGENCE]
-    stereo_fill_algo = inp[go.STEREO_FILL_ALGO]
-    stereo_modes = inp[go.STEREO_MODES]
     stereo_separation = inp[go.STEREO_SEPARATION]
 
     if ops is None:
@@ -122,12 +89,12 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     # TODO: this still should not be here
     background_removed_images = []
     # remove on base image before depth calculation
-    if gen_rembg:
-        if pre_depth_background_removal:
-            inputimages = batched_background_removal(inputimages, rembg_model)
+    if inp[go.GEN_REMBG]:
+        if inp[go.PRE_DEPTH_BACKGROUND_REMOVAL]:
+            inputimages = batched_background_removal(inputimages, inp[go.REMBG_MODEL])
             background_removed_images = inputimages
         else:
-            background_removed_images = batched_background_removal(inputimages, rembg_model)
+            background_removed_images = batched_background_removal(inputimages, inp[go.REMBG_MODEL])
 
     # init torch device
     if depthmap_compute_device == 'GPU' and not torch.cuda.is_available():
@@ -151,7 +118,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     try:
         if not inputdepthmaps_complete:
             print("Loading model(s) ..")
-            model_holder.ensure_models(model_type, device, boost)
+            model_holder.ensure_models(inp[go.MODEL_TYPE], device, inp[go.BOOST])
         model = model_holder.depth_model
         pix2pix_model = model_holder.pix2pix_model
 
@@ -181,7 +148,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     out = np.asarray(dimg, dtype="float")[:, :, 0]
             else:
                 # override net size (size may be different for different images)
-                if net_size_match:
+                if inp[go.NET_SIZE_MATCH]:
                     # Round up to a multiple of 32 to avoid potential issues
                     net_width = (inputimages[count].width + 31) // 32 * 32
                     net_height = (inputimages[count].height + 31) // 32 * 32
@@ -194,9 +161,9 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     # TODO: some models may output negative values, maybe these should be clamped to zero.
                     if raw_prediction_invert:
                         out *= -1
-                    if clipdepth:
+                    if inp[go.CLIPDEPTH]:
                         out = (out - out.min()) / (out.max() - out.min())  # normalize to [0; 1]
-                        out = np.clip(out, clipdepth_far, clipdepth_near)
+                        out = np.clip(out, inp[go.CLIPDEPTH_FAR], inp[go.CLIPDEPTH_NEAR])
                 else:
                     # Regretfully, the depthmap is broken and will be replaced with a black image
                     out = np.zeros(raw_prediction.shape)
@@ -211,12 +178,12 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
             """Depthmap (near=bright), as uint16"""
 
             # if 3dinpainting, store maps for processing in second pass
-            if gen_inpainted_mesh:
+            if inp[go.GEN_INPAINTED_MESH]:
                 inpaint_imgs.append(inputimages[count])
                 inpaint_depths.append(img_output)
 
             # applying background masks after depth
-            if gen_rembg:
+            if inp[go.GEN_REMBG]:
                 print('applying background masks')
                 background_removed_image = background_removed_images[count]
                 # maybe a threshold cut would be better on the line below.
@@ -227,7 +194,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
 
                 generated_images[count]['background_removed'] = background_removed_image
 
-                if save_background_removal_masks:
+                if inp[go.SAVE_BACKGROUND_REMOVAL_MASKS]:
                     bg_array = (1 - bg_mask.astype('int8')) * 255
                     mask_array = np.stack((bg_array, bg_array, bg_array, bg_array), axis=2)
                     mask_image = Image.fromarray(mask_array.astype(np.uint8))
@@ -236,11 +203,11 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
 
             # A weird quirk: if user tries to save depthmap, whereas input depthmap is used,
             # depthmap will be outputed, even if output_depth_combine is used.
-            if do_output_depth and inputdepthmaps[count] is None:
-                if do_output_depth:
-                    img_depth = cv2.bitwise_not(img_output) if output_depth_invert else img_output
-                    if output_depth_combine:
-                        axis = 1 if output_depth_combine_axis == 'Horizontal' else 0
+            if inp[go.DO_OUTPUT_DEPTH] and inputdepthmaps[count] is None:
+                if inp[go.DO_OUTPUT_DEPTH]:
+                    img_depth = cv2.bitwise_not(img_output) if inp[go.OUTPUT_DEPTH_INVERT] else img_output
+                    if inp[go.OUTPUT_DEPTH_COMBINE]:
+                        axis = 1 if inp[go.OUTPUT_DEPTH_COMBINE_AXIS] == 'Horizontal' else 0
                         img_concat = Image.fromarray(np.concatenate(
                             (inputimages[count], convert_i16_to_rgb(img_depth, inputimages[count])),
                             axis=axis))
@@ -248,29 +215,30 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     else:
                         generated_images[count]['depth'] = Image.fromarray(img_depth)
 
-            if gen_stereo:
+            if inp[go.GEN_STEREO]:
                 print("Generating stereoscopic images..")
-                stereoimages = create_stereoimages(inputimages[count], img_output, stereo_divergence, inp,
-                                                   stereo_modes, stereo_balance, stereo_fill_algo)
+                stereoimages = create_stereoimages(inputimages[count], img_output, inp[go.STEREO_DIVERGENCE], inp,
+                                                   inp[go.STEREO_MODES], inp[go.STEREO_BALANCE],
+                                                   inp[go.STEREO_FILL_ALGO])
                 for c in range(0, len(stereoimages)):
-                    generated_images[count][stereo_modes[c]] = stereoimages[c]
+                    generated_images[count][inp[go.STEREO_MODES][c]] = stereoimages[c]
 
-            if gen_normalmap:
+            if inp[go.GEN_NORMALMAP]:
                 generated_images[count]['normalmap'] = create_normalmap(
                     img_output,
-                    normalmap_pre_blur_kernel if normalmap_pre_blur else None,
-                    normalmap_sobel_kernel if normalmap_sobel else None,
-                    normalmap_post_blur_kernel if normalmap_post_blur else None,
-                    normalmap_invert
+                    inp[go.NORMALMAP_PRE_BLUR_KERNEL] if inp[go.NORMALMAP_PRE_BLUR] else None,
+                    inp[go.NORMALMAP_SOBEL_KERNEL] if inp[go.NORMALMAP_SOBEL] else None,
+                    inp[go.NORMALMAP_POST_BLUR_KERNEL] if inp[go.NORMALMAP_POST_BLUR] else None,
+                    inp[go.NORMALMAP_INVERT]
                 )
 
-            if gen_heatmap:
+            if inp[go.GEN_HEATMAP]:
                 from dzoedepth.utils.misc import colorize
                 heatmap = Image.fromarray(colorize(img_output, cmap='inferno'))
                 generated_images[count]['heatmap'] = heatmap
 
             # gen mesh
-            if gen_simple_mesh:
+            if inp[go.GEN_SIMPLE_MESH]:
                 print(f"\nGenerating (occluded) mesh ..")
                 basename = 'depthmap'
                 meshsimple_fi = get_uniquefn(outpath, basename, 'obj')
@@ -279,9 +247,9 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                 depthi = raw_prediction if raw_prediction is not None else out
                 depthi_min, depthi_max = depthi.min(), depthi.max()
                 # try to map output to sensible values for non zoedepth models, boost, or custom maps
-                if model_type not in [7, 8, 9] or boost or inputdepthmaps[count] is not None:
+                if inp[go.MODEL_TYPE] not in [7, 8, 9] or inp[go.BOOST] or inputdepthmaps[count] is not None:
                     # invert if midas
-                    if model_type > 0 or inputdepthmaps[count] is not None:  # TODO: Weird
+                    if inp[go.MODEL_TYPE] > 0 or inputdepthmaps[count] is not None:  # TODO: Weird
                         depthi = depthi_max - depthi + depthi_min
                         depth_max = depthi.max()
                         depth_min = depthi.min()
@@ -296,7 +264,8 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     # offset
                     depthi = depthi + 1.0
 
-                mesh = create_mesh(inputimages[count], depthi, keep_edges=not simple_mesh_occlude, spherical=simple_mesh_spherical)
+                mesh = create_mesh(inputimages[count], depthi, keep_edges=not inp[go.SIMPLE_MESH_OCCLUDE],
+                                   spherical=(inp[go.SIMPLE_MESH_SPHERICAL]))
                 mesh.export(meshsimple_fi)
 
         print("Computing output(s) done.")
@@ -306,7 +275,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
             suggestion = "ERROR: out of memory, could not generate depthmap!\nPlease try a different model"
             if device != torch.device("cpu"):
                 suggestion += ", or try using the CPU"
-            if boost:
+            if inp[go.BOOST]:
                 suggestion += ", or disable BOOST"
             print(f"{suggestion}.")
         else:
@@ -326,9 +295,11 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
 
     # TODO: This should not be here
     mesh_fi = None
-    if gen_inpainted_mesh:
+    if inp[go.GEN_INPAINTED_MESH]:
         try:
-            mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath, gen_inpainted_mesh_demos, 1, "mp4")
+            mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath,
+                                  inp[go.GEN_INPAINTED_MESH_DEMOS],
+                                  1, "mp4")
         except Exception as e:
             print(f'{str(e)}, some issue with generating inpainted mesh')
 

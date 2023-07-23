@@ -5,9 +5,9 @@
 import argparse
 import os
 import pathlib
-import builtins
 
 import src.misc
+
 
 def maybe_chdir():
     """Detects if DepthMap was installed as a stable-diffusion-webui script, but run without current directory set to
@@ -21,19 +21,21 @@ def maybe_chdir():
             path = path[:-2]
         listdir = os.listdir(str(pathlib.Path(*path)))
         if 'launch.py' in listdir and 'webui.py':
-            os.chdir(str(pathlib.Path(**path)))
+            os.chdir(str(pathlib.Path(*path)))
     except:
         pass
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--listen", help="Create public link")
-    parser.add_argument("--no_chdir", help="Do not try to use the root of stable-diffusion-webui")
+    parser.add_argument("--share", help="Create public link", action='store_true')
+    parser.add_argument("--listen", help="Create public link", action='store_true')
+    parser.add_argument("--no_chdir", help="Do not try to use the root of stable-diffusion-webui", action='store_true')
     args = parser.parse_args()
 
     print(f"{src.misc.SCRIPT_FULL_NAME} running in standalone mode!")
-    import src.common_ui
     if not args.no_chdir:
         maybe_chdir()
-    src.common_ui.on_ui_tabs().launch(share=args.listen)
+    server_name = "0.0.0.0" if args.listen else None
+    import src.common_ui
+    src.common_ui.on_ui_tabs().launch(share=args.share, server_name=server_name)

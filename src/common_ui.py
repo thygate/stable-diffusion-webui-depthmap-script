@@ -244,7 +244,7 @@ def open_folder_action():
     if backbone.get_cmd_opt('hide_ui_dir_config', False):
         return
     if not os.path.exists(f) or not os.path.isdir(f):
-        raise "Couldn't open output folder"  # .isdir is security-related, do not remove!
+        raise Exception("Couldn't open output folder")  # .isdir is security-related, do not remove!
     import platform
     import subprocess as sp
     path = os.path.normpath(f)

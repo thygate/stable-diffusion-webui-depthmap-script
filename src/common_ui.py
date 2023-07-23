@@ -102,9 +102,10 @@ def main_ui_panel(is_depth_tab):
                 with gr.Row():
                     inp += go.NORMALMAP_INVERT, gr.Checkbox(label="Invert")
 
-        with gr.Box():
-            with gr.Row():
-                inp += go.GEN_HEATMAP, gr.Checkbox(label="Generate HeatMap")
+        if backbone.get_opt('depthmap_script_gen_heatmap_from_ui', False):
+            with gr.Box():
+                with gr.Row():
+                    inp += go.GEN_HEATMAP, gr.Checkbox(label="Generate HeatMap")
 
         with gr.Box():
             with gr.Column():

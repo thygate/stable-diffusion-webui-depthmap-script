@@ -53,7 +53,7 @@ class CoreGenerationFunnelInp:
         self.values = {}
         for setting in GenerationOptions:
             name = setting.name.lower()
-            self.values[name] = values[name] if name in values else name.df
+            self.values[name] = values[name] if name in values else setting.df
 
     def __getitem__(self, item):
         if isinstance(item, GenerationOptions):

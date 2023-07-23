@@ -16,6 +16,7 @@ from modules.shared import opts
 from src.core import core_generation_funnel
 from src.common_ui import main_ui_panel
 from src.misc import SCRIPT_VERSION
+from src import backbone
 
 def encode_to_base64(image):
     if type(image) is str:
@@ -143,7 +144,7 @@ def depth_api(_: gr.Blocks, app: FastAPI):
 
 try:
     import modules.script_callbacks as script_callbacks
-
-    script_callbacks.on_app_started(depth_api)
+    if backbone.get_cmd_opt('api', False):
+        script_callbacks.on_app_started(depth_api)
 except:
-    pass
+    print('DepthMap API could not start')

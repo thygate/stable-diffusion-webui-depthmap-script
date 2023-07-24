@@ -3,6 +3,13 @@
 # must be resided in this file (or in the scripts folder).
 import pathlib
 from datetime import datetime
+import enum
+
+
+class BackboneType(enum.Enum):
+    WEBUI = 1
+    STANDALONE = 2
+
 
 try:
     # stable-diffusion-webui backbone
@@ -61,6 +68,8 @@ try:
     def get_hide_dirs():
         import modules.shared
         return modules.shared.hide_dirs
+
+    USED_BACKBONE = BackboneType.WEBUI
 except:
     # Standalone backbone
     print(  # "  DepthMap did not detect stable-diffusion-webui; launching with the standalone backbone.\n"
@@ -116,3 +125,6 @@ except:
     def reload_sd_model(): pass  # Not needed
 
     def get_hide_dirs(): return {}  # Directories will not be hidden from traversal (except when starts with the dot)
+
+
+    USED_BACKBONE = BackboneType.STANDALONE

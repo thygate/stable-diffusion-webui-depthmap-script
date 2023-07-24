@@ -470,36 +470,42 @@ def run_generate(*inputs):
         inputdepthmaps_n = len([1 for x in inputdepthmaps if x is not None])
         print(f'{len(inputimages)} images will be processed, {inputdepthmaps_n} existing depthmaps will be reused')
 
-    outputs, fn_mesh, display_mesh = core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inputs, backbone.gather_ops())
+    gen_obj = core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inputs, backbone.gather_ops())
 
-    # Saving images
     show_images = []
-    for input_i, imgs in enumerate(outputs):
+    inpainted_mesh_fi = mesh_simple_fi = None
+    for input_i, type, result in gen_obj:
+        if type == 'simple_mesh':
+            mesh_simple_fi = result
+            continue
+        if type == 'inpainted_mesh':
+            inpainted_mesh_fi = result
+            continue
+
         basename = 'depthmap'
         if depthmap_mode == '2' and inputnames[input_i] is not None and outpath != backbone.get_opt('outdir_extras_samples', None):
             basename = Path(inputnames[input_i]).stem
 
-        for image_type, image in list(imgs.items()):
-            show_images += [image]
-            if inputs["save_outputs"]:
-                try:
-                    suffix = "" if image_type == "depth" else f"{image_type}"
-                    backbone.save_image(image, path=outpath, basename=basename, seed=None,
-                               prompt=None, extension=backbone.get_opt('samples_format', 'png'), short_filename=True,
-                               no_prompt=True, grid=False, pnginfo_section_name="extras",
-                               suffix=suffix)
-                except Exception as e:
-                    if not ('image has wrong mode' in str(e) or 'I;16' in str(e)):
-                        raise e
-                    print('Catched exception: image has wrong mode!')
-                    traceback.print_exc()
+        show_images += [result]
+        if inputs["save_outputs"]:
+            try:
+                suffix = "" if type == "depth" else f"{type}"
+                backbone.save_image(result, path=outpath, basename=basename, seed=None,
+                           prompt=None, extension=backbone.get_opt('samples_format', 'png'), short_filename=True,
+                           no_prompt=True, grid=False, pnginfo_section_name="extras",
+                           suffix=suffix)
+            except Exception as e:
+                if not ('image has wrong mode' in str(e) or 'I;16' in str(e)):
+                    raise e
+                print('Catched exception: image has wrong mode!')
+                traceback.print_exc()
 
-    display_mesh = None
-    # use inpainted 3d mesh to show in 3d model output when enabled in settings
-    if backbone.get_opt('depthmap_script_show_3d_inpaint', True) and fn_mesh is not None and len(fn_mesh) > 0:
-        display_mesh = fn_mesh
-    # however, don't show 3dmodel when disabled in settings
+    # Deciding what mesh to display (and if)
+    display_mesh_fi = None
     if not backbone.get_opt('depthmap_script_show_3d', True):
-        display_mesh = None
+        display_mesh_fi = mesh_simple_fi
+        if backbone.get_opt('depthmap_script_show_3d_inpaint', True):
+            if inpainted_mesh_fi is not None and len(inpainted_mesh_fi) > 0:
+                display_mesh_fi = inpainted_mesh_fi
     # TODO: return more info
-    return show_images, fn_mesh, display_mesh, 'Generated!'
+    return show_images, inpainted_mesh_fi, display_mesh_fi, 'Generated!'

@@ -53,23 +53,24 @@ def depth_api(_: gr.Blocks, app: FastAPI):
         depth_input_images: List[str] = Body([], title='Input Images'),
         options: Dict[str, object] = Body("options", title='Generation options'),
     ):
+        # TODO: restrict mesh options
+
         if len(depth_input_images) == 0:
-            raise HTTPException(status_code=422, detail="No image supplied")
+            raise HTTPException(status_code=422, detail="No images supplied")
+        print(f"Processing {str(len(depth_input_images))} images trough the API")
 
-        print(f"Processing {str(len(depth_input_images))} images trough the API.")
-
-        PIL_images = []
+        pil_images = []
         for input_image in depth_input_images:
-            PIL_images.append(to_base64_PIL(input_image))
-
+            pil_images.append(to_base64_PIL(input_image))
         outpath = backbone.get_outpath()
-        results, _, _ = core_generation_funnel(outpath, PIL_images, None, None, options)
+        gen_obj = core_generation_funnel(outpath, pil_images, None, None, options)
 
-        # TODO: Fix: this just keeps depth image throws everything else away
-        results = [img['depth'] for img in results]
-        results64 = list(map(encode_to_base64, results))
+        results_based = []
+        for count, type, result in gen_obj:
+            if type not in ['simple_mesh', 'inpainted_mesh']:
+                results_based += [encode_to_base64(result)]
+        return {"images": results_based, "info": "Success"}
 
-        return {"images": results64, "info": "Success"}
 
 try:
     import modules.script_callbacks as script_callbacks

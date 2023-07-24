@@ -43,30 +43,34 @@ class Script(scripts.Script):
                 continue
             inputimages.append(processed.images[count])
 
-        outputs, mesh_fi, meshsimple_fi = core_generation_funnel(p.outpath_samples, inputimages, None, None, inputs, backbone.gather_ops())
+        gen_obj = core_generation_funnel(p.outpath_samples, inputimages, None, None, inputs, backbone.gather_ops())
 
-        for input_i, imgs in enumerate(outputs):
+        for input_i, type, result in gen_obj:
+            if type in ['simple_mesh', 'inpainted_mesh']:
+                continue  # We are in script mode: do nothing with the filenames
+
             # get generation parameters
+            # TODO: could reuse
             if hasattr(processed, 'all_prompts') and shared.opts.enable_pnginfo:
-                info = create_infotext(processed, processed.all_prompts, processed.all_seeds, processed.all_subseeds,
-                                       "", 0, input_i)
+                info = create_infotext(
+                    processed, processed.all_prompts, processed.all_seeds, processed.all_subseeds, "", 0, input_i)
             else:
                 info = None
-            for image_type, image in list(imgs.items()):
-                processed.images.append(image)
-                if inputs["save_outputs"]:
-                    try:
-                        suffix = "" if image_type == "depth" else f"{image_type}"
-                        backbone.save_image(image, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
-                                   prompt=processed.all_prompts[input_i], extension=shared.opts.samples_format,
-                                   info=info,
-                                   p=processed,
-                                   suffix=suffix)
-                    except Exception as e:
-                        if not ('image has wrong mode' in str(e) or 'I;16' in str(e)):
-                            raise e
-                        print('Catched exception: image has wrong mode!')
-                        traceback.print_exc()
+
+            processed.images.append(result)
+            if inputs["save_outputs"]:
+                try:
+                    suffix = "" if type == "depth" else f"{type}"
+                    backbone.save_image(result, path=p.outpath_samples, basename="", seed=processed.all_seeds[input_i],
+                               prompt=processed.all_prompts[input_i], extension=shared.opts.samples_format,
+                               info=info,
+                               p=processed,
+                               suffix=suffix)
+                except Exception as e:
+                    if not ('image has wrong mode' in str(e) or 'I;16' in str(e)):
+                        raise e
+                    print('Catched exception: image has wrong mode!')
+                    traceback.print_exc()
         return processed
 
 

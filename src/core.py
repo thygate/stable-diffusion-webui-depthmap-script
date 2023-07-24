@@ -66,7 +66,7 @@ class CoreGenerationFunnelInp:
 
 def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp, ops=None):
     if len(inputimages) == 0 or inputimages[0] is None:
-        return [], '', ''
+        return
     if inputdepthmaps is None or len(inputdepthmaps) == 0:
         inputdepthmaps: list[Image] = [None for _ in range(len(inputimages))]
     inputdepthmaps_complete = all([x is not None for x in inputdepthmaps])
@@ -103,12 +103,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
         device = torch.device("cpu")
     print("device: %s" % device)
 
-    generated_images = [{} for _ in range(len(inputimages))]
-    """Images that will be returned.
-    Every array element corresponds to particular input image.
-    Dictionary keys are types of images that were derived from the input image."""
-    # TODO: ???
-    meshsimple_fi = None
+    # TODO: This should not be here
     inpaint_imgs = []
     inpaint_depths = []
 
@@ -192,14 +187,14 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                         background_removed_array[:, :, 2] == 0) & (background_removed_array[:, :, 3] <= 0.2)
                 img_output[bg_mask] = 0  # far value
 
-                generated_images[count]['background_removed'] = background_removed_image
+                yield count, 'background_removed', background_removed_image
 
                 if inp[go.SAVE_BACKGROUND_REMOVAL_MASKS]:
                     bg_array = (1 - bg_mask.astype('int8')) * 255
                     mask_array = np.stack((bg_array, bg_array, bg_array, bg_array), axis=2)
                     mask_image = Image.fromarray(mask_array.astype(np.uint8))
 
-                    generated_images[count]['foreground_mask'] = mask_image
+                    yield count, 'foreground_mask', mask_image
 
             # A weird quirk: if user tries to save depthmap, whereas input depthmap is used,
             # depthmap will be outputed, even if output_depth_combine is used.
@@ -211,9 +206,9 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                         img_concat = Image.fromarray(np.concatenate(
                             (inputimages[count], convert_i16_to_rgb(img_depth, inputimages[count])),
                             axis=axis))
-                        generated_images[count]['concat_depth'] = img_concat
+                        yield count, 'concat_depth', img_concat
                     else:
-                        generated_images[count]['depth'] = Image.fromarray(img_depth)
+                        yield count, 'depth', Image.fromarray(img_depth)
 
             if inp[go.GEN_STEREO]:
                 print("Generating stereoscopic images..")
@@ -222,21 +217,22 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     inp[go.STEREO_DIVERGENCE], inp[go.STEREO_SEPARATION],
                     inp[go.STEREO_MODES], inp[go.STEREO_BALANCE], inp[go.STEREO_FILL_ALGO])
                 for c in range(0, len(stereoimages)):
-                    generated_images[count][inp[go.STEREO_MODES][c]] = stereoimages[c]
+                    yield count, inp[go.STEREO_MODES][c], stereoimages[c]
 
             if inp[go.GEN_NORMALMAP]:
-                generated_images[count]['normalmap'] = create_normalmap(
+                normalmap = create_normalmap(
                     img_output,
                     inp[go.NORMALMAP_PRE_BLUR_KERNEL] if inp[go.NORMALMAP_PRE_BLUR] else None,
                     inp[go.NORMALMAP_SOBEL_KERNEL] if inp[go.NORMALMAP_SOBEL] else None,
                     inp[go.NORMALMAP_POST_BLUR_KERNEL] if inp[go.NORMALMAP_POST_BLUR] else None,
                     inp[go.NORMALMAP_INVERT]
                 )
+                yield count, 'normalmap', normalmap
 
             if inp[go.GEN_HEATMAP]:
                 from dzoedepth.utils.misc import colorize
                 heatmap = Image.fromarray(colorize(img_output, cmap='inferno'))
-                generated_images[count]['heatmap'] = heatmap
+                yield count, 'heatmap', heatmap
 
             # gen mesh
             if inp[go.GEN_SIMPLE_MESH]:
@@ -268,17 +264,25 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                 mesh = create_mesh(inputimages[count], depthi, keep_edges=not inp[go.SIMPLE_MESH_OCCLUDE],
                                    spherical=(inp[go.SIMPLE_MESH_SPHERICAL]))
                 mesh.export(meshsimple_fi)
+                yield count, 'simple_mesh', meshsimple_fi
 
         print("Computing output(s) done.")
     except RuntimeError as e:
         # TODO: display in UI
         if 'out of memory' in str(e):
-            suggestion = "ERROR: out of memory, could not generate depthmap!\nPlease try a different model"
-            if device != torch.device("cpu"):
-                suggestion += ", or try using the CPU"
+            suggestion = "ERROR: out of GPU memory, could not generate depthmap! " \
+                         "Here are some suggestions to work around this issue:\n"
             if inp[go.BOOST]:
-                suggestion += ", or disable BOOST"
-            print(f"{suggestion}.")
+                suggestion += " * Disable BOOST (generation will be faster, but the depthmap will be less detailed)\n"
+            if backbone.USED_BACKBONE == backbone.BackboneType.WEBUI:
+                suggestion += " * Run DepthMap in the standalone mode - without launching the SD WebUI\n"
+            if device != torch.device("cpu"):
+                suggestion += " * Select CPU as the processing device (this will be slower)\n"
+            if inp[go.MODEL_TYPE] != 6:
+                suggestion += " * Use a different model (this could reduce quality)\n"
+            if not inp[go.BOOST]:
+                suggestion += " * Reduce net size (this could reduce quality)\n"
+            print(f"{suggestion}")
         else:
             raise e
     finally:
@@ -301,12 +305,12 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
             mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath,
                                   inp[go.GEN_INPAINTED_MESH_DEMOS],
                                   1, "mp4")
+            yield 0, 'inpainted_mesh', mesh_fi
         except Exception as e:
             print(f'{str(e)}, some issue with generating inpainted mesh')
 
     backbone.reload_sd_model()
     print("All done.\n")
-    return generated_images, mesh_fi, meshsimple_fi
 
 
 def get_uniquefn(outpath, basename, ext):

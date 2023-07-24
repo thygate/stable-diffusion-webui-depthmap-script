@@ -474,7 +474,24 @@ def run_generate(*inputs):
 
     show_images = []
     inpainted_mesh_fi = mesh_simple_fi = None
-    for input_i, type, result in gen_obj:
+    msg = ""  # Empty string is never returned
+    while True:
+        try:
+            input_i, type, result = next(gen_obj)
+        except StopIteration:
+            # TODO: return more info
+            msg = '<h3>Successfully generated.</h3>'
+            break
+        except Exception as e:
+            traceback.print_exc()
+            msg = '<h3>' + 'ERROR: ' + str(e) + '</h3>' + '\n'
+            if 'out of GPU memory' not in msg:
+                msg +=\
+                    'Please report this issue ' \
+                    f'<a href="https://github.com/thygate/{REPOSITORY_NAME}/issues">here</a>. ' \
+                    'Make sure to provide the full stacktrace: \n'
+                msg += '<code style="white-space: pre;">' + traceback.format_exc() + '</code>'
+            break
         if type == 'simple_mesh':
             mesh_simple_fi = result
             continue
@@ -507,5 +524,4 @@ def run_generate(*inputs):
         if backbone.get_opt('depthmap_script_show_3d_inpaint', True):
             if inpainted_mesh_fi is not None and len(inpainted_mesh_fi) > 0:
                 display_mesh_fi = inpainted_mesh_fi
-    # TODO: return more info
-    return show_images, inpainted_mesh_fi, display_mesh_fi, 'Generated!'
+    return show_images, inpainted_mesh_fi, display_mesh_fi, msg.replace('\n', '<br>')

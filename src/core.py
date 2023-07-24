@@ -267,23 +267,27 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                 yield count, 'simple_mesh', meshsimple_fi
 
         print("Computing output(s) done.")
-    except RuntimeError as e:
-        # TODO: display in UI
-        if 'out of memory' in str(e):
-            suggestion = "ERROR: out of GPU memory, could not generate depthmap! " \
+    except Exception as e:
+        import traceback
+        if 'out of memory' in str(e).lower():
+            print(str(e))
+            suggestion = "out of GPU memory, could not generate depthmap! " \
                          "Here are some suggestions to work around this issue:\n"
             if inp[go.BOOST]:
                 suggestion += " * Disable BOOST (generation will be faster, but the depthmap will be less detailed)\n"
-            if backbone.USED_BACKBONE == backbone.BackboneType.WEBUI:
+            if backbone.USED_BACKBONE != backbone.BackboneType.STANDALONE:
                 suggestion += " * Run DepthMap in the standalone mode - without launching the SD WebUI\n"
             if device != torch.device("cpu"):
                 suggestion += " * Select CPU as the processing device (this will be slower)\n"
             if inp[go.MODEL_TYPE] != 6:
-                suggestion += " * Use a different model (this could reduce quality)\n"
+                suggestion +=\
+                    " * Use a different model (generally, more memory-consuming models produce better depthmaps)\n"
             if not inp[go.BOOST]:
                 suggestion += " * Reduce net size (this could reduce quality)\n"
-            print(f"{suggestion}")
+            print('Fail.\n')
+            raise Exception(suggestion)
         else:
+            print('Fail.\n')
             raise e
     finally:
         if backbone.get_opt('depthmap_script_keepmodels', True):

@@ -89,6 +89,7 @@ def on_ui_settings():
     add_option('show_3d_inpaint', True, "Also show 3D Inpainted Mesh in 3D Mesh output tab. (Experimental)")
     add_option('mesh_maxsize', 2048, "Max size for generating simple mesh.")
     add_option('gen_heatmap_from_ui', False, "Show an option to generate HeatMap in the UI")
+    add_option('extra_stereomodes', False, "Enable more possible outputs for stereoimage generation")
 
 
 from modules import script_callbacks

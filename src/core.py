@@ -196,8 +196,8 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
 
                     yield count, 'foreground_mask', mask_image
 
-            # A weird quirk: if user tries to save depthmap, whereas input depthmap is used,
-            # depthmap will be outputed, even if output_depth_combine is used.
+            # A weird quirk: if user tries to save depthmap, whereas custom depthmap is used,
+            # depthmap will not be outputed, even if output_depth_combine is used.
             if inp[go.DO_OUTPUT_DEPTH] and inputdepthmaps[count] is None:
                 if inp[go.DO_OUTPUT_DEPTH]:
                     img_depth = cv2.bitwise_not(img_output) if inp[go.OUTPUT_DEPTH_INVERT] else img_output

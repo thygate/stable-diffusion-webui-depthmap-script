@@ -28,7 +28,8 @@ def main_ui_panel(is_depth_tab):
     inp = GradioComponentBundle()
     # TODO: Greater visual separation
     with gr.Blocks():
-        with gr.Row():
+        with gr.Row() as cur_option_root:
+            inp -= 'depthmap_gen_row_0', cur_option_root
             inp += go.COMPUTE_DEVICE, gr.Radio(label="Compute on", choices=['GPU', 'CPU'], value='GPU')
             # TODO: Should return value instead of index. Maybe Enum should be used?
             inp += go.MODEL_TYPE, gr.Dropdown(label="Model",
@@ -38,15 +39,17 @@ def main_ui_panel(is_depth_tab):
                                                       'midas_v21', 'midas_v21_small',
                                                       'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk'],
                                              type="index")
-        with gr.Box():
+        with gr.Box() as cur_option_root:
+            inp -= 'depthmap_gen_row_1', cur_option_root
             with gr.Row():
                 inp += go.BOOST, gr.Checkbox(label="BOOST (multi-resolution merging)")
-                inp += go.NET_SIZE_MATCH, gr.Checkbox(label="Match net size to input size")
+                inp += go.NET_SIZE_MATCH, gr.Checkbox(label="Match net size to input size", visible=False)
             with gr.Row(visible=False) as options_depend_on_match_size:
                 inp += go.NET_WIDTH, gr.Slider(minimum=64, maximum=2048, step=64, label='Net width')
                 inp += go.NET_HEIGHT, gr.Slider(minimum=64, maximum=2048, step=64, label='Net height')
 
-        with gr.Box():
+        with gr.Box() as cur_option_root:
+            inp -= 'depthmap_gen_row_2', cur_option_root
             with gr.Row():
                 with gr.Group():  # 50% of width
                     inp += "save_outputs", gr.Checkbox(label="Save Outputs", value=True)
@@ -58,7 +61,9 @@ def main_ui_panel(is_depth_tab):
                     label="Combine input and depthmap into one image")
                 inp += go.OUTPUT_DEPTH_COMBINE_AXIS, gr.Radio(
                     label="Combine axis", choices=['Vertical', 'Horizontal'], type="value", visible=False)
-        with gr.Box():
+
+        with gr.Box() as cur_option_root:
+            inp -= 'depthmap_gen_row_3', cur_option_root
             with gr.Row():
                 inp += go.CLIPDEPTH, gr.Checkbox(label="Clip and renormalize DepthMap")
             with gr.Row(visible=False) as clip_options_row_1:
@@ -71,8 +76,9 @@ def main_ui_panel(is_depth_tab):
             with gr.Column(visible=False) as stereo_options:
                 with gr.Row():
                     inp += go.STEREO_MODES, gr.CheckboxGroup(
-                        ["left-right", "right-left", "top-bottom", "bottom-top", "red-cyan-anaglyph"],
-                        label="Output")
+                        ["left-right", "right-left", "top-bottom", "bottom-top", "red-cyan-anaglyph",
+                         "left-only", "only-right", "cyan-red-reverseanaglyph"
+                         ][0:8 if backbone.get_opt('depthmap_script_extra_stereomodes', False) else 5], label="Output")
                 with gr.Row():
                     inp += go.STEREO_DIVERGENCE, gr.Slider(minimum=0.05, maximum=10.005, step=0.01,
                                                           label='Divergence (3D effect)')
@@ -164,29 +170,13 @@ def main_ui_panel(is_depth_tab):
             inputs=[inp[go.BOOST], inp[go.NET_SIZE_MATCH]],
             outputs=[inp[go.NET_SIZE_MATCH], options_depend_on_match_size]
         )
-        inp[go.NET_SIZE_MATCH].change(
-            fn=lambda a, b: options_depend_on_match_size.update(visible=not a and not b),
-            inputs=[inp[go.BOOST], inp[go.NET_SIZE_MATCH]],
-            outputs=[options_depend_on_match_size]
-        )
+        inp.add_rule(options_depend_on_match_size, 'visible-if-not', go.NET_SIZE_MATCH)
 
-        inp[go.DO_OUTPUT_DEPTH].change(
-            fn=lambda a: (inp[go.OUTPUT_DEPTH_INVERT].update(visible=a), options_depend_on_output_depth_1.update(visible=a)),
-            inputs=[inp[go.DO_OUTPUT_DEPTH]],
-            outputs=[inp[go.OUTPUT_DEPTH_INVERT], options_depend_on_output_depth_1]
-        )
+        inp.add_rule(options_depend_on_output_depth_1, 'visible-if', go.DO_OUTPUT_DEPTH)
+        inp.add_rule(go.OUTPUT_DEPTH_INVERT, 'visible-if', go.DO_OUTPUT_DEPTH)
+        inp.add_rule(go.OUTPUT_DEPTH_COMBINE_AXIS, 'visible-if', go.OUTPUT_DEPTH_COMBINE)
+        inp.add_rule(clip_options_row_1, 'visible-if', go.CLIPDEPTH)
 
-        inp[go.OUTPUT_DEPTH_COMBINE].change(
-            fn=lambda v: inp[go.OUTPUT_DEPTH_COMBINE_AXIS].update(visible=v),
-            inputs=[inp[go.OUTPUT_DEPTH_COMBINE]],
-            outputs=[inp[go.OUTPUT_DEPTH_COMBINE_AXIS]]
-        )
-
-        inp[go.CLIPDEPTH].change(
-            fn=lambda v: clip_options_row_1.update(visible=v),
-            inputs=[inp[go.CLIPDEPTH]],
-            outputs=[clip_options_row_1]
-        )
         inp[go.CLIPDEPTH_FAR].change(
             fn=lambda a, b: a if b < a else b,
             inputs=[inp[go.CLIPDEPTH_FAR], inp[go.CLIPDEPTH_NEAR]],
@@ -198,36 +188,12 @@ def main_ui_panel(is_depth_tab):
             outputs=[inp[go.CLIPDEPTH_FAR]]
         )
 
-        inp[go.GEN_STEREO].change(
-            fn=lambda v: stereo_options.update(visible=v),
-            inputs=[inp[go.GEN_STEREO]],
-            outputs=[stereo_options]
-        )
-
-        inp[go.GEN_NORMALMAP].change(
-            fn=lambda v: normalmap_options.update(visible=v),
-            inputs=[inp[go.GEN_NORMALMAP]],
-            outputs=[normalmap_options]
-        )
-
-        inp[go.GEN_SIMPLE_MESH].change(
-            fn=lambda v: mesh_options.update(visible=v),
-            inputs=[inp[go.GEN_SIMPLE_MESH]],
-            outputs=[mesh_options]
-        )
-
+        inp.add_rule(stereo_options, 'visible-if', go.GEN_STEREO)
+        inp.add_rule(normalmap_options, 'visible-if', go.GEN_NORMALMAP)
+        inp.add_rule(mesh_options, 'visible-if', go.GEN_SIMPLE_MESH)
         if is_depth_tab:
-            inp[go.GEN_INPAINTED_MESH].change(
-                fn=lambda v: inpaint_options_row_0.update(visible=v),
-                inputs=[inp[go.GEN_INPAINTED_MESH]],
-                outputs=[inpaint_options_row_0]
-            )
-
-        inp[go.GEN_REMBG].change(
-            fn=lambda v: bgrem_options.update(visible=v),
-            inputs=[inp[go.GEN_REMBG]],
-            outputs=[bgrem_options]
-        )
+            inp.add_rule(inpaint_options_row_0, 'visible-if', go.GEN_INPAINTED_MESH)
+        inp.add_rule(bgrem_options, 'visible-if', go.GEN_REMBG)
 
     return inp
 
@@ -282,7 +248,7 @@ def on_ui_tabs():
                                                  "in output directory when a file already exists.",
                                            value=True)
                 submit = gr.Button('Generate', elem_id="depthmap_generate", variant='primary')
-                inp += main_ui_panel(True)  # Main panel is inserted here
+                inp |= main_ui_panel(True)  # Main panel is inserted here
                 unloadmodels = gr.Button('Unload models', elem_id="depthmap_unloadmodels")
 
             with gr.Column(variant='panel'):
@@ -338,18 +304,23 @@ def on_ui_tabs():
                                 submit_vid = gr.Button('Generate Video', elem_id="depthmap_generatevideo",
                                                        variant='primary')
 
-
         inp += inp.enkey_tail()
 
         depthmap_mode_0.select(lambda: '0', None, inp['depthmap_mode'])
         depthmap_mode_1.select(lambda: '1', None, inp['depthmap_mode'])
         depthmap_mode_2.select(lambda: '2', None, inp['depthmap_mode'])
 
+        def custom_depthmap_change_fn(turned_on):
+            return inp['custom_depthmap_img'].update(visible=turned_on), \
+                inp['depthmap_gen_row_0'].update(visible=not turned_on), \
+                inp['depthmap_gen_row_1'].update(visible=not turned_on), \
+                inp['depthmap_gen_row_3'].update(visible=not turned_on), not turned_on
         inp['custom_depthmap'].change(
-            fn=lambda v: inp['custom_depthmap_img'].update(visible=v),
+            fn=custom_depthmap_change_fn,
             inputs=[inp['custom_depthmap']],
-            outputs=[inp['custom_depthmap_img']]
-        )
+            outputs=[inp[st] for st in
+                     ['custom_depthmap_img', 'depthmap_gen_row_0', 'depthmap_gen_row_1', 'depthmap_gen_row_3',
+                      go.DO_OUTPUT_DEPTH]])
 
         unloadmodels.click(
             fn=unload_models,

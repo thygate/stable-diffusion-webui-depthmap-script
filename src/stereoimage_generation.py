@@ -25,7 +25,7 @@ def create_stereoimages(original_image, depthmap, divergence, separation=0.0, mo
       Affects which parts of the image will be visible in left and/or right half.
     :param list modes: how the result will look like. By default only 'left-right' is generated
       - a picture for the left eye will be on the left and the picture from the right eye - on the right.
-      The supported modes are: 'left-right', 'right-left', 'top-bottom', 'bottom-top', 'red-cyan-anaglyph'.
+      Some of the supported modes are: 'left-right', 'right-left', 'top-bottom', 'bottom-top', 'red-cyan-anaglyph'.
     :param float stereo_balance: has to do with how the divergence will be split among the two parts of the image,
       must be in the [-1.0; 1.0] interval.
     :param str fill_technique: applying divergence inevitably creates some gaps in the image.
@@ -48,16 +48,23 @@ def create_stereoimages(original_image, depthmap, divergence, separation=0.0, mo
 
     results = []
     for mode in modes:
-        if mode == 'left-right':
+        if mode == 'left-right':  # Most popular format. Common use case: displaying in HMD.
             results.append(np.hstack([left_eye, right_eye]))
-        elif mode == 'right-left':
+        elif mode == 'right-left':  # Cross-viewing
             results.append(np.hstack([right_eye, left_eye]))
         elif mode == 'top-bottom':
             results.append(np.vstack([left_eye, right_eye]))
         elif mode == 'bottom-top':
             results.append(np.vstack([right_eye, left_eye]))
-        elif mode == 'red-cyan-anaglyph':
+        elif mode == 'red-cyan-anaglyph':  # Anaglyth glasses
             results.append(overlap_red_cyan(left_eye, right_eye))
+        elif mode == 'left-only':
+            results.append(left_eye)
+        elif mode == 'only-right':
+            results.append(right_eye)
+        elif mode == 'cyan-red-reverseanaglyph':  # Anaglyth glasses worn upside down
+            # Better for people whose main eye is left
+            results.append(overlap_red_cyan(right_eye, left_eye))
         else:
             raise Exception('Unknown mode')
     return [Image.fromarray(r) for r in results]

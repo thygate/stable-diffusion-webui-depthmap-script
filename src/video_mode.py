@@ -82,23 +82,23 @@ def frames_to_video(fps, frames, path, name, colorvids_bitrate=None):
             raise Exception('Saving the video failed!')
 
 
-def process_predicitons(predictions):
+def process_predicitons(predictions, smoothening='none'):
     print('Processing generated depthmaps')
     # TODO: Smart normalizing (drop 0.001% of top and bottom values from the video/every cut)
-    preds_min_value = min([pred.min() for pred in predictions])
-    preds_max_value = max([pred.max() for pred in predictions])
-
-    input_depths = []
-    for pred in predictions:
-        norm = (pred - preds_min_value) / (preds_max_value - preds_min_value)  # normalize to [0; 1]
-        input_depths += [norm]
     # TODO: Smoothening between frames (use splines)
     # TODO: Detect cuts and process segments separately
 
-    return input_depths
+    if smoothening == 'none':
+        input_depths = []
+        preds_min_value = min([pred.min() for pred in predictions])
+        preds_max_value = max([pred.max() for pred in predictions])
+        for pred in predictions:
+            norm = (pred - preds_min_value) / (preds_max_value - preds_min_value)  # normalize to [0; 1]
+            input_depths += [norm]
+        return input_depths
 
 
-def gen_video(video, outpath, inp, custom_depthmap=None, colorvids_bitrate=None):
+def gen_video(video, outpath, inp, custom_depthmap=None, colorvids_bitrate=None, smoothening='none'):
     if inp[go.GEN_SIMPLE_MESH.name.lower()] or inp[go.GEN_INPAINTED_MESH.name.lower()]:
         return 'Creating mesh-videos is not supported. Please split video into frames and use batch processing.'
 
@@ -117,7 +117,7 @@ def gen_video(video, outpath, inp, custom_depthmap=None, colorvids_bitrate=None)
 
         gen_obj = core.core_generation_funnel(None, input_images, None, None, first_pass_inp)
         predictions = [x[2] for x in list(gen_obj)]
-        input_depths = process_predicitons(predictions)
+        input_depths = process_predicitons(predictions, smoothening)
     else:
         print('Using custom depthmap video')
         cdm_fps, input_depths = open_path_as_images(os.path.abspath(custom_depthmap.name), maybe_depthvideo=True)

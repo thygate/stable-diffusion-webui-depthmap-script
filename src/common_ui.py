@@ -80,7 +80,7 @@ def main_ui_panel(is_depth_tab):
                          "left-only", "only-right", "cyan-red-reverseanaglyph"
                          ][0:8 if backbone.get_opt('depthmap_script_extra_stereomodes', False) else 5], label="Output")
                 with gr.Row():
-                    inp += go.STEREO_DIVERGENCE, gr.Slider(minimum=0.05, maximum=10.005, step=0.01,
+                    inp += go.STEREO_DIVERGENCE, gr.Slider(minimum=0.05, maximum=15.005, step=0.01,
                                                           label='Divergence (3D effect)')
                     inp += go.STEREO_SEPARATION, gr.Slider(minimum=-5.0, maximum=5.0, step=0.01,
                                                           label='Separation (moves images apart)')
@@ -99,13 +99,16 @@ def main_ui_panel(is_depth_tab):
             with gr.Column(visible=False) as normalmap_options:
                 with gr.Row():
                     inp += go.NORMALMAP_PRE_BLUR, gr.Checkbox(label="Smooth before calculating normals")
-                    inp += go.NORMALMAP_PRE_BLUR_KERNEL, gr.Slider(minimum=1, maximum=31, step=2, label='Pre-smooth kernel size')
+                    inp += go.NORMALMAP_PRE_BLUR_KERNEL, gr.Slider(minimum=1, maximum=31, step=2, label='Pre-smooth kernel size', visible=False)
+                    inp.add_rule(go.NORMALMAP_PRE_BLUR_KERNEL, 'visible-if', go.NORMALMAP_PRE_BLUR)
                 with gr.Row():
                     inp += go.NORMALMAP_SOBEL, gr.Checkbox(label="Sobel gradient")
                     inp += go.NORMALMAP_SOBEL_KERNEL, gr.Slider(minimum=1, maximum=31, step=2, label='Sobel kernel size')
+                    inp.add_rule(go.NORMALMAP_SOBEL_KERNEL, 'visible-if', go.NORMALMAP_SOBEL)
                 with gr.Row():
                     inp += go.NORMALMAP_POST_BLUR, gr.Checkbox(label="Smooth after calculating normals")
-                    inp += go.NORMALMAP_POST_BLUR_KERNEL, gr.Slider(minimum=1, maximum=31, step=2, label='Post-smooth kernel size')
+                    inp += go.NORMALMAP_POST_BLUR_KERNEL, gr.Slider(minimum=1, maximum=31, step=2, label='Post-smooth kernel size', visible=False)
+                    inp.add_rule(go.NORMALMAP_POST_BLUR_KERNEL, 'visible-if', go.NORMALMAP_POST_BLUR)
                 with gr.Row():
                     inp += go.NORMALMAP_INVERT, gr.Checkbox(label="Invert")
 
@@ -219,8 +222,12 @@ def open_folder_action():
 
 
 def depthmap_mode_video(inp):
-    inp += gr.File(elem_id='depthmap_input_video', label="Video or animated file",
+    gr.HTML(value="Single video mode allows generating videos from videos. Every frame of the video is processed, "
+                  "please adjust generation settings, so that generation is not too slow. For the best results, "
+                  "Use a zoedepth model, since they provide the highest level of temporal coherency.")
+    inp += gr.File(elem_id='depthmap_vm_input', label="Video or animated file",
                    file_count="single", interactive=True, type="file")
+    inp += gr.Dropdown(elem_id="depthmap_vm_smoothening_mode", label="Smoothening", type="value", choices=['none'])
     inp += gr.Checkbox(elem_id="depthmap_vm_custom_checkbox",
                        label="Use custom/pregenerated DepthMap video", value=False)
     inp += gr.File(elem_id='depthmap_vm_custom', file_count="single",
@@ -230,23 +237,21 @@ def depthmap_mode_video(inp):
         inp += gr.Slider(elem_id='depthmap_vm_compress_bitrate', label="Bitrate (kbit)", visible=False,
                          minimum=1000, value=15000, maximum=50000, step=250)
 
-    inp['depthmap_vm_custom_checkbox'].change(
-        fn=lambda v: inp['depthmap_vm_custom'].update(visible=v),
-        inputs=[inp['depthmap_vm_custom_checkbox']],
-        outputs=[inp['depthmap_vm_custom']]
-    )
-
-    inp['depthmap_vm_compress_checkbox'].change(
-        fn=lambda v: inp['depthmap_vm_compress_bitrate'].update(visible=v),
-        inputs=[inp['depthmap_vm_compress_checkbox']],
-        outputs=[inp['depthmap_vm_compress_bitrate']]
-    )
+    inp.add_rule('depthmap_vm_custom', 'visible-if', 'depthmap_vm_custom_checkbox')
+    inp.add_rule('depthmap_vm_compress_bitrate', 'visible-if', 'depthmap_vm_compress_checkbox')
 
     return inp
 
+
+custom_css = """
+#depthmap_vm_input {height: 75px}
+#depthmap_vm_custom {height: 75px}
+"""
+
+
 def on_ui_tabs():
     inp = GradioComponentBundle()
-    with gr.Blocks(analytics_enabled=False, title="DepthMap") as depthmap_interface:
+    with gr.Blocks(analytics_enabled=False, title="DepthMap", css=custom_css) as depthmap_interface:
         with gr.Row().style(equal_height=False):
             with gr.Column(variant='panel'):
                 inp += 'depthmap_mode', gr.HTML(visible=False, value='0')
@@ -341,17 +346,20 @@ def on_ui_tabs():
         depthmap_mode_2.select(lambda: '2', None, inp['depthmap_mode'])
         depthmap_mode_3.select(lambda: '3', None, inp['depthmap_mode'])
 
-        def custom_depthmap_change_fn(turned_on):
-            return inp['custom_depthmap_img'].update(visible=turned_on), \
-                inp['depthmap_gen_row_0'].update(visible=not turned_on), \
-                inp['depthmap_gen_row_1'].update(visible=not turned_on), \
-                inp['depthmap_gen_row_3'].update(visible=not turned_on), not turned_on
-        inp['custom_depthmap'].change(
+        def custom_depthmap_change_fn(mode, zero_on, three_on):
+            hide = mode == '0' and zero_on or mode == '3' and three_on
+            return inp['custom_depthmap_img'].update(visible=hide), \
+                inp['depthmap_gen_row_0'].update(visible=not hide), \
+                inp['depthmap_gen_row_1'].update(visible=not hide), \
+                inp['depthmap_gen_row_3'].update(visible=not hide), not hide
+        custom_depthmap_change_els = ['depthmap_mode', 'custom_depthmap', 'depthmap_vm_custom_checkbox']
+        for el in custom_depthmap_change_els:
+            inp[el].change(
             fn=custom_depthmap_change_fn,
-            inputs=[inp['custom_depthmap']],
-            outputs=[inp[st] for st in
-                     ['custom_depthmap_img', 'depthmap_gen_row_0', 'depthmap_gen_row_1', 'depthmap_gen_row_3',
-                      go.DO_OUTPUT_DEPTH]])
+            inputs=[inp[el] for el in custom_depthmap_change_els],
+            outputs=[inp[st] for st in [
+                'custom_depthmap_img', 'depthmap_gen_row_0', 'depthmap_gen_row_1', 'depthmap_gen_row_3',
+                go.DO_OUTPUT_DEPTH]])
 
         unloadmodels.click(
             fn=unload_models,
@@ -433,7 +441,8 @@ def run_generate(*inputs):
             colorvids_bitrate = inputs['depthmap_vm_compress_bitrate'] \
                 if inputs['depthmap_vm_compress_checkbox'] else None
             ret = video_mode.gen_video(
-                inputs['depthmap_input_video'], backbone.get_outpath(), inputs, custom_depthmap, colorvids_bitrate)
+                inputs['depthmap_vm_input'], backbone.get_outpath(), inputs, custom_depthmap, colorvids_bitrate,
+                inputs['depthmap_vm_smoothening_mode'])
             return [], None, None, ret
         except Exception as e:
             ret = format_exception(e)

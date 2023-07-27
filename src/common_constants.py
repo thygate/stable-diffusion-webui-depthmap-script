@@ -36,6 +36,7 @@ class GenerationOptions(enum.Enum):
     STEREO_DIVERGENCE = 2.5
     STEREO_SEPARATION = 0.0
     STEREO_FILL_ALGO = "polylines_sharp"
+    STEREO_OFFSET_EXPONENT = 2.0
     STEREO_BALANCE = 0.0
 
     GEN_NORMALMAP = False

@@ -10,8 +10,8 @@ import numpy as np
 from PIL import Image
 
 
-def create_stereoimages(original_image, depthmap, divergence, separation=0.0, modes=None, stereo_balance=0.0,
-                        fill_technique='polylines_sharp'):
+def create_stereoimages(original_image, depthmap, divergence, separation=0.0, modes=None,
+                        stereo_balance=0.0, stereo_offset_exponent=1.0, fill_technique='polylines_sharp'):
     """Creates stereoscopic images.
     An effort is made to make them look nice, but beware that the resulting image will have some distortion.
     The correctness was not rigorously tested.
@@ -28,6 +28,8 @@ def create_stereoimages(original_image, depthmap, divergence, separation=0.0, mo
       Some of the supported modes are: 'left-right', 'right-left', 'top-bottom', 'bottom-top', 'red-cyan-anaglyph'.
     :param float stereo_balance: has to do with how the divergence will be split among the two parts of the image,
       must be in the [-1.0; 1.0] interval.
+    :param float stereo_offset_exponent: Higher values move objects residing
+      between close and far plane more to the far plane
     :param str fill_technique: applying divergence inevitably creates some gaps in the image.
       This parameter specifies the technique that will be used to fill in the blanks in the two resulting images.
       Must be one of the following: 'none', 'naive', 'naive_interpolating', 'polylines_soft', 'polylines_sharp'.
@@ -42,9 +44,11 @@ def create_stereoimages(original_image, depthmap, divergence, separation=0.0, mo
     original_image = np.asarray(original_image)
     balance = (stereo_balance + 1) / 2
     left_eye = original_image if balance < 0.001 else \
-        apply_stereo_divergence(original_image, depthmap, +1 * divergence * balance, -1 * separation, fill_technique)
+        apply_stereo_divergence(original_image, depthmap, +1 * divergence * balance, -1 * separation,
+                                stereo_offset_exponent, fill_technique)
     right_eye = original_image if balance > 0.999 else \
-        apply_stereo_divergence(original_image, depthmap, -1 * divergence * (1 - balance), separation, fill_technique)
+        apply_stereo_divergence(original_image, depthmap, -1 * divergence * (1 - balance), separation,
+                                stereo_offset_exponent, fill_technique)
 
     results = []
     for mode in modes:
@@ -70,7 +74,7 @@ def create_stereoimages(original_image, depthmap, divergence, separation=0.0, mo
     return [Image.fromarray(r) for r in results]
 
 
-def apply_stereo_divergence(original_image, depth, divergence, separation, fill_technique):
+def apply_stereo_divergence(original_image, depth, divergence, separation, stereo_offset_exponent, fill_technique):
     depth_min = depth.min()
     depth_max = depth.max()
     normalized_depth = (depth - depth_min) / (depth_max - depth_min)
@@ -79,17 +83,18 @@ def apply_stereo_divergence(original_image, depth, divergence, separation, fill_
 
     if fill_technique in ['none', 'naive', 'naive_interpolating']:
         return apply_stereo_divergence_naive(
-            original_image, normalized_depth, divergence_px, separation_px, fill_technique
+            original_image, normalized_depth, divergence_px, separation_px, stereo_offset_exponent, fill_technique
         )
     if fill_technique in ['polylines_soft', 'polylines_sharp']:
         return apply_stereo_divergence_polylines(
-            original_image, normalized_depth, divergence_px, separation_px, fill_technique
+            original_image, normalized_depth, divergence_px, separation_px, stereo_offset_exponent, fill_technique
         )
 
 
 @njit(parallel=False)
 def apply_stereo_divergence_naive(
-        original_image, normalized_depth, divergence_px: float, separation_px: float, fill_technique):
+        original_image, normalized_depth, divergence_px: float, separation_px: float, stereo_offset_exponent: float,
+        fill_technique: str):
     h, w, c = original_image.shape
 
     derived_image = np.zeros_like(original_image)
@@ -99,7 +104,7 @@ def apply_stereo_divergence_naive(
         # Swipe order should ensure that pixels that are closer overwrite
         # (at their destination) pixels that are less close
         for col in range(w) if divergence_px < 0 else range(w - 1, -1, -1):
-            col_d = col + int((normalized_depth[row][col] ** 2) * divergence_px + separation_px)
+            col_d = col + int((normalized_depth[row][col] ** stereo_offset_exponent) * divergence_px + separation_px)
             if 0 <= col_d < w:
                 derived_image[row][col_d] = original_image[row][col]
                 filled[row * w + col_d] = 1
@@ -155,7 +160,8 @@ def apply_stereo_divergence_naive(
 
 @njit(parallel=True)  # fastmath=True does not reasonably improve performance
 def apply_stereo_divergence_polylines(
-        original_image, normalized_depth, divergence_px: float, separation_px: float, fill_technique):
+        original_image, normalized_depth, divergence_px: float, separation_px: float, stereo_offset_exponent: float,
+        fill_technique: str):
     # This code treats rows of the image as polylines
     # It generates polylines, morphs them (applies divergence) to them, and then rasterizes them
     EPSILON = 1e-7
@@ -172,7 +178,7 @@ def apply_stereo_divergence_polylines(
         pt[pt_end] = [-1.0 * w, 0.0, 0.0]
         pt_end += 1
         for col in range(0, w):
-            coord_d = (normalized_depth[row][col] ** 2) * divergence_px
+            coord_d = (normalized_depth[row][col] ** stereo_offset_exponent) * divergence_px
             coord_x = col + 0.5 + coord_d + separation_px
             if PIXEL_HALF_WIDTH < EPSILON:
                 pt[pt_end] = [coord_x, abs(coord_d), col]

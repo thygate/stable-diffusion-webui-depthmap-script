@@ -215,7 +215,8 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                 stereoimages = create_stereoimages(
                     inputimages[count], img_output,
                     inp[go.STEREO_DIVERGENCE], inp[go.STEREO_SEPARATION],
-                    inp[go.STEREO_MODES], inp[go.STEREO_BALANCE], inp[go.STEREO_FILL_ALGO])
+                    inp[go.STEREO_MODES],
+                    inp[go.STEREO_BALANCE], inp[go.STEREO_OFFSET_EXPONENT], inp[go.STEREO_FILL_ALGO])
                 for c in range(0, len(stereoimages)):
                     yield count, inp[go.STEREO_MODES][c], stereoimages[c]
 

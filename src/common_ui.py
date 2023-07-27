@@ -89,6 +89,7 @@ def main_ui_panel(is_depth_tab):
                                                       choices=['none', 'naive', 'naive_interpolating', 'polylines_soft',
                                                                'polylines_sharp'],
                                                       type="value")
+                    inp += go.STEREO_OFFSET_EXPONENT, gr.Slider(label="Magic exponent", minimum=1, maximum=2, step=1)
                     inp += go.STEREO_BALANCE, gr.Slider(minimum=-1.0, maximum=1.0, step=0.05,
                                                        label='Balance between eyes')
 

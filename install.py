@@ -39,7 +39,12 @@ if not launch.is_installed("moviepy"):
 ensure('transforms3d', '0.4.1')
 
 ensure('imageio')  # 2.4.1
-ensure('imageio-ffmpeg')
+try:  # Dirty hack to not reinstall every time
+    importlib_metadata.version('imageio-ffmpeg')
+except:
+    ensure('imageio-ffmpeg')
+
+
 if not launch.is_installed("networkx"):
     launch.run_pip('install install "networkx==2.5"', "networkx requirement for depthmap script")
 if platform.system() == 'Windows':

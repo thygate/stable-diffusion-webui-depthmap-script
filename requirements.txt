@@ -1,0 +1,20 @@
+# Requirements for running in standalone mode
+# First, install the corect version of PyTorch!
+# PyTorch Compute Platform must match the configuration of the hardware.
+
+# pip install -r requirements.txt
+torch
+gradio>=3.32.0,<4.0  # User UI
+timm~=0.6.12  # For midas
+matplotlib
+trimesh  # For creating simple meshes
+numba>=0.57.0  # Speeding up CPU stereoimage generation
+vispy>=0.13.0
+rembg>=2.0.50  # Remove background
+moviepy>=1.0.2,<2.0
+transforms3d>=0.4.1
+imageio>=2.4.1,<3.0
+imageio-ffmpeg
+networkx>=2.5
+pyqt5; sys_platform == 'windows'
+pyqt6; sys_platform != 'windows'

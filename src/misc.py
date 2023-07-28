@@ -4,20 +4,11 @@ import pathlib
 import builtins
 
 def get_commit_hash():
-    def call_git(dir):
+    try:
+        file_path = pathlib.Path(__file__).parent
         return subprocess.check_output(
             [os.environ.get("GIT", "git"), "rev-parse", "HEAD"],
-            cwd=dir, shell=False, stderr=subprocess.DEVNULL, encoding='utf8').strip()[0:8]
-
-    try:
-        file_path = pathlib.Path(__file__)
-        path = file_path.parts
-        while len(path) > 0 and path[-1] != REPOSITORY_NAME:
-            path = path[:-1]
-        if len(path) >= 2 and path[-1] == REPOSITORY_NAME and path[-2] == "extensions":
-            return call_git(str(pathlib.Path(*path)))
-
-        return call_git(pathlib.Path.cwd().joinpath('extensions/stable-diffusion-webui-depthmap-script/'))
+            cwd=file_path, shell=False, stderr=subprocess.DEVNULL, encoding='utf8').strip()[0:8]
     except Exception:
         return "<none>"
 

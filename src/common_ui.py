@@ -228,9 +228,10 @@ def depthmap_mode_video(inp):
                   "use a zoedepth model, since they provide the highest level of coherency between frames.")
     inp += gr.File(elem_id='depthmap_vm_input', label="Video or animated file",
                    file_count="single", interactive=True, type="file")
-    inp += gr.Dropdown(elem_id="depthmap_vm_smoothening_mode", label="Smoothening", type="value", choices=['none'])
     inp += gr.Checkbox(elem_id="depthmap_vm_custom_checkbox",
                        label="Use custom/pregenerated DepthMap video", value=False)
+    inp += gr.Dropdown(elem_id="depthmap_vm_smoothening_mode", label="Smoothening",
+                       type="value", choices=['none', 'experimental'], value='experimental')
     inp += gr.File(elem_id='depthmap_vm_custom', file_count="single",
                    interactive=True, type="file", visible=False)
     with gr.Row():
@@ -239,6 +240,7 @@ def depthmap_mode_video(inp):
                          minimum=1000, value=15000, maximum=50000, step=250)
 
     inp.add_rule('depthmap_vm_custom', 'visible-if', 'depthmap_vm_custom_checkbox')
+    inp.add_rule('depthmap_vm_smoothening_mode', 'visible-if-not', 'depthmap_vm_custom_checkbox')
     inp.add_rule('depthmap_vm_compress_bitrate', 'visible-if', 'depthmap_vm_compress_checkbox')
 
     return inp

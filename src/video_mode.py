@@ -70,10 +70,10 @@ def frames_to_video(fps, frames, path, name, colorvids_bitrate=None):
         priority = [('avi', 'png'), ('avi', 'rawvideo'), ('mp4', 'libx264'), ('webm', 'libvpx')]
         if colorvids_bitrate:
             priority = reversed(priority)
-        for format, codec in priority:
+        for v_format, codec in priority:
             try:
                 br = f'{colorvids_bitrate}k' if codec not in ['png', 'rawvideo'] else None
-                clip.write_videofile(os.path.join(path, f"{name}.{format}"), codec=codec, bitrate=br)
+                clip.write_videofile(os.path.join(path, f"{name}.{v_format}"), codec=codec, bitrate=br)
                 done = True
                 break
             except:
@@ -83,19 +83,31 @@ def frames_to_video(fps, frames, path, name, colorvids_bitrate=None):
 
 
 def process_predicitons(predictions, smoothening='none'):
-    print('Processing generated depthmaps')
-    # TODO: Smart normalizing (drop 0.001% of top and bottom values from the video/every cut)
-    # TODO: Smoothening between frames (use splines)
-    # TODO: Detect cuts and process segments separately
+    def global_scaling(objs, a=None, b=None):
+        """Normalizes objs, but uses (a, b) instead of (minimum, maximum) value of objs, if supplied"""
+        normalized = []
+        min_value = a if a is not None else min([obj.min() for obj in objs])
+        max_value = b if b is not None else max([obj.max() for obj in objs])
+        for obj in objs:
+            normalized += [(obj - min_value) / (max_value - min_value)]
+        return normalized
 
+    print('Processing generated depthmaps')
+    # TODO: Detect cuts and process segments separately
     if smoothening == 'none':
-        input_depths = []
-        preds_min_value = min([pred.min() for pred in predictions])
-        preds_max_value = max([pred.max() for pred in predictions])
-        for pred in predictions:
-            norm = (pred - preds_min_value) / (preds_max_value - preds_min_value)  # normalize to [0; 1]
-            input_depths += [norm]
-        return input_depths
+        return global_scaling(predictions)
+    elif smoothening == 'experimental':
+        processed = []
+        clip = lambda val: min(max(0, val), len(predictions) - 1)
+        for i in range(len(predictions)):
+            f = np.zeros_like(predictions[i])
+            for u, mul in enumerate([0.10, 0.20, 0.40, 0.20, 0.10]):  # Eyeballed it, math person please fix this
+                f += mul * predictions[clip(i + (u - 2))]
+            processed += [f]
+        # This could have been deterministic monte carlo... Oh well, this version is faster.
+        a, b = np.percentile(np.stack(processed), [0.5, 99.5])
+        return global_scaling(predictions, a, b)
+    return predictions
 
 
 def gen_video(video, outpath, inp, custom_depthmap=None, colorvids_bitrate=None, smoothening='none'):

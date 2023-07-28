@@ -1,4 +1,9 @@
 ## Changelog
+### 0.4.3 video processing tab
+ * Added an option to process videos directly from a video file. This leads to better results than batch-processing individual frames of a video. Allows generating depthmap videos, that can be used in further generations as custom depthmap videos.
+ * UI improvements.
+ * Extra stereoimage generation modes - enable in extension settings if you want to use them.
+ * New stereoimage generation parameter - offset exponent. Setting it to 1 may produce more realistic outputs.
 ### 0.4.2
  * Added UI options for 2 additional rembg models.
  * Heatmap generation UI option is hidden - if you want to use it, please activate it in the extension settings.

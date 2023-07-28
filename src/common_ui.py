@@ -222,9 +222,10 @@ def open_folder_action():
 
 
 def depthmap_mode_video(inp):
-    gr.HTML(value="Single video mode allows generating videos from videos. Every frame of the video is processed, "
-                  "please adjust generation settings, so that generation is not too slow. For the best results, "
-                  "Use a zoedepth model, since they provide the highest level of temporal coherency.")
+    gr.HTML(value="Single video mode allows generating videos from videos. Please "
+                  "keep in mind that all the frames of the video need to be processed - therefore it is important to "
+                  "pick settings so that the generation is not too slow. For the best results, "
+                  "use a zoedepth model, since they provide the highest level of coherency between frames.")
     inp += gr.File(elem_id='depthmap_vm_input', label="Video or animated file",
                    file_count="single", interactive=True, type="file")
     inp += gr.Dropdown(elem_id="depthmap_vm_smoothening_mode", label="Smoothening", type="value", choices=['none'])

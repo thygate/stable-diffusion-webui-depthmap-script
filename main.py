@@ -1,6 +1,4 @@
 # This launches DepthMap without the AUTOMATIC1111/stable-diffusion-webui
-# If DepthMap is installed as an extension,
-# you may want to change the working directory to the stable-diffusion-webui root.
 
 import argparse
 import os
@@ -11,7 +9,8 @@ import src.misc
 
 def maybe_chdir():
     """Detects if DepthMap was installed as a stable-diffusion-webui script, but run without current directory set to
-    the stable-diffusion-webui root. Changes current directory if needed, to aviod clutter."""
+    the stable-diffusion-webui root. Changes current directory if needed.
+    This is to avoid re-downloading models and putting results into a wrong folder."""
     try:
         file_path = pathlib.Path(__file__)
         path = file_path.parts

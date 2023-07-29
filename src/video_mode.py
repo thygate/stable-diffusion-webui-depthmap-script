@@ -21,9 +21,11 @@ def open_path_as_images(path, maybe_depthvideo=False):
             frames.append(img.convert('RGB'))
         return 1000 / img.info['duration'], frames
     if suffix in ['.avi'] and maybe_depthvideo:
-        import imageio_ffmpeg
-        gen = imageio_ffmpeg.read_frames(path)
         try:
+            import imageio_ffmpeg
+            # Suppose there are in fact 16 bits per pixel
+            # If this is not the case, this is not a 16-bit depthvideo, so no need to process it this way
+            gen = imageio_ffmpeg.read_frames(path, pix_fmt='gray16le', bits_per_pixel=16)
             video_info = next(gen)
             if video_info['pix_fmt'] == 'gray16le':
                 width, height = video_info['size']
@@ -31,12 +33,13 @@ def open_path_as_images(path, maybe_depthvideo=False):
                 for frame in gen:
                     # Not sure if this is implemented somewhere else
                     result = np.frombuffer(frame, dtype='uint16')
-                    result.shape = (height, width * 3 // 2)  # Why does it work? I don't remotely have any idea.
+                    result.shape = (height, width)  # Why does it work? I don't remotely have any idea.
                     frames += [Image.fromarray(result)]
                     # TODO: Wrapping frames into Pillow objects is wasteful
                 return video_info['fps'], frames
         finally:
-            gen.close()
+            if 'gen' in locals():
+                gen.close()
     if suffix in ['.webm', '.mp4', '.avi']:
         from moviepy.video.io.VideoFileClip import VideoFileClip
         clip = VideoFileClip(path)
@@ -45,7 +48,7 @@ def open_path_as_images(path, maybe_depthvideo=False):
         return clip.fps, frames
     else:
         try:
-            return 1000, [Image.open(path)]
+            return 1, [Image.open(path)]
         except Exception as e:
             raise Exception(f"Probably an unsupported file format: {suffix}") from e
 
@@ -128,8 +131,8 @@ def gen_video(video, outpath, inp, custom_depthmap=None, colorvids_bitrate=None,
         first_pass_inp[go.DO_OUTPUT_DEPTH.name] = False
 
         gen_obj = core.core_generation_funnel(None, input_images, None, None, first_pass_inp)
-        predictions = [x[2] for x in list(gen_obj)]
-        input_depths = process_predicitons(predictions, smoothening)
+        input_depths = [x[2] for x in list(gen_obj)]
+        input_depths = process_predicitons(input_depths, smoothening)
     else:
         print('Using custom depthmap video')
         cdm_fps, input_depths = open_path_as_images(os.path.abspath(custom_depthmap.name), maybe_depthvideo=True)
@@ -153,4 +156,5 @@ def gen_video(video, outpath, inp, custom_depthmap=None, colorvids_bitrate=None,
         frames_to_video(fps, imgs, outpath, f"depthmap-{backbone.get_next_sequence_number()}-{basename}",
                         colorvids_bitrate)
     print('All done. Video(s) saved!')
-    return 'Video generated!' if len(gens) == 1 else 'Videos generated!'
+    return '<h3>Videos generated</h3>' if len(gens) > 1 else '<h3>Video generated</h3>' if len(gens) == 1 \
+        else '<h3>Nothing generated - please check the settings and try again</h3>'

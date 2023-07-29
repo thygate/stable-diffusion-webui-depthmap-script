@@ -44,7 +44,7 @@ def convert_to_i16(arr):
     # uint16 conversion uses round-down, therefore values should be [0; 2**16)
     numbytes = 2
     max_val = (2 ** (8 * numbytes))
-    out = np.clip(arr * max_val, 0, max_val - 0.1)  # -0.1 from above is needed to avoid overflowing
+    out = np.clip(arr * max_val + 0.0001, 0, max_val - 0.1)  # -0.1 from above is needed to avoid overflowing
     return out.astype("uint16")
 
 def convert_i16_to_rgb(image, like):
@@ -252,7 +252,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                         yield count, 'depth', Image.fromarray(img_output)
 
             if inp[go.GEN_STEREO]:
-                print("Generating stereoscopic images..")
+                # print("Generating stereoscopic image(s)..")
                 stereoimages = create_stereoimages(
                     inputimages[count], img_output,
                     inp[go.STEREO_DIVERGENCE], inp[go.STEREO_SEPARATION],

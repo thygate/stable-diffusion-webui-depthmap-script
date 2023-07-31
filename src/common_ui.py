@@ -122,7 +122,7 @@ def main_ui_panel(is_depth_tab):
                 inp += go.GEN_SIMPLE_MESH, gr.Checkbox(label="Generate simple 3D mesh")
             with gr.Column(visible=False) as mesh_options:
                 with gr.Row():
-                    gr.HTML(value="Generates fast, accurate only with ZoeDepth models and no boost, no custom maps")
+                    gr.HTML(value="Generates fast, accurate only with ZoeDepth models and no boost, no custom maps.")
                 with gr.Row():
                     inp += go.SIMPLE_MESH_OCCLUDE, gr.Checkbox(label="Remove occluded edges")
                     inp += go.SIMPLE_MESH_SPHERICAL, gr.Checkbox(label="Equirectangular projection")
@@ -133,10 +133,10 @@ def main_ui_panel(is_depth_tab):
                     inp += go.GEN_INPAINTED_MESH, gr.Checkbox(
                         label="Generate 3D inpainted mesh")
                 with gr.Column(visible=False) as inpaint_options_row_0:
-                    gr.HTML("Generation is sloooow, required for generating videos")
+                    gr.HTML("Generation is sloooow. Required for generating videos from mesh.")
                     inp += go.GEN_INPAINTED_MESH_DEMOS, gr.Checkbox(
                         label="Generate 4 demo videos with 3D inpainted mesh.")
-                    gr.HTML("More options for generating video can be found in the Generate video tab")
+                    gr.HTML("More options for generating video can be found in the Generate video tab.")
 
         with gr.Box():
             # TODO: it should be clear from the UI that there is an option of the background removal
@@ -184,12 +184,14 @@ def main_ui_panel(is_depth_tab):
         inp[go.CLIPDEPTH_FAR].change(
             fn=lambda a, b: a if b < a else b,
             inputs=[inp[go.CLIPDEPTH_FAR], inp[go.CLIPDEPTH_NEAR]],
-            outputs=[inp[go.CLIPDEPTH_NEAR]]
+            outputs=[inp[go.CLIPDEPTH_NEAR]],
+            show_progress=False
         )
         inp[go.CLIPDEPTH_NEAR].change(
             fn=lambda a, b: a if b > a else b,
             inputs=[inp[go.CLIPDEPTH_NEAR], inp[go.CLIPDEPTH_FAR]],
-            outputs=[inp[go.CLIPDEPTH_FAR]]
+            outputs=[inp[go.CLIPDEPTH_FAR]],
+            show_progress=False
         )
 
         inp.add_rule(stereo_options, 'visible-if', go.GEN_STEREO)
@@ -558,7 +560,7 @@ def run_generate(*inputs):
 
     # Deciding what mesh to display (and if)
     display_mesh_fi = None
-    if not backbone.get_opt('depthmap_script_show_3d', True):
+    if backbone.get_opt('depthmap_script_show_3d', True):
         display_mesh_fi = mesh_simple_fi
         if backbone.get_opt('depthmap_script_show_3d_inpaint', True):
             if inpainted_mesh_fi is not None and len(inpainted_mesh_fi) > 0:

@@ -125,9 +125,6 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
         if not inputdepthmaps_complete:
             print("Loading model(s) ..")
             model_holder.ensure_models(inp[go.MODEL_TYPE], device, inp[go.BOOST])
-        model = model_holder.depth_model
-        pix2pix_model = model_holder.pix2pix_model
-
         print("Computing output(s) ..")
         # iterate over input images
         for count in trange(0, len(inputimages)):
@@ -231,25 +228,17 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     yield count, 'foreground_mask', mask_image
 
             # A weird quirk: if user tries to save depthmap, whereas custom depthmap is used,
-            # depthmap will not be outputed, even if output_depth_combine is used.
+            # custom depthmap will be outputed
             if inp[go.DO_OUTPUT_DEPTH]:
-                if inputdepthmaps[count] is None:
-                    img_depth = cv2.bitwise_not(img_output) if inp[go.OUTPUT_DEPTH_INVERT] else img_output
-                    if inp[go.OUTPUT_DEPTH_COMBINE]:
-                        axis = 1 if inp[go.OUTPUT_DEPTH_COMBINE_AXIS] == 'Horizontal' else 0
-                        img_concat = Image.fromarray(np.concatenate(
-                            (inputimages[count], convert_i16_to_rgb(img_depth, inputimages[count])),
-                            axis=axis))
-                        yield count, 'concat_depth', img_concat
-                    else:
-                        yield count, 'depth', Image.fromarray(img_depth)
+                img_depth = cv2.bitwise_not(img_output) if inp[go.OUTPUT_DEPTH_INVERT] else img_output
+                if inp[go.OUTPUT_DEPTH_COMBINE]:
+                    axis = 1 if inp[go.OUTPUT_DEPTH_COMBINE_AXIS] == 'Horizontal' else 0
+                    img_concat = Image.fromarray(np.concatenate(
+                        (inputimages[count], convert_i16_to_rgb(img_depth, inputimages[count])),
+                        axis=axis))
+                    yield count, 'concat_depth', img_concat
                 else:
-                    # TODO: make it better
-                    # Yes, this seems stupid, but this is, logically, what should happen -
-                    # and this improves clarity of some other code.
-                    # But we won't return it if there is only one image.
-                    if len(inputimages) > 1:
-                        yield count, 'depth', Image.fromarray(img_output)
+                    yield count, 'depth', Image.fromarray(img_depth)
 
             if inp[go.GEN_STEREO]:
                 # print("Generating stereoscopic image(s)..")
@@ -335,17 +324,11 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
         if backbone.get_opt('depthmap_script_keepmodels', True):
             model_holder.offload()  # Swap to CPU memory
         else:
-            if 'model' in locals():
-                del model
-            if 'pix2pixmodel' in locals():
-                del pix2pix_model
             model_holder.unload_models()
-
         gc.collect()
         backbone.torch_gc()
 
     # TODO: This should not be here
-    mesh_fi = None
     if inp[go.GEN_INPAINTED_MESH]:
         try:
             mesh_fi = run_3dphoto(device, inpaint_imgs, inpaint_depths, inputnames, outpath,

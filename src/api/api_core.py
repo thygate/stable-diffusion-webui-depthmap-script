@@ -66,7 +66,7 @@ def api_gen(input_images, client_options):
     #TODO try-catch type errors here
     for key, value in client_options.items():
         if key == "model_type":
-            default_options[key] = models_to_index(value)
+            default_options[key] = models_to_index[value]
             continue
         default_options[key] = value
 

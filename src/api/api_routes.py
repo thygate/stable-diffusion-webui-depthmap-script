@@ -13,8 +13,9 @@ from typing import Dict, List
 from src.common_constants import GenerationOptions as go
 from src.misc import SCRIPT_VERSION
 from src.api.api_constants import api_options, models_to_index
-from api.api_core import api_gen, encode_to_base64
+from src.api.api_core import api_gen, encode_to_base64
 
+# gr.Blocks is needed for auto1111 extensions
 def depth_api(_: gr.Blocks, app: FastAPI):
     @app.get("/depth/version")
     async def version():

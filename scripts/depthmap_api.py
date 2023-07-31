@@ -3,11 +3,11 @@
 # Currently no API stability guarantees are provided - API may break on any new commit.
 
 from src import backbone
-from src.api import api_extension
+from api import api_routes
 
 try:
     import modules.script_callbacks as script_callbacks
     if backbone.get_cmd_opt('api', False):
-        script_callbacks.on_app_started(api_extension.depth_api)
+        script_callbacks.on_app_started(api_routes.depth_api)
 except:
     print('DepthMap API could not start')

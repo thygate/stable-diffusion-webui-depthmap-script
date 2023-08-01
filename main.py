@@ -3,7 +3,7 @@
 import argparse
 import os
 import pathlib
-
+import time
 import src.misc
 
 
@@ -29,6 +29,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--share", help="Create public link", action='store_true')
     parser.add_argument("--listen", help="Create public link", action='store_true')
+    parser.add_argument("--api", help="Start-up api", action='store_true')
     parser.add_argument("--no_chdir", help="Do not try to use the root of stable-diffusion-webui", action='store_true')
     args = parser.parse_args()
 
@@ -37,4 +38,15 @@ if __name__ == '__main__':
         maybe_chdir()
     server_name = "0.0.0.0" if args.listen else None
     import src.common_ui
-    src.common_ui.on_ui_tabs().launch(share=args.share, server_name=server_name)
+
+    ui_block = src.common_ui.on_ui_tabs()
+    
+    if not args.api:
+        ui_block.launch(share=args.share, server_name=server_name)
+    else:
+        app, _, _ = ui_block.launch(share=args.share, server_name=server_name, prevent_thread_lock=True)
+        print(f"starting depth api")
+        from src.api.api_standalone import init_api
+        init_api(ui_block, app)
+        while True:
+            time.sleep(0.1)

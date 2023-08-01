@@ -99,7 +99,8 @@ except:
     launched_at = int(datetime.now().timestamp())
     backbone_current_seq_number = 0
 
-    def get_next_sequence_number(outpath=None, basename=None):
+    # Make sure to preserve the function signature when calling!
+    def get_next_sequence_number(outpath, basename):
         global backbone_current_seq_number
         backbone_current_seq_number += 1
         return int(f"{launched_at}{backbone_current_seq_number:04}")

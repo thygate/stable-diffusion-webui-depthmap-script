@@ -153,7 +153,7 @@ def gen_video(video, outpath, inp, custom_depthmap=None, colorvids_bitrate=None,
 
         imgs = [x[2] for x in img_results if x[1] == gen]
         basename = f'{gen}_video'
-        frames_to_video(fps, imgs, outpath, f"depthmap-{backbone.get_next_sequence_number()}-{basename}",
+        frames_to_video(fps, imgs, outpath, f"depthmap-{backbone.get_next_sequence_number(outpath, basename)}-{basename}",
                         colorvids_bitrate)
     print('All done. Video(s) saved!')
     return '<h3>Videos generated</h3>' if len(gens) > 1 else '<h3>Video generated</h3>' if len(gens) == 1 \

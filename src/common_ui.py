@@ -66,6 +66,8 @@ def main_ui_panel(is_depth_tab):
             inp -= 'depthmap_gen_row_3', cur_option_root
             with gr.Row():
                 inp += go.CLIPDEPTH, gr.Checkbox(label="Clip and renormalize DepthMap")
+                inp += go.CLIPDEPTH_MODE,\
+                    gr.Dropdown(label="Mode", choices=['Range', 'Outliers'], type="value", visible=False)
             with gr.Row(visible=False) as clip_options_row_1:
                 inp += go.CLIPDEPTH_FAR, gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip')
                 inp += go.CLIPDEPTH_NEAR, gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip')
@@ -179,6 +181,7 @@ def main_ui_panel(is_depth_tab):
         inp.add_rule(options_depend_on_output_depth_1, 'visible-if', go.DO_OUTPUT_DEPTH)
         inp.add_rule(go.OUTPUT_DEPTH_INVERT, 'visible-if', go.DO_OUTPUT_DEPTH)
         inp.add_rule(go.OUTPUT_DEPTH_COMBINE_AXIS, 'visible-if', go.OUTPUT_DEPTH_COMBINE)
+        inp.add_rule(go.CLIPDEPTH_MODE, 'visible-if', go.CLIPDEPTH)
         inp.add_rule(clip_options_row_1, 'visible-if', go.CLIPDEPTH)
 
         inp[go.CLIPDEPTH_FAR].change(

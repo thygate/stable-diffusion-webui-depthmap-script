@@ -190,8 +190,12 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                     if inp[go.DO_OUTPUT_DEPTH_PREDICTION]:
                         yield count, 'depth_prediction', np.copy(out)
                     if inp[go.CLIPDEPTH]:
-                        out = (out - out.min()) / (out.max() - out.min())  # normalize to [0; 1]
-                        out = np.clip(out, inp[go.CLIPDEPTH_FAR], inp[go.CLIPDEPTH_NEAR])
+                        if inp[go.CLIPDEPTH_MODE] == 'Range':
+                            out = (out - out.min()) / (out.max() - out.min())  # normalize to [0; 1]
+                            out = np.clip(out, inp[go.CLIPDEPTH_FAR], inp[go.CLIPDEPTH_NEAR])
+                        elif inp[go.CLIPDEPTH_MODE] == 'Outliers':
+                            fb, nb = np.percentile(out, [inp[go.CLIPDEPTH_FAR] * 100.0, inp[go.CLIPDEPTH_NEAR] * 100.0])
+                            out = np.clip(out, fb, nb)
                     out = (out - out.min()) / (out.max() - out.min())  # normalize to [0; 1]
                 else:
                     # Regretfully, the depthmap is broken and will be replaced with a black image

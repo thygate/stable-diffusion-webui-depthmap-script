@@ -29,6 +29,7 @@ class GenerationOptions(enum.Enum):
     DO_OUTPUT_DEPTH_PREDICTION = False  # Hidden, do not use, subject to change
 
     CLIPDEPTH = False
+    CLIPDEPTH_MODE = "Range"
     CLIPDEPTH_FAR = 0.0
     CLIPDEPTH_NEAR = 1.0
 

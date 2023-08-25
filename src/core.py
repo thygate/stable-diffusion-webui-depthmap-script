@@ -450,6 +450,9 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, gen_inpainted_m
 
             # rgb input
             img = np.asarray(img_rgb[count])
+            if len(img.shape) > 2 and img.shape[2] == 4:
+                # convert the image from RGBA2RGB
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
             # run sparse bilateral filter
             config['sparse_iter'] = 5

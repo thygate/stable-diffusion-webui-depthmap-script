@@ -1,4 +1,6 @@
 ## Changelog
+### 0.4.4
+ * Compatibility with stable-diffusion-webui 1.6.0
 ### 0.4.3 video processing tab
  * Added an option to process videos directly from a video file. This leads to better results than batch-processing individual frames of a video. Allows generating depthmap videos, that can be used in further generations as custom depthmap videos.
  * UI improvements.

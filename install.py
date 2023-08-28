@@ -22,8 +22,8 @@ def ensure(module_name, min_version=None):
     msg = f'{requirement} requirement for depthmap script'
     launch.run_pip(cmd, msg)
 
-if not launch.is_installed("timm"): #0.6.7  #  For midas
-    launch.run_pip('install --force-reinstall "timm==0.6.12"', "timm requirement for depthmap script")
+
+ensure('timm', '0.9.2')  # For midas, specified just in case
 
 ensure('matplotlib')
 

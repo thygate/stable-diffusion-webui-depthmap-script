@@ -260,7 +260,7 @@ custom_css = """
 def on_ui_tabs():
     inp = GradioComponentBundle()
     with gr.Blocks(analytics_enabled=False, title="DepthMap", css=custom_css) as depthmap_interface:
-        with gr.Row().style(equal_height=False):
+        with gr.Row(equal_height=False):
             with gr.Column(variant='panel'):
                 inp += 'depthmap_mode', gr.HTML(visible=False, value='0')
                 with gr.Tabs():
@@ -299,7 +299,7 @@ def on_ui_tabs():
                     with gr.TabItem('Depth Output'):
                         with gr.Group():
                             result_images = gr.Gallery(label='Output', show_label=False,
-                                                       elem_id=f"depthmap_gallery").style(grid=4)
+                                                       elem_id=f"depthmap_gallery", columns=4)
                         with gr.Column():
                             html_info = gr.HTML()
                         folder_symbol = '\U0001f4c2'  # 📂

@@ -4,7 +4,7 @@
 
 # pip install -r requirements.txt
 torch
-gradio>=3.32.0,<4.0  # User UI
+gradio>=3.38.0,<4.0  # User UI
 timm~=0.9.2  # For midas
 matplotlib
 trimesh  # For creating simple meshes

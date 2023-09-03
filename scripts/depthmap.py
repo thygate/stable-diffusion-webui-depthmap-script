@@ -36,6 +36,7 @@ class Script(scripts.Script):
         # sd process
         processed = processing.process_images(p)
         processed.sampler = p.sampler  # for create_infotext
+        processed.tiling = p.tiling  # for create_infotext
 
         inputimages = []
         for count in range(0, len(processed.images)):

@@ -340,7 +340,7 @@ class MidasCore(nn.Module):
         print("img_size", img_size)
         # TODO: use locally-bundled midas
         # The repo should be changed back to isl-org/MiDaS once this MR lands
-        midas = torch.hub.load("AyaanShah2204/MiDaS", midas_model_type,
+        midas = torch.hub.load("semjon00/MiDaS", midas_model_type,
                                pretrained=use_pretrained_midas, force_reload=force_reload)
         kwargs.update({'keep_aspect_ratio': force_keep_ar})
         midas_core = MidasCore(midas, trainable=train_midas, fetch_features=fetch_features,

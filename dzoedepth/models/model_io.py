@@ -46,7 +46,7 @@ def load_state_dict(model, state_dict):
 
         state[k] = v
 
-    model.load_state_dict(state)
+    model.load_state_dict(state, strict=False)
     print("Loaded successfully")
     return model
 

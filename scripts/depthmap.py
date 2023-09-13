@@ -97,3 +97,14 @@ def on_ui_settings():
 from modules import script_callbacks
 script_callbacks.on_ui_settings(on_ui_settings)
 script_callbacks.on_ui_tabs(lambda: [(common_ui.on_ui_tabs(), "Depth", "depthmap_interface")])
+
+# API script
+from src.api import api_routes
+
+try:
+    import modules.script_callbacks as script_callbacks
+    if backbone.get_cmd_opt('api', False):
+        script_callbacks.on_app_started(api_routes.depth_api)
+except:
+    print('DepthMap API could not start')
+

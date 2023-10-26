@@ -1,3 +1,4 @@
+import random
 from pathlib import Path
 
 import PIL.Image
@@ -273,8 +274,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
             if inp[go.GEN_SIMPLE_MESH]:
                 print(f"\nGenerating (occluded) mesh ..")
                 basename = 'depthmap'
-                meshsimple_fi = get_uniquefn(outpath, basename, 'obj')
-                meshsimple_fi = os.path.join(outpath, meshsimple_fi + '_simple.obj')
+                meshsimple_fi = get_uniquefn(outpath, basename, 'obj', 'simple')
 
                 depthi = raw_prediction if raw_prediction is not None else out
                 depthi_min, depthi_max = depthi.min(), depthi.max()
@@ -346,18 +346,17 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     print("All done.\n")
 
 
-def get_uniquefn(outpath, basename, ext):
+def get_uniquefn(outpath, basename, ext, suffix=''):
     basecount = backbone.get_next_sequence_number(outpath, basename)
-    if basecount > 0: basecount = basecount - 1
-    fullfn = None
+    if basecount > 0:
+        basecount -= 1
+    if suffix != '':
+        suffix = f'-{suffix}'  # Dash is important for selecting unique filenames (see get_next_sequence_number)
     for i in range(500):
-        fn = f"{basecount + i:05}" if basename == '' else f"{basename}-{basecount + i:04}"
-        fullfn = os.path.join(outpath, f"{fn}.{ext}")
+        fullfn = os.path.join(outpath, f"{basename}-{basecount + i:04}{suffix}.{ext}")
         if not os.path.exists(fullfn):
-            break
-    basename = Path(fullfn).stem
-
-    return basename
+            return fullfn
+    return f"{basename}-99999{suffix}.{ext}"  # Failback, should never be executed
 
 
 def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, gen_inpainted_mesh_demos, vid_ssaa, vid_format):
@@ -428,8 +427,7 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, gen_inpainted_m
                     p = Path(inputnames[count])
                     basename = p.stem
 
-            basename = get_uniquefn(outpath, basename, 'obj')
-            mesh_fi = os.path.join(outpath, basename + '.obj')
+            mesh_fi = get_uniquefn(outpath, basename, 'obj')
 
             print(f"\nGenerating inpainted mesh .. (go make some coffee) ..")
 

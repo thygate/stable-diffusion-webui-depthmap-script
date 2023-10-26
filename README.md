@@ -82,7 +82,8 @@ If you often get out of memory errors when computing a depthmap on GPU while usi
     - Running this program on Colab is not officially supported, but it may work. Please look for more suitable ways of running this. If you still decide to try, standalone installation may be easier to manage.
  * `What other depth-related projects could I check out?`
     - Several [scripts](https://github.com/Extraltodeus?tab=repositories) by [@Extraltodeus](https://github.com/Extraltodeus) using depth maps.
-    - geo-11 and [Depth3D](https://github.com/BlueSkyDefender/Depth3D) for playing existing games in 3D.
+    - geo-11, [Depth3D](https://github.com/BlueSkyDefender/Depth3D) and [Geo3D](https://github.com/Flugan/Geo3D-Installer) for playing existing games in 3D.
+    - (Feel free to suggest more projects in the discussions!)
  * `How can I know what changed in the new version of the script?`
     - You can see the git history log or refer to the `CHANGELOG.md` file.
 

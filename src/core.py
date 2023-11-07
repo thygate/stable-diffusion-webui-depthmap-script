@@ -1,7 +1,4 @@
-import random
 from pathlib import Path
-
-import PIL.Image
 from PIL import Image
 
 try:
@@ -16,7 +13,6 @@ import numpy as np
 import copy
 import platform
 import math
-import traceback
 
 # Our code
 from src.misc import *

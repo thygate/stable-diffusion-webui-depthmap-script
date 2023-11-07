@@ -87,7 +87,10 @@ If you often get out of memory errors when computing a depthmap on GPU while usi
  * `How can I know what changed in the new version of the script?`
     - You can see the git history log or refer to the `CHANGELOG.md` file.
 
-### Feel free to comment and share in the discussions! Submitting issues and merge requests is heavilly appreciated!
+## Help wanted!
+Developers wanted! Please help us fix the bugs and add new features by creating MRs.
+All help is heavily appreciated.
+Feel free to comment and share in the discussions and submit issues.
 
 ## Acknowledgements
 

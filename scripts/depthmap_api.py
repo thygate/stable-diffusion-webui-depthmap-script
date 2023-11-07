@@ -9,7 +9,7 @@ from PIL import Image
 
 import gradio as gr
 
-from modules.api.models import List, Dict
+from typing import Dict, List
 from modules.api import api
 
 from src.core import core_generation_funnel

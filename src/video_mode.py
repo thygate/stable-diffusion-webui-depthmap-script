@@ -13,7 +13,7 @@ from src.common_constants import GenerationOptions as go
 def open_path_as_images(path, maybe_depthvideo=False):
     """Takes the filepath, returns (fps, frames). Every frame is a Pillow Image object"""
     suffix = pathlib.Path(path).suffix
-    if suffix == '.gif':
+    if suffix.lower() == '.gif':
         frames = []
         img = Image.open(path)
         for i in range(img.n_frames):
@@ -32,10 +32,10 @@ def open_path_as_images(path, maybe_depthvideo=False):
                 # Convert the NumPy array to a Pillow Image
                 image = Image.fromarray(numpy_frame)
                 frames.append(image)
-        fps = container.streams.video[0].average_rate
+        fps = floa(container.streams.video[0].average_rate)
         container.close()
         return fps, frames
-    if suffix.lower in ['.avi'] and maybe_depthvideo:
+    if suffix.lower() in ['.avi'] and maybe_depthvideo:
         try:
             import imageio_ffmpeg
             # Suppose there are in fact 16 bits per pixel
@@ -55,7 +55,7 @@ def open_path_as_images(path, maybe_depthvideo=False):
         finally:
             if 'gen' in locals():
                 gen.close()
-    if suffix.lower in ['.webm', '.mp4', '.avi']:
+    if suffix.lower() in ['.webm', '.mp4', '.avi']:
         from moviepy.video.io.VideoFileClip import VideoFileClip
         clip = VideoFileClip(path)
         frames = [Image.fromarray(x) for x in list(clip.iter_frames())]

@@ -20,7 +20,22 @@ def open_path_as_images(path, maybe_depthvideo=False):
             img.seek(i)
             frames.append(img.convert('RGB'))
         return 1000 / img.info['duration'], frames
-    if suffix in ['.avi'] and maybe_depthvideo:
+    if suffix.lower() == '.mts':
+        import imageio_ffmpeg
+        import av
+        container = av.open(path)
+        frames = []
+        for packet in container.demux(video=0):
+            for frame in packet.decode():
+                # Convert the frame to a NumPy array
+                numpy_frame = frame.to_ndarray(format='rgb24')
+                # Convert the NumPy array to a Pillow Image
+                image = Image.fromarray(numpy_frame)
+                frames.append(image)
+        fps = container.streams.video[0].average_rate
+        container.close()
+        return fps, frames
+    if suffix.lower in ['.avi'] and maybe_depthvideo:
         try:
             import imageio_ffmpeg
             # Suppose there are in fact 16 bits per pixel
@@ -40,7 +55,7 @@ def open_path_as_images(path, maybe_depthvideo=False):
         finally:
             if 'gen' in locals():
                 gen.close()
-    if suffix in ['.webm', '.mp4', '.avi']:
+    if suffix.lower in ['.webm', '.mp4', '.avi']:
         from moviepy.video.io.VideoFileClip import VideoFileClip
         clip = VideoFileClip(path)
         frames = [Image.fromarray(x) for x in list(clip.iter_frames())]

@@ -32,7 +32,7 @@ def open_path_as_images(path, maybe_depthvideo=False):
                 # Convert the NumPy array to a Pillow Image
                 image = Image.fromarray(numpy_frame)
                 frames.append(image)
-        fps = floa(container.streams.video[0].average_rate)
+        fps = float(container.streams.video[0].average_rate)
         container.close()
         return fps, frames
     if suffix.lower() in ['.avi'] and maybe_depthvideo:

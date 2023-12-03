@@ -578,9 +578,8 @@ def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border,
                                                           fnExt=vid_format)
     return fn_saved
 
-
-# called from gen vid tab button
-def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_border, dolly, vid_format, vid_ssaa):
+def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_border, dolly, vid_format, vid_ssaa,
+                  outpath=None, basename=None):
     if len(fn_mesh) == 0 or not os.path.exists(fn_mesh):
         raise Exception("Could not open mesh.")
 
@@ -608,20 +607,24 @@ def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_bord
         raise Exception("Crop Border requires 4 elements.")
     crop_border = [float(borders[0]), float(borders[1]), float(borders[2]), float(borders[3])]
 
-    # output path and filename mess ..
-    basename = Path(fn_mesh).stem
-    outpath = backbone.get_outpath()
-    # unique filename
-    basecount = backbone.get_next_sequence_number(outpath, basename)
-    if basecount > 0: basecount = basecount - 1
-    fullfn = None
-    for i in range(500):
-        fn = f"{basecount + i:05}" if basename == '' else f"{basename}-{basecount + i:04}"
-        fullfn = os.path.join(outpath, f"{fn}_." + vid_format)
-        if not os.path.exists(fullfn):
-            break
-    basename = Path(fullfn).stem
-    basename = basename[:-1]
+    if not outpath:
+        outpath = backbone.get_outpath()
+
+    if not basename:
+        # output path and filename mess ..
+        basename = Path(fn_mesh).stem
+        
+        # unique filename
+        basecount = backbone.get_next_sequence_number(outpath, basename)
+        if basecount > 0: basecount = basecount - 1
+        fullfn = None
+        for i in range(500):
+            fn = f"{basecount + i:05}" if basename == '' else f"{basename}-{basecount + i:04}"
+            fullfn = os.path.join(outpath, f"{fn}_." + vid_format)
+            if not os.path.exists(fullfn):
+                break
+        basename = Path(fullfn).stem
+        basename = basename[:-1]
 
     print("Loading mesh ..")
 
@@ -629,7 +632,6 @@ def run_makevideo(fn_mesh, vid_numframes, vid_fps, vid_traj, vid_shift, vid_bord
                                   y_shift_range, z_shift_range, [''], dolly, vid_format, vid_ssaa)
 
     return fn_saved[-1], fn_saved[-1], ''
-
 
 def unload_models():
     model_holder.unload_models()

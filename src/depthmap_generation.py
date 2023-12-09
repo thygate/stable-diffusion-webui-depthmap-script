@@ -74,6 +74,8 @@ class ModelHolder:
         model_dir = "./models/midas"
         if model_type == 0:
             model_dir = "./models/leres"
+        if model_type == 10:
+            "./models/marigold"
         # create paths to model if not present
         os.makedirs(model_dir, exist_ok=True)
         os.makedirs('./models/pix2pix', exist_ok=True)
@@ -194,6 +196,12 @@ class ModelHolder:
             conf = get_config("zoedepth_nk", "infer")
             model = build_model(conf)
 
+        elif model_type == 10:  # Marigold v1
+            # TODO: pass more parameters
+            model_path = f"{model_dir}/marigold_v1/"
+            from repositories.Marigold.src.model.marigold_pipeline import MarigoldPipeline
+            model = MarigoldPipeline.from_pretrained(model_path)
+
         model.eval()  # prepare for evaluation
         # optimize
         if device == torch.device("cuda") and model_type in [0, 1, 2, 3, 4, 5, 6]:
@@ -288,10 +296,12 @@ class ModelHolder:
                 raw_prediction = estimateleres(img, self.depth_model, net_width, net_height)
             elif self.depth_model_type in [7, 8, 9]:
                 raw_prediction = estimatezoedepth(input, self.depth_model, net_width, net_height)
-            else:
+            elif self.depth_model_type in [1, 2, 3, 4, 5, 6]:
                 raw_prediction = estimatemidas(img, self.depth_model, net_width, net_height,
                                                self.resize_mode, self.normalization, self.no_half,
                                                self.precision == "autocast")
+            elif self.depth_model_type == 10:
+                raw_prediction = estimatemarigold(img, self.depth_model, net_width, net_height, self.device)
         else:
             raw_prediction = estimateboost(img, self.depth_model, self.depth_model_type, self.pix2pix_model,
                                            self.boost_whole_size_threshold)
@@ -394,6 +404,52 @@ def estimatemidas(img, model, w, h, resize_mode, normalization, no_half, precisi
 
     return prediction
 
+
+def estimatemarigold(image, model, w, h, device):
+    from repositories.Marigold.src.model.marigold_pipeline import MarigoldPipeline
+    from repositories.Marigold.src.util.ensemble import ensemble_depths
+    from repositories.Marigold.src.util.image_util import chw2hwc, colorize_depth_maps, resize_max_res
+    from repositories.Marigold.src.util.seed_all import seed_all
+
+    n_repeat = 10
+    denoise_steps = 10
+    regularizer_strength = 0.02
+    max_iter = 5
+    tol = 1e-3
+    reduction_method = "median"
+    merging_max_res = None
+
+    # From Marigold repository run.py
+    with torch.no_grad():
+        rgb = np.transpose(image, (2, 0, 1))  # [H, W, rgb] -> [rgb, H, W]
+        rgb_norm = rgb / 255.0
+        rgb_norm = torch.from_numpy(rgb_norm).unsqueeze(0).float()
+        rgb_norm = rgb_norm.to(device)
+
+        model.unet.eval()
+        depth_pred_ls = []
+        for i_rep in range(n_repeat):
+            depth_pred_raw = model.forward(
+                rgb_norm, num_inference_steps=denoise_steps, init_depth_latent=None
+            )
+            # clip prediction
+            depth_pred_raw = torch.clip(depth_pred_raw, -1.0, 1.0)
+            depth_pred_ls.append(depth_pred_raw.detach().cpu().numpy().copy())
+
+        depth_preds = np.concatenate(depth_pred_ls, axis=0).squeeze()
+        if n_repeat > 1:
+            depth_pred, pred_uncert = ensemble_depths(
+                depth_preds,
+                regularizer_strength=regularizer_strength,
+                max_iter=max_iter,
+                tol=tol,
+                reduction=reduction_method,
+                max_res=merging_max_res,
+                device=device,
+            )
+        else:
+            depth_pred = depth_preds
+        return depth_pred
 
 class ImageandPatchs:
     def __init__(self, root_dir, name, patchsinfo, rgb_image, scale=1):

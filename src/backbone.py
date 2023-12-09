@@ -4,6 +4,7 @@
 import pathlib
 from datetime import datetime
 import enum
+import sys
 
 
 class BackboneType(enum.Enum):
@@ -34,12 +35,13 @@ try:
 
     def gather_ops():
         """Parameters for depthmap generation"""
-        from modules.shared import cmd_opts
         ops = {}
-        if get_opt('depthmap_script_boost_rmax', None) is not None:
-            ops['boost_whole_size_threshold'] = get_opt('depthmap_script_boost_rmax', None)
-        ops['precision'] = cmd_opts.precision
-        ops['no_half'] = cmd_opts.no_half
+        for s in ['boost_rmax', 'precision', 'no_half', 'marigold_ensembles', 'marigold_steps']:
+            c = get_opt('depthmap_script_' + s, None)
+            if c is None:
+                c = get_cmd_opt(s, None)
+            if c is not None:
+                ops[s] = c
         return ops
 
 
@@ -117,7 +119,12 @@ except:
 
     def get_cmd_opt(name, default): return default  # Configuring is not supported
 
-    def gather_ops(): return {}  # Configuring is not supported
+    def gather_ops():  # Configuring is not supported
+        return {'boost_rmax': 1600,
+                'precision': 'autocast',
+                'no_half': False,
+                'marigold_ensembles': 5,
+                'marigold_steps': 12}
 
     def get_outpath(): return str(pathlib.Path('.', 'outputs'))
 

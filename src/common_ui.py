@@ -37,7 +37,8 @@ def main_ui_panel(is_depth_tab):
                                                       'dpt_beit_large_384 (midas 3.1)', 'dpt_large_384 (midas 3.0)',
                                                       'dpt_hybrid_384 (midas 3.0)',
                                                       'midas_v21', 'midas_v21_small',
-                                                      'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk'],
+                                                      'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk',
+                                                      'Marigold v1'],
                                              type="index")
         with gr.Box() as cur_option_root:
             inp -= 'depthmap_gen_row_1', cur_option_root

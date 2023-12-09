@@ -75,6 +75,7 @@ def create_stereoimages(original_image, depthmap, divergence, separation=0.0, mo
 
 
 def apply_stereo_divergence(original_image, depth, divergence, separation, stereo_offset_exponent, fill_technique):
+    assert original_image.shape[:2] == depth.shape, 'Depthmap and the image must have the same size'
     depth_min = depth.min()
     depth_max = depth.max()
     normalized_depth = (depth - depth_min) / (depth_max - depth_min)

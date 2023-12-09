@@ -21,6 +21,8 @@ from dzoedepth.utils.config import get_config
 from lib.multi_depth_model_woauxi import RelDepthModel
 from lib.net_tools import strip_prefix_if_present
 from pix2pix.models.pix2pix4depth_model import Pix2Pix4DepthModel
+# Marigold
+from marigold.marigold import MarigoldPipeline
 # pix2pix/merge net imports
 from pix2pix.options.test_options import TestOptions
 
@@ -42,18 +44,11 @@ class ModelHolder:
         self.resize_mode = None
         self.normalization = None
 
-        # Settings (initialized to sensible values, should be updated)
-        self.boost_whole_size_threshold = 1600  # R_max from the paper by default
-        self.no_half = False
-        self.precision = "autocast"
 
-    def update_settings(self, boost_whole_size_threshold=None, no_half=None, precision=None):
-        if boost_whole_size_threshold is not None:
-            self.boost_whole_size_threshold = boost_whole_size_threshold
-        if no_half is not None:
-            self.no_half = no_half
-        if precision is not None:
-            self.precision = precision
+    def update_settings(self, **kvargs):
+        # Opens the pandora box
+        for k, v in kvargs.items():
+            setattr(self, k, v)
 
 
     def ensure_models(self, model_type, device: torch.device, boost: bool):
@@ -71,9 +66,11 @@ class ModelHolder:
         """Ensure that the depth model is loaded"""
 
         # model path and name
+        # ZoeDepth and Marigold do not use this
         model_dir = "./models/midas"
         if model_type == 0:
             model_dir = "./models/leres"
+
         # create paths to model if not present
         os.makedirs(model_dir, exist_ok=True)
         os.makedirs('./models/pix2pix', exist_ok=True)
@@ -194,12 +191,26 @@ class ModelHolder:
             conf = get_config("zoedepth_nk", "infer")
             model = build_model(conf)
 
-        model.eval()  # prepare for evaluation
+        elif model_type == 10:  # Marigold v1
+            model_path = "Bingxin/Marigold"
+            print(model_path)
+            dtype = torch.float32 if self.no_half else torch.float16
+            model = MarigoldPipeline.from_pretrained(model_path, torch_dtype=dtype)
+            try:
+                import xformers
+                model.enable_xformers_memory_efficient_attention()
+            except:
+                pass  # run without xformers
+
+        if model_type in range(0, 10):
+            model.eval()  # prepare for evaluation
         # optimize
-        if device == torch.device("cuda") and model_type in [0, 1, 2, 3, 4, 5, 6]:
-            model = model.to(memory_format=torch.channels_last)  # TODO: weird
-            if not self.no_half and model_type != 0 and not boost:  # TODO: zoedepth, too?
-                model = model.half()
+        if device == torch.device("cuda"):
+            if model_type in [0, 1, 2, 3, 4, 5, 6]:
+                model = model.to(memory_format=torch.channels_last)  # TODO: weird
+            if not self.no_half:
+                if model_type in [1, 2, 3, 4, 5, 6] and not boost:  # TODO: zoedepth, too?
+                    model = model.half()
         model.to(device)  # to correct device
 
         self.depth_model = model
@@ -238,7 +249,8 @@ class ModelHolder:
             6: [256, 256],
             7: [384, 512],
             8: [384, 768],
-            9: [384, 512]
+            9: [384, 512],
+            10: [768, 768]
         }
         if model_type in sizes:
             return sizes[model_type]
@@ -288,14 +300,17 @@ class ModelHolder:
                 raw_prediction = estimateleres(img, self.depth_model, net_width, net_height)
             elif self.depth_model_type in [7, 8, 9]:
                 raw_prediction = estimatezoedepth(input, self.depth_model, net_width, net_height)
-            else:
+            elif self.depth_model_type in [1, 2, 3, 4, 5, 6]:
                 raw_prediction = estimatemidas(img, self.depth_model, net_width, net_height,
                                                self.resize_mode, self.normalization, self.no_half,
                                                self.precision == "autocast")
+            elif self.depth_model_type == 10:
+                raw_prediction = estimatemarigold(img, self.depth_model, net_width, net_height,
+                                                  self.marigold_ensembles, self.marigold_steps)
         else:
             raw_prediction = estimateboost(img, self.depth_model, self.depth_model_type, self.pix2pix_model,
-                                           self.boost_whole_size_threshold)
-        raw_prediction_invert = self.depth_model_type in [0, 7, 8, 9]
+                                           self.boost_rmax)
+        raw_prediction_invert = self.depth_model_type in [0, 7, 8, 9, 10]
         return raw_prediction, raw_prediction_invert
 
 
@@ -393,6 +408,19 @@ def estimatemidas(img, model, w, h, resize_mode, normalization, no_half, precisi
         )
 
     return prediction
+
+
+# TODO: correct values for BOOST
+# TODO: "h" is not used
+def estimatemarigold(image, model, w, h, marigold_ensembles=5, marigold_steps=12):
+    # This hideous thing should be re-implemented once there is support from the upstream.
+    img = cv2.cvtColor((image * 255.0001).astype('uint8'), cv2.COLOR_BGR2RGB)
+    img = Image.fromarray(img)
+    with torch.no_grad():
+        pipe_out = model(img, processing_res=w, show_progress_bar=False,
+                         ensemble_size=marigold_ensembles, denoising_steps=marigold_steps,
+                         match_input_res=False)
+        return cv2.resize(pipe_out.depth_np, (image.shape[:2][::-1]), interpolation=cv2.INTER_CUBIC)
 
 
 class ImageandPatchs:
@@ -616,7 +644,7 @@ def estimateboost(img, model, model_type, pix2pixmodel, whole_size_threshold):
     elif model_type == 1:  # dpt_beit_large_512
         net_receptive_field_size = 512
         patch_netsize = 2 * net_receptive_field_size
-    else:  # other midas
+    else:  # other midas  # TODO Marigold support
         net_receptive_field_size = 384
         patch_netsize = 2 * net_receptive_field_size
 
@@ -886,6 +914,8 @@ def doubleestimate(img, size1, size2, pix2pixsize, model, net_type, pix2pixmodel
 def singleestimate(img, msize, model, net_type):
     if net_type == 0:
         return estimateleres(img, model, msize, msize)
+    elif net_type == 10:
+        return estimatemarigold(img, model, msize, msize)
     elif net_type >= 7:
         # np to PIL
         return estimatezoedepth(Image.fromarray(np.uint8(img * 255)).convert('RGB'), model, msize, msize)

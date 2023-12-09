@@ -17,3 +17,6 @@ https://github.com/aim-uofa/AdelaiDepth/tree/main/LeReS/Minist_Test/lib/
 
 pix2pix
 https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/
+
+Marigold
+https://github.com/prs-eth/Marigold/tree/22437a

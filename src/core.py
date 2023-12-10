@@ -506,7 +506,10 @@ def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border,
     # read ply
     global video_mesh_data, video_mesh_fn
     if video_mesh_fn is None or video_mesh_fn != mesh_fi:
-        del video_mesh_data
+        try:
+            del video_mesh_data
+        except:
+            print("del video_mesh_data failed")
         video_mesh_fn = mesh_fi
         video_mesh_data = read_mesh(mesh_fi)
 

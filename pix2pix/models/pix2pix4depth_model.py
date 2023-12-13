@@ -94,8 +94,8 @@ class Pix2Pix4DepthModel(BaseModel):
         self.real_A = torch.cat((self.outer, self.inner), 1)
 
     def set_input(self, outer, inner):
-        inner = torch.from_numpy(inner).unsqueeze(0).unsqueeze(0)
-        outer = torch.from_numpy(outer).unsqueeze(0).unsqueeze(0)
+        inner = torch.from_numpy(inner).unsqueeze(0).unsqueeze(0).float()
+        outer = torch.from_numpy(outer).unsqueeze(0).unsqueeze(0).float()
 
         inner = (inner - torch.min(inner))/(torch.max(inner)-torch.min(inner))
         outer = (outer - torch.min(outer))/(torch.max(outer)-torch.min(outer))

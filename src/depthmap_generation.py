@@ -422,13 +422,12 @@ def estimatemarigold(image, model, w, h):
 
     # From Marigold repository run.py
     with torch.no_grad():
-        image = (image * 255).astype(np.uint8)
         if resize_to_max_res is not None:
+            image = (image * 255).astype(np.uint8)
             image = np.asarray(resize_max_res(
                 Image.fromarray(image), max_edge_resolution=resize_to_max_res
-            ))
-        rgb = np.transpose(image, (2, 0, 1))  # [H, W, rgb] -> [rgb, H, W]
-        rgb_norm = rgb / 255.0
+            )) / 255.0
+        rgb_norm = np.transpose(image, (2, 0, 1))  # [H, W, rgb] -> [rgb, H, W]
         rgb_norm = torch.from_numpy(rgb_norm).unsqueeze(0).float()
         rgb_norm = rgb_norm.to(depthmap_device)
 

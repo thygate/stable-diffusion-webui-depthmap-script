@@ -53,4 +53,4 @@ if platform.system() == 'Windows':
 if platform.system() == 'Darwin':
     ensure('pyqt6')
 
-launch.git_clone("https://github.com/prs-eth/Marigold", "repositories/Marigold", "Marigold", "cc78ff3")
+launch.git_clone("https://github.com/prs-eth/Marigold", "Marigold", "Marigold", "cc78ff3")

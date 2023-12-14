@@ -74,8 +74,6 @@ class ModelHolder:
         model_dir = "./models/midas"
         if model_type == 0:
             model_dir = "./models/leres"
-        if model_type == 10:
-            "./models/marigold"
         # create paths to model if not present
         os.makedirs(model_dir, exist_ok=True)
         os.makedirs('./models/pix2pix', exist_ok=True)
@@ -199,7 +197,7 @@ class ModelHolder:
         elif model_type == 10:  # Marigold v1
             model_path = "Bingxin/Marigold"
             print(model_path)
-            from repositories.Marigold.src.model.marigold_pipeline import MarigoldPipeline
+            from Marigold.src.model.marigold_pipeline import MarigoldPipeline
             model = MarigoldPipeline.from_pretrained(model_path)
 
         model.eval()  # prepare for evaluation
@@ -406,10 +404,10 @@ def estimatemidas(img, model, w, h, resize_mode, normalization, no_half, precisi
 
 
 def estimatemarigold(image, model, w, h):
-    from repositories.Marigold.src.model.marigold_pipeline import MarigoldPipeline
-    from repositories.Marigold.src.util.ensemble import ensemble_depths
-    from repositories.Marigold.src.util.image_util import chw2hwc, colorize_depth_maps, resize_max_res
-    from repositories.Marigold.src.util.seed_all import seed_all
+    from Marigold.src.model.marigold_pipeline import MarigoldPipeline
+    from Marigold.src.util.ensemble import ensemble_depths
+    from Marigold.src.util.image_util import chw2hwc, colorize_depth_maps, resize_max_res
+    from Marigold.src.util.seed_all import seed_all
 
     n_repeat = 10
     denoise_steps = 10

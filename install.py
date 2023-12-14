@@ -38,6 +38,11 @@ if not launch.is_installed("moviepy"):
     launch.run_pip('install "moviepy==1.0.2"', "moviepy requirement for depthmap script")
 ensure('transforms3d', '0.4.1')
 
+ensure('transformers', '4.32.1')
+ensure('xformers', '0.0.21')
+ensure('accelerate', '0.22.0')
+ensure('diffusers', '0.20.1')
+
 ensure('imageio')  # 2.4.1
 try:  # Dirty hack to not reinstall every time
     importlib_metadata.version('imageio-ffmpeg')

@@ -198,3 +198,16 @@ ZoeDepth :
   copyright = {arXiv.org perpetual, non-exclusive license}
 }
 ```
+
+Marigold - Repurposing Diffusion-Based Image Generators for Monocular Depth Estimation:
+
+```
+@misc{ke2023repurposing,
+      title={Repurposing Diffusion-Based Image Generators for Monocular Depth Estimation}, 
+      author={Bingxin Ke and Anton Obukhov and Shengyu Huang and Nando Metzger and Rodrigo Caye Daudt and Konrad Schindler},
+      year={2023},
+      eprint={2312.02145},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
+```

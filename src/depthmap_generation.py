@@ -305,7 +305,7 @@ class ModelHolder:
         else:
             raw_prediction = estimateboost(img, self.depth_model, self.depth_model_type, self.pix2pix_model,
                                            self.boost_whole_size_threshold)
-        raw_prediction_invert = self.depth_model_type in [0, 7, 8, 9]
+        raw_prediction_invert = self.depth_model_type in [0, 7, 8, 9, 10]
         return raw_prediction, raw_prediction_invert
 
 

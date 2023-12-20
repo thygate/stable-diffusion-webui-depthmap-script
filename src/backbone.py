@@ -42,6 +42,9 @@ try:
                 c = get_cmd_opt(s, None)
             if c is not None:
                 ops[s] = c
+        # sanitize for integers.
+        for s in ['marigold_ensembles', 'marigold_steps']:
+            ops[s] = int(ops[s])
         return ops
 
 

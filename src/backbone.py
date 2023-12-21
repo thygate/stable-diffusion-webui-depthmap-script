@@ -44,7 +44,8 @@ try:
                 ops[s] = c
         # sanitize for integers.
         for s in ['marigold_ensembles', 'marigold_steps']:
-            ops[s] = int(ops[s])
+            if s in ops:
+                ops[s] = int(ops[s])
         return ops
 
 

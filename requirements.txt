@@ -18,3 +18,4 @@ imageio-ffmpeg
 networkx>=2.5
 pyqt5; sys_platform == 'windows'
 pyqt6; sys_platform != 'windows'
+einops

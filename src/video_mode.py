@@ -147,6 +147,7 @@ def gen_video(video, outpath, inp, custom_depthmap=None, colorvids_bitrate=None,
 
         gen_obj = core.core_generation_funnel(None, input_images, None, None, first_pass_inp)
         input_depths = [x[2] for x in list(gen_obj)]
+        input_depths = [x for x in input_depths if isinstance(x, np.ndarray) ]
         input_depths = process_predicitons(input_depths, smoothening)
     else:
         print('Using custom depthmap video')

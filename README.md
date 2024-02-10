@@ -94,7 +94,7 @@ Feel free to comment and share in the discussions and submit issues.
 
 ## Acknowledgements
 
-This project relies on code and information from following papers : 
+This project relies on code and information from the following papers : 
 
 MiDaS :
 
@@ -207,6 +207,19 @@ Marigold - Repurposing Diffusion-Based Image Generators for Monocular Depth Esti
       author={Bingxin Ke and Anton Obukhov and Shengyu Huang and Nando Metzger and Rodrigo Caye Daudt and Konrad Schindler},
       year={2023},
       eprint={2312.02145},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
+```
+
+Depth Anything: Unleashing the Power of Large-Scale Unlabeled Data
+
+```
+@misc{yang2024depth,
+      title={Depth Anything: Unleashing the Power of Large-Scale Unlabeled Data}, 
+      author={Lihe Yang and Bingyi Kang and Zilong Huang and Xiaogang Xu and Jiashi Feng and Hengshuang Zhao},
+      year={2024},
+      eprint={2401.10891},
       archivePrefix={arXiv},
       primaryClass={cs.CV}
 }

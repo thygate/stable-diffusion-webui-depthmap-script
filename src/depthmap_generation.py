@@ -65,11 +65,15 @@ class ModelHolder:
     def load_models(self, model_type, device: torch.device, boost: bool):
         """Ensure that the depth model is loaded"""
 
+        # TODO: we need to at least try to find models downloaded by other plugins (e.g. controlnet)
+
         # model path and name
         # ZoeDepth and Marigold do not use this
         model_dir = "./models/midas"
         if model_type == 0:
             model_dir = "./models/leres"
+        if model_type == 11:
+            model_dir = "./models/depth_anything"
 
         # create paths to model if not present
         os.makedirs(model_dir, exist_ok=True)
@@ -202,6 +206,23 @@ class ModelHolder:
             except:
                 pass  # run without xformers
 
+        elif model_type == 11:  # depth_anything
+            from depth_anything.dpt import DPT_DINOv2
+            # This will download the model... to some place
+            model = (
+                DPT_DINOv2(
+                    encoder="vitl",
+                    features=256,
+                    out_channels=[256, 512, 1024, 1024],
+                    localhub=False,
+                ).to(device).eval()
+            )
+            model_path = f"{model_dir}/depth_anything_vitl14.pth"
+            ensure_file_downloaded(model_path,
+                                   "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/checkpoints/depth_anything_vitl14.pth")
+
+            model.load_state_dict(torch.load(model_path))
+
         if model_type in range(0, 10):
             model.eval()  # prepare for evaluation
         # optimize
@@ -209,7 +230,7 @@ class ModelHolder:
             if model_type in [0, 1, 2, 3, 4, 5, 6]:
                 model = model.to(memory_format=torch.channels_last)  # TODO: weird
             if not self.no_half:
-                if model_type in [1, 2, 3, 4, 5, 6] and not boost:  # TODO: zoedepth, too?
+                if model_type in [1, 2, 3, 4, 5, 6] and not boost:  # TODO: zoedepth, Marigold and depth_anything, too?
                     model = model.half()
         model.to(device)  # to correct device
 
@@ -250,7 +271,8 @@ class ModelHolder:
             7: [384, 512],
             8: [384, 768],
             9: [384, 512],
-            10: [768, 768]
+            10: [768, 768],
+            11: [518, 518]
         }
         if model_type in sizes:
             return sizes[model_type]
@@ -307,6 +329,8 @@ class ModelHolder:
             elif self.depth_model_type == 10:
                 raw_prediction = estimatemarigold(img, self.depth_model, net_width, net_height,
                                                   self.marigold_ensembles, self.marigold_steps)
+            elif self.depth_model_type == 11:
+                raw_prediction = estimatedepthanything(img, self.depth_model, net_width, net_height)
         else:
             raw_prediction = estimateboost(img, self.depth_model, self.depth_model_type, self.pix2pix_model,
                                            self.boost_rmax)
@@ -414,6 +438,7 @@ def estimatemidas(img, model, w, h, resize_mode, normalization, no_half, precisi
 # TODO: "h" is not used
 def estimatemarigold(image, model, w, h, marigold_ensembles=5, marigold_steps=12):
     # This hideous thing should be re-implemented once there is support from the upstream.
+    # TODO: re-implement this hideous thing by using features from the upstream
     img = cv2.cvtColor((image * 255.0001).astype('uint8'), cv2.COLOR_BGR2RGB)
     img = Image.fromarray(img)
     with torch.no_grad():
@@ -421,6 +446,37 @@ def estimatemarigold(image, model, w, h, marigold_ensembles=5, marigold_steps=12
                          ensemble_size=marigold_ensembles, denoising_steps=marigold_steps,
                          match_input_res=False)
         return cv2.resize(pipe_out.depth_np, (image.shape[:2][::-1]), interpolation=cv2.INTER_CUBIC)
+
+
+def estimatedepthanything(image, model, w, h):
+    from depth_anything.util.transform import Resize, NormalizeImage, PrepareForNet
+    transform = Compose(
+        [
+            Resize(
+                width=w // 14 * 14,
+                height=h // 14 * 14,
+                resize_target=False,
+                keep_aspect_ratio=True,
+                ensure_multiple_of=14,
+                resize_method="lower_bound",
+                image_interpolation_method=cv2.INTER_CUBIC,
+            ),
+            NormalizeImage(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            PrepareForNet(),
+        ]
+    )
+
+    timage = transform({"image": image})["image"]
+    timage = torch.from_numpy(timage).unsqueeze(0).to(next(model.parameters()).device)
+
+    with torch.no_grad():
+        depth = model(timage)
+    import torch.nn.functional as F
+    depth = F.interpolate(
+        depth[None], (image.shape[0], image.shape[1]), mode="bilinear", align_corners=False
+    )[0, 0]
+
+    return depth.cpu().numpy()
 
 
 class ImageandPatchs:
@@ -640,13 +696,14 @@ def estimateboost(img, model, model_type, pix2pixmodel, whole_size_threshold):
 
     if model_type == 0:  # leres
         net_receptive_field_size = 448
-        patch_netsize = 2 * net_receptive_field_size
     elif model_type == 1:  # dpt_beit_large_512
         net_receptive_field_size = 512
-        patch_netsize = 2 * net_receptive_field_size
+    elif model_type == 11:  # depth_anything
+        net_receptive_field_size = 518
     else:  # other midas  # TODO Marigold support
         net_receptive_field_size = 384
-        patch_netsize = 2 * net_receptive_field_size
+    patch_netsize = 2 * net_receptive_field_size
+    # Good luck trying to use zoedepth
 
     gc.collect()
     backbone.torch_gc()
@@ -916,6 +973,8 @@ def singleestimate(img, msize, model, net_type):
         return estimateleres(img, model, msize, msize)
     elif net_type == 10:
         return estimatemarigold(img, model, msize, msize)
+    elif net_type == 11:
+        return estimatedepthanything(img, model, msize, msize)
     elif net_type >= 7:
         # np to PIL
         return estimatezoedepth(Image.fromarray(np.uint8(img * 255)).convert('RGB'), model, msize, msize)

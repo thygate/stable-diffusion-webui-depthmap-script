@@ -1,6 +1,9 @@
+# Installs dependencies
+
 import launch
 import platform
 import sys
+import importlib.metadata
 
 # TODO: some dependencies apparently being reinstalled on every run. Investigate and fix.
 
@@ -54,3 +57,20 @@ if platform.system() == 'Windows':
 
 if platform.system() == 'Darwin':
     ensure('pyqt6')
+
+# Depth Anything
+def get_installed_version(package: str):
+    try:
+        return importlib.metadata.version(package)
+    except Exception:
+        return None
+def try_install_from_wheel(pkg_name: str, wheel_url: str):
+    if get_installed_version(pkg_name) is not None:
+        return
+    try:
+        launch.run_pip(f"install {wheel_url}", f" {pkg_name} requirement for depthmap script")
+    except Exception as e:
+        print('Failed to install wheel for Depth Anything support. It won\'t work.')
+try_install_from_wheel(
+    "depth_anything",
+    "https://github.com/huchenlei/Depth-Anything/releases/download/v1.0.0/depth_anything-2024.1.22.0-py2.py3-none-any.whl")

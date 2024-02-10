@@ -419,7 +419,12 @@ def on_ui_tabs():
 def format_exception(e: Exception):
     traceback.print_exc()
     msg = '<h3>' + 'ERROR: ' + str(e) + '</h3>' + '\n'
-    if 'out of GPU memory' not in msg:
+    if 'out of GPU memory' in msg:
+        pass
+    elif "torch.hub.load('facebookresearch/dinov2'," in traceback.format_exc():
+        msg += ('<h4>For some mysterious reason Depth Anything integration works only in standalone mode.'
+                'This is a known issue. Alternatively, use "--disable-safe-unpickle" command line flag</h4>')
+    elif 'out of GPU memory' not in msg:
         msg += \
             'Please report this issue ' \
             f'<a href="https://github.com/thygate/{REPOSITORY_NAME}/issues">here</a>. ' \

@@ -1,4 +1,8 @@
 ## Changelog
+### 0.4.6
+ * Support for [Depth Anything](https://github.com/LiheYoung/Depth-Anything).
+### 0.4.5
+ * Preliminary support for [Marigold](https://marigoldmonodepth.github.io). [PR #385](https://github.com/thygate/stable-diffusion-webui-depthmap-script/pull/385).
 ### 0.4.4
  * Compatibility with stable-diffusion-webui 1.6.0
 ### 0.4.3 video processing tab

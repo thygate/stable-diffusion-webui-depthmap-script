@@ -496,12 +496,24 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, gen_inpainted_m
 def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border, traj_types, x_shift_range,
                        y_shift_range, z_shift_range, video_postfix, vid_dolly, vid_format, vid_ssaa):
     import vispy
-    if platform.system() == 'Windows':
-        vispy.use(app='PyQt5')
-    elif platform.system() == 'Darwin':
-        vispy.use('PyQt6')
-    else:
-        vispy.use(app='egl')
+    try:
+        if platform.system() == 'Windows':
+            vispy.use(app='PyQt5')
+        elif platform.system() == 'Darwin':
+            vispy.use('PyQt6')
+        else:
+            vispy.use(app='egl')
+    except:
+        import traceback
+        print(traceback.format_exc())
+        print('Trying an alternative...')
+        for u in ['PyQt5', 'PyQt6', 'egl']:
+            try:
+                vispy.use(app=u)
+            except:
+                print(f'On {u}')
+                print(traceback.format_exc())
+        # Honestly, I don't know if it actually helps at all
 
     # read ply
     global video_mesh_data, video_mesh_fn

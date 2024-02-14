@@ -85,11 +85,16 @@ def on_ui_settings():
         shared.opts.add_option(f"{name_prefix}_{name}", shared.OptionInfo(default_value, description, section=section))
 
     add_option('keepmodels', False, "Do not unload depth and pix2pix models.")
+
     add_option('boost_rmax', 1600, "Maximum wholesize for boost (Rmax)")
+    add_option('marigold_ensembles', 5, "How many ensembles to use for Marigold")
+    add_option('marigold_steps', 10, "How many denoising steps to use for Marigold")
+
     add_option('save_ply', False, "Save additional PLY file with 3D inpainted mesh.")
     add_option('show_3d', True, "Enable showing 3D Meshes in output tab. (Experimental)")
     add_option('show_3d_inpaint', True, "Also show 3D Inpainted Mesh in 3D Mesh output tab. (Experimental)")
     add_option('mesh_maxsize', 2048, "Max size for generating simple mesh.")
+
     add_option('gen_heatmap_from_ui', False, "Show an option to generate HeatMap in the UI")
     add_option('extra_stereomodes', False, "Enable more possible outputs for stereoimage generation")
 

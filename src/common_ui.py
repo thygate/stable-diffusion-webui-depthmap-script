@@ -37,7 +37,8 @@ def main_ui_panel(is_depth_tab):
                                                       'dpt_beit_large_384 (midas 3.1)', 'dpt_large_384 (midas 3.0)',
                                                       'dpt_hybrid_384 (midas 3.0)',
                                                       'midas_v21', 'midas_v21_small',
-                                                      'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk'],
+                                                      'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk',
+                                                      'Marigold v1', 'Depth Anything'],
                                              type="index")
         with gr.Box() as cur_option_root:
             inp -= 'depthmap_gen_row_1', cur_option_root
@@ -418,7 +419,12 @@ def on_ui_tabs():
 def format_exception(e: Exception):
     traceback.print_exc()
     msg = '<h3>' + 'ERROR: ' + str(e) + '</h3>' + '\n'
-    if 'out of GPU memory' not in msg:
+    if 'out of GPU memory' in msg:
+        pass
+    elif "torch.hub.load('facebookresearch/dinov2'," in traceback.format_exc():
+        msg += ('<h4>To use Depth Anything integration in WebUI mode, please add "--disable-safe-unpickle" to the command line flags. '
+                'Alternatively, use Standalone mode. This is a known issue.')
+    elif 'out of GPU memory' not in msg:
         msg += \
             'Please report this issue ' \
             f'<a href="https://github.com/thygate/{REPOSITORY_NAME}/issues">here</a>. ' \

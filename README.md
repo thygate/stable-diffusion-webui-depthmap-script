@@ -1,7 +1,7 @@
 ﻿# High Resolution Depth Maps for Stable Diffusion WebUI
 This program is an addon for [AUTOMATIC1111's Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that creates depth maps. Using either generated or custom depth maps, it can also create 3D stereo image pairs (side-by-side or anaglyph), normalmaps and 3D meshes. The outputs of the script can be viewed directly or used as an asset for a 3D engine. Please see [wiki](https://github.com/thygate/stable-diffusion-webui-depthmap-script/wiki/Viewing-Results) to learn more. The program has integration with [Rembg](https://github.com/danielgatis/rembg). It also supports batch processing, processing of videos, and can also be run in standalone mode, without Stable Diffusion WebUI.
 
-To generate realistic depth maps from individual images, this script uses code and models from the [MiDaS](https://github.com/isl-org/MiDaS) and [ZoeDepth](https://github.com/isl-org/ZoeDepth) repositories by Intel ISL, or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. Multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) is used to generate high resolution depth maps.
+To generate realistic depth maps from individual images, this script uses code and models from the [Marigold](https://github.com/prs-eth/Marigold/) repository, from the [MiDaS](https://github.com/isl-org/MiDaS) and [ZoeDepth](https://github.com/isl-org/ZoeDepth) repositories by Intel ISL, or LeReS from the [AdelaiDepth](https://github.com/aim-uofa/AdelaiDepth) repository by Advanced Intelligent Machines. Multi-resolution merging as implemented by [BoostingMonocularDepth](https://github.com/compphoto/BoostingMonocularDepth) is used to generate high resolution depth maps.
 
 Stereoscopic images are created using a custom-written algorithm.
 
@@ -94,7 +94,7 @@ Feel free to comment and share in the discussions and submit issues.
 
 ## Acknowledgements
 
-This project relies on code and information from following papers : 
+This project relies on code and information from the following papers : 
 
 MiDaS :
 
@@ -196,5 +196,31 @@ ZoeDepth :
   publisher = {arXiv},
   year = {2023},
   copyright = {arXiv.org perpetual, non-exclusive license}
+}
+```
+
+Marigold - Repurposing Diffusion-Based Image Generators for Monocular Depth Estimation:
+
+```
+@misc{ke2023repurposing,
+      title={Repurposing Diffusion-Based Image Generators for Monocular Depth Estimation}, 
+      author={Bingxin Ke and Anton Obukhov and Shengyu Huang and Nando Metzger and Rodrigo Caye Daudt and Konrad Schindler},
+      year={2023},
+      eprint={2312.02145},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
+```
+
+Depth Anything: Unleashing the Power of Large-Scale Unlabeled Data
+
+```
+@misc{yang2024depth,
+      title={Depth Anything: Unleashing the Power of Large-Scale Unlabeled Data}, 
+      author={Lihe Yang and Bingyi Kang and Zilong Huang and Xiaogang Xu and Jiashi Feng and Hengshuang Zhao},
+      year={2024},
+      eprint={2401.10891},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
 }
 ```

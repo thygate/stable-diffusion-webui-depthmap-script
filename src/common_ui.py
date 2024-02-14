@@ -38,7 +38,7 @@ def main_ui_panel(is_depth_tab):
                                                       'dpt_hybrid_384 (midas 3.0)',
                                                       'midas_v21', 'midas_v21_small',
                                                       'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk',
-                                                      'Marigold v1', 'depth_anything'],
+                                                      'Marigold v1', 'Depth Anything'],
                                              type="index")
         with gr.Box() as cur_option_root:
             inp -= 'depthmap_gen_row_1', cur_option_root
@@ -422,8 +422,8 @@ def format_exception(e: Exception):
     if 'out of GPU memory' in msg:
         pass
     elif "torch.hub.load('facebookresearch/dinov2'," in traceback.format_exc():
-        msg += ('<h4>For some mysterious reason Depth Anything integration works only in standalone mode.'
-                'This is a known issue. Alternatively, use "--disable-safe-unpickle" command line flag</h4>')
+        msg += ('<h4>To use Depth Anything integration in WebUI mode, please add "--disable-safe-unpickle" to the command line flags. '
+                'Alternatively, use Standalone mode. This is a known issue.')
     elif 'out of GPU memory' not in msg:
         msg += \
             'Please report this issue ' \

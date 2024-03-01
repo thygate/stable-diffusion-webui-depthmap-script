@@ -81,6 +81,7 @@ If you often get out of memory errors when computing a depthmap on GPU while usi
     - You can run BoostingMonocularDepth on their colab linked here : https://colab.research.google.com/github/compphoto/BoostingMonocularDepth/blob/main/Boostmonoculardepth.ipynb
     - Running this program on Colab is not officially supported, but it may work. Please look for more suitable ways of running this. If you still decide to try, standalone installation may be easier to manage.
  * `What other depth-related projects could I check out?`
+    - [DepthFlow](https://github.com/BrokenSource/DepthFlow) by [@Tremeschin](https://github.com/Tremeschin) for a very fast generation of 2.5D videos from images (no need to create mesh beforehand!)
     - Several [scripts](https://github.com/Extraltodeus?tab=repositories) by [@Extraltodeus](https://github.com/Extraltodeus) using depth maps.
     - geo-11, [Depth3D](https://github.com/BlueSkyDefender/Depth3D) and [Geo3D](https://github.com/Flugan/Geo3D-Installer) for playing existing games in 3D.
     - (Feel free to suggest more projects in the discussions!)

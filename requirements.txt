@@ -20,3 +20,4 @@ diffusers>=0.20.1 # For Marigold
 pyqt5; sys_platform == 'windows'
 pyqt6; sys_platform != 'windows'
 https://github.com/huchenlei/Depth-Anything/releases/download/v1.0.0/depth_anything-2024.1.22.0-py2.py3-none-any.whl
+PyOpenGL>=3.1.7

@@ -58,6 +58,10 @@ if platform.system() == 'Windows':
 if platform.system() == 'Darwin':
     ensure('pyqt6')
 
+# for fix pyvis's problem
+if not launch.is_installed("PyOpenGL"):
+    ensure('PyOpenGL', '3.1.7')
+
 # Depth Anything
 def get_installed_version(package: str):
     try:

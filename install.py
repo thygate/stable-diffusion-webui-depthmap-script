@@ -1,4 +1,5 @@
 # Installs dependencies
+# Make sure to add to requirements.txt - it can be used for the standalone mode
 
 import launch
 import platform
@@ -57,6 +58,7 @@ if platform.system() == 'Windows':
 
 if platform.system() == 'Darwin':
     ensure('pyqt6')
+    ensure('PyOpenGL', '3.1.7')
 
 # Depth Anything
 def get_installed_version(package: str):

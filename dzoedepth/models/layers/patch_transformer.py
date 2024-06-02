@@ -86,6 +86,7 @@ class PatchTransformerEncoder(nn.Module):
         # change to S,N,E format required by transformer
         embeddings = embeddings.permute(2, 0, 1)
         S, N, E = embeddings.shape
-        embeddings = embeddings + self.positional_encoding_1d(S, N, E, device=embeddings.device)
+        # dtype IS ADDED, NOT PRESENT IN THE MAINLINE
+        embeddings = embeddings + self.positional_encoding_1d(S, N, E, device=embeddings.device).to(dtype=embeddings.dtype)
         x = self.transformer_encoder(embeddings)  # .shape = S, N, E
         return x

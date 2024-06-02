@@ -246,7 +246,9 @@ class ModelHolder:
             if model_type in [0, 1, 2, 3, 4, 5, 6]:
                 model = model.to(memory_format=torch.channels_last)  # TODO: weird
             if not self.no_half:
-                if model_type in [1, 2, 3, 4, 5, 6] and not boost:  # TODO: zoedepth, Marigold and depth_anything, too?
+                # Marigold can be done
+                # TODO: Fix for zoedepth_n - it completely trips and generates black images
+                if model_type in [1, 2, 3, 4, 5, 6, 8, 9, 11] and not boost:
                     model = model.half()
         model.to(device)  # to correct device
 
@@ -484,7 +486,8 @@ def estimatedepthanything(image, model, w, h):
     )
 
     timage = transform({"image": image})["image"]
-    timage = torch.from_numpy(timage).unsqueeze(0).to(next(model.parameters()).device)
+    timage = torch.from_numpy(timage).unsqueeze(0).to(device=next(model.parameters()).device,
+                                                      dtype=next(model.parameters()).dtype)
 
     with torch.no_grad():
         depth = model(timage)

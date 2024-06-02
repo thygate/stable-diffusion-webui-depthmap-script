@@ -83,6 +83,7 @@ def depth_api(_: gr.Blocks, app: FastAPI):
             raise HTTPException(status_code=422, detail="No images supplied")
         print(f"Processing {str(len(depth_input_images))} images trough the API")
 
+        # You can use either these strings, or integers
         available_models = {
             'res101': 0,
             'dpt_beit_large_512': 1, #midas 3.1
@@ -94,6 +95,8 @@ def depth_api(_: gr.Blocks, app: FastAPI):
             'zoedepth_n': 7, #indoor
             'zoedepth_k': 8, #outdoor
             'zoedepth_nk': 9,
+            'marigold_v1': 10,
+            'depth_anything': 11
         }
         
         model_type = options["model_type"]

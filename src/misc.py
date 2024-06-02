@@ -19,6 +19,11 @@ SCRIPT_VERSION = "v0.4.6"
 SCRIPT_FULL_NAME = f"{SCRIPT_NAME} {SCRIPT_VERSION} ({get_commit_hash()})"
 
 
+# # Returns SHA256 hash of a file
+# import hashlib
+# def sha256sum(filename):
+#     with open(filename, 'rb', buffering=0) as f:
+#         return hashlib.file_digest(f, 'sha256').hexdigest()
 def ensure_file_downloaded(filename, url, sha256_hash_prefix=None):
     import torch
     # Do not check the hash every time - it is somewhat time-consumin
@@ -35,4 +40,5 @@ def ensure_file_downloaded(filename, url, sha256_hash_prefix=None):
                 return  # The correct model was downloaded, no need to try more
         except:
             pass
-    raise RuntimeError('Download failed. Try again later or manually download the file to that location.')
+    raise RuntimeError(f'Download failed. '
+                       f'Try again later or manually download the file {filename} to location {url}.')

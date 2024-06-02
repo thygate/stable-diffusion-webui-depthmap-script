@@ -365,12 +365,22 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, gen_inpainted_m
         # create paths to model if not present
         os.makedirs('./models/3dphoto/', exist_ok=True)
 
-        ensure_file_downloaded(edgemodel_path,
-                               "https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/edge-model.pth")
-        ensure_file_downloaded(depthmodel_path,
-                               "https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/depth-model.pth")
-        ensure_file_downloaded(colormodel_path,
-                               "https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/color-model.pth")
+        ensure_file_downloaded(
+            edgemodel_path,
+            ["https://huggingface.co/spaces/Epoching/3D_Photo_Inpainting/resolve/e389e564fd2a55cf/checkpoints/edge-model.pth",
+             "https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/edge-model.pth"],
+            "b1d768bd008ad5fe9f540004f870b8c3d355e4939b2009aa4db493fd313217c9")
+        ensure_file_downloaded(
+            depthmodel_path,
+            ["https://huggingface.co/spaces/Epoching/3D_Photo_Inpainting/resolve/e389e564fd2a55cf/checkpoints/depth-model.pth",
+             "https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/depth-model.pth"],
+            "2d0e63e89a22762ddfa8bc8c9f8c992e5532b140123274ffc6e4171baa1b76f8")
+        ensure_file_downloaded(
+            colormodel_path,
+            ["https://huggingface.co/spaces/Epoching/3D_Photo_Inpainting/resolve/e389e564fd2a55cf/checkpoints/color-model.pth",
+             "https://filebox.ece.vt.edu/~jbhuang/project/3DPhoto/model/color-model.pth"],
+            "383c9b1db70097907a6f9c8abb0303e7056f50d5456a36f34ab784592b8b2c20"
+        )
 
         print("Loading edge model ..")
         depth_edge_model = Inpaint_Edge_Net(init_weights=True)

@@ -21,6 +21,7 @@ class GenerationOptions(enum.Enum):
     NET_SIZE_MATCH = False
     NET_WIDTH = 448
     NET_HEIGHT = 448
+    TILING_MODE = False
 
     DO_OUTPUT_DEPTH = True
     OUTPUT_DEPTH_INVERT = False

@@ -121,7 +121,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
     try:
         if not inputdepthmaps_complete:
             print("Loading model(s) ..")
-            model_holder.ensure_models(inp[go.MODEL_TYPE], device, inp[go.BOOST])
+            model_holder.ensure_models(inp[go.MODEL_TYPE], device, inp[go.BOOST], inp[go.TILING_MODE])
         print("Computing output(s) ..")
         # iterate over input images
         for count in trange(0, len(inputimages)):
@@ -170,6 +170,7 @@ def core_generation_funnel(outpath, inputimages, inputdepthmaps, inputnames, inp
                 # override net size (size may be different for different images)
                 if inp[go.NET_SIZE_MATCH]:
                     # Round up to a multiple of 32 to avoid potential issues
+                    # TODO: buggs for Depth Anything
                     net_width = (inputimages[count].width + 31) // 32 * 32
                     net_height = (inputimages[count].height + 31) // 32 * 32
                 else:

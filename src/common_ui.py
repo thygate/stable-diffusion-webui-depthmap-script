@@ -48,6 +48,10 @@ def main_ui_panel(is_depth_tab):
             with gr.Row(visible=False) as options_depend_on_match_size:
                 inp += go.NET_WIDTH, gr.Slider(minimum=64, maximum=2048, step=64, label='Net width')
                 inp += go.NET_HEIGHT, gr.Slider(minimum=64, maximum=2048, step=64, label='Net height')
+            with gr.Row():
+                inp += go.TILING_MODE, gr.Checkbox(
+                    label='Tiling mode', info='Reduces seams that appear if the depthmap is tiled into a grid'
+                )
 
         with gr.Box() as cur_option_root:
             inp -= 'depthmap_gen_row_2', cur_option_root
@@ -75,7 +79,7 @@ def main_ui_panel(is_depth_tab):
 
         with gr.Box():
             with gr.Row():
-                inp += go.GEN_STEREO, gr.Checkbox(label="Generate stereoscopic image(s)")
+                inp += go.GEN_STEREO, gr.Checkbox(label="Generate stereoscopic (3D) image(s)")
             with gr.Column(visible=False) as stereo_options:
                 with gr.Row():
                     inp += go.STEREO_MODES, gr.CheckboxGroup(
@@ -178,6 +182,13 @@ def main_ui_panel(is_depth_tab):
             outputs=[inp[go.NET_SIZE_MATCH], options_depend_on_match_size]
         )
         inp.add_rule(options_depend_on_match_size, 'visible-if-not', go.NET_SIZE_MATCH)
+        inp[go.TILING_MODE].change(  # Go boost! Wroom!..
+            fn=lambda a: (
+                inp[go.BOOST].update(value=False), inp[go.NET_SIZE_MATCH].update(value=True)
+            ) if a else (inp[go.BOOST].update(), inp[go.NET_SIZE_MATCH].update()),
+            inputs=[inp[go.TILING_MODE]],
+            outputs=[inp[go.BOOST], inp[go.NET_SIZE_MATCH]]
+        )
 
         inp.add_rule(options_depend_on_output_depth_1, 'visible-if', go.DO_OUTPUT_DEPTH)
         inp.add_rule(go.OUTPUT_DEPTH_INVERT, 'visible-if', go.DO_OUTPUT_DEPTH)

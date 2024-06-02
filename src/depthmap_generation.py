@@ -43,6 +43,7 @@ class ModelHolder:
         # Extra stuff
         self.resize_mode = None
         self.normalization = None
+        self.tiling_mode = False
 
 
     def update_settings(self, **kvargs):
@@ -51,18 +52,23 @@ class ModelHolder:
             setattr(self, k, v)
 
 
-    def ensure_models(self, model_type, device: torch.device, boost: bool):
+    def ensure_models(self, model_type, device: torch.device, boost: bool, tiling_mode: bool = False):
         # TODO: could make it more granular
         if model_type == -1 or model_type is None:
             self.unload_models()
             return
         # Certain optimisations are irreversible and not device-agnostic, thus changing device requires reloading
-        if model_type != self.depth_model_type or boost != (self.pix2pix_model is not None) or device != self.device:
+        if (
+                model_type != self.depth_model_type or
+                boost != (self.pix2pix_model is not None) or
+                device != self.device or
+                tiling_mode != self.tiling_mode
+        ):
             self.unload_models()
-            self.load_models(model_type, device, boost)
+            self.load_models(model_type, device, boost, tiling_mode)
         self.reload()
 
-    def load_models(self, model_type, device: torch.device, boost: bool):
+    def load_models(self, model_type, device: torch.device, boost: bool, tiling_mode: bool = False):
         """Ensure that the depth model is loaded"""
 
         # TODO: we need to at least try to find models downloaded by other plugins (e.g. controlnet)
@@ -205,7 +211,6 @@ class ModelHolder:
                 model.enable_xformers_memory_efficient_attention()
             except:
                 pass  # run without xformers
-
         elif model_type == 11:  # depth_anything
             from depth_anything.dpt import DPT_DINOv2
             # This will download the model... to some place
@@ -223,6 +228,17 @@ class ModelHolder:
 
             model.load_state_dict(torch.load(model_path))
 
+        if tiling_mode:
+            def flatten(el):
+                flattened = [flatten(children) for children in el.children()]
+                res = [el]
+                for c in flattened:
+                    res += c
+                return res
+            layers = flatten(model)  # Hijacking the model
+            for layer in [layer for layer in layers if type(layer) == torch.nn.Conv2d or type(layer) == torch.nn.Conv1d]:
+                layer.padding_mode = 'circular'
+
         if model_type in range(0, 10):
             model.eval()  # prepare for evaluation
         # optimize
@@ -238,6 +254,7 @@ class ModelHolder:
         self.depth_model_type = model_type
         self.resize_mode = resize_mode
         self.normalization = normalization
+        self.tiling_mode = tiling_mode
 
         self.device = device
 

@@ -521,6 +521,7 @@ def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border,
         for u in ['PyQt5', 'PyQt6', 'egl']:
             try:
                 vispy.use(app=u)
+                break
             except:
                 print(f'On {u}')
                 print(traceback.format_exc())

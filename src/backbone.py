@@ -61,15 +61,21 @@ try:
     def unload_sd_model():
         from modules import shared, devices
         if shared.sd_model is not None:
-            shared.sd_model.cond_stage_model.to(devices.cpu)
-            shared.sd_model.first_stage_model.to(devices.cpu)
+            if shared.sd_model.cond_stage_model is not None:
+                shared.sd_model.cond_stage_model.to(devices.cpu)
+            if shared.sd_model.first_stage_model is not None:
+                shared.sd_model.first_stage_model.to(devices.cpu)
+        # Maybe something else???
 
 
     def reload_sd_model():
         from modules import shared, devices
         if shared.sd_model is not None:
-            shared.sd_model.cond_stage_model.to(devices.device)
-            shared.sd_model.first_stage_model.to(devices.device)
+            if shared.sd_model.cond_stage_model is not None:
+                shared.sd_model.cond_stage_model.to(devices.device)
+            if shared.sd_model.first_stage_model:
+                shared.sd_model.first_stage_model.to(devices.device)
+        # Maybe something else???
 
     def get_hide_dirs():
         import modules.shared

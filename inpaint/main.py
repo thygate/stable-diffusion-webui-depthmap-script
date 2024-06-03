@@ -9,7 +9,7 @@ from tqdm import tqdm
 import yaml
 import time
 import sys
-from mesh import write_ply, read_ply, output_3d_photo
+from mesh import write_mesh, read_ply, output_3d_photo
 from utils import get_MiDaS_samples, read_MiDaS_depth
 import torch
 import cv2
@@ -105,7 +105,7 @@ for idx in tqdm(range(len(sample_list))):
 
 
         print(f"Writing depth ply (and basically doing everything) at {time.time()}")
-        rt_info = write_ply(image,
+        rt_info = write_mesh(image,
                               depth,
                               sample['int_mtx'],
                               mesh_fi,

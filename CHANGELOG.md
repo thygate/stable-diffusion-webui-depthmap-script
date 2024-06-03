@@ -1,7 +1,7 @@
 ## Changelog
 ### 0.4.7
  * Tiling mode
- * Reduced VRAM consumption for Depth Anything, and ZoeDepth k and nk
+ * Reduced VRAM consumption for Depth Anything, as well as for ZoeDepth k and nk
  * Some bugfixes
 ### 0.4.6
  * Support for [Depth Anything](https://github.com/LiheYoung/Depth-Anything).

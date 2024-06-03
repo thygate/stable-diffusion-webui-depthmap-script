@@ -437,6 +437,9 @@ def format_exception(e: Exception):
     elif "torch.hub.load('facebookresearch/dinov2'," in traceback.format_exc():
         msg += ('<h4>To use Depth Anything integration in WebUI mode, please add "--disable-safe-unpickle" to the command line flags. '
                 'Alternatively, use Standalone mode. This is a known issue.')
+    elif "Error(s) in loading state_dict " in traceback.format_exc():
+        msg += ('<h4>There was issue during loading the model.'
+                'Please add "--disable-safe-unpickle" to the command line flags. This is a known issue.')
     elif 'out of GPU memory' not in msg:
         msg += \
             'Please report this issue ' \

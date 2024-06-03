@@ -55,7 +55,7 @@ class Script(scripts.Script):
             # TODO: could reuse
             if hasattr(processed, 'all_prompts') and shared.opts.enable_pnginfo:
                 info = create_infotext(
-                    processed, processed.all_prompts, processed.all_seeds, processed.all_subseeds, "", 0, input_i)
+                    p, processed.all_prompts, processed.all_seeds, processed.all_subseeds, "", 0, input_i)
             else:
                 info = None
 

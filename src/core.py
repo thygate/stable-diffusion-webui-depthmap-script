@@ -23,12 +23,6 @@ from src.normalmap_generation import create_normalmap
 from src.depthmap_generation import ModelHolder
 from src import backbone
 
-# 3d-photo-inpainting imports
-from inpaint.mesh import write_mesh, read_mesh, output_3d_photo
-from inpaint.networks import Inpaint_Color_Net, Inpaint_Depth_Net, Inpaint_Edge_Net
-from inpaint.utils import path_planning
-from inpaint.bilateral_filtering import sparse_bilateral_filtering
-
 global video_mesh_data, video_mesh_fn
 video_mesh_data = None
 video_mesh_fn = None
@@ -357,6 +351,10 @@ def get_uniquefn(outpath, basename, ext, suffix=''):
 
 
 def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, gen_inpainted_mesh_demos, vid_ssaa, vid_format):
+    from inpaint.mesh import write_mesh
+    from inpaint.networks import Inpaint_Color_Net, Inpaint_Depth_Net, Inpaint_Edge_Net
+    from inpaint.bilateral_filtering import sparse_bilateral_filtering
+
     mesh_fi = ''
     try:
         print("Running 3D Photo Inpainting .. ")
@@ -506,6 +504,8 @@ def run_3dphoto(device, img_rgb, img_depth, inputnames, outpath, gen_inpainted_m
 
 def run_3dphoto_videos(mesh_fi, basename, outpath, num_frames, fps, crop_border, traj_types, x_shift_range,
                        y_shift_range, z_shift_range, video_postfix, vid_dolly, vid_format, vid_ssaa):
+    from inpaint.mesh import read_mesh, output_3d_photo
+    from inpaint.utils import path_planning
     import vispy
     try:
         if platform.system() == 'Windows':

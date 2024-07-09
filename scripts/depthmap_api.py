@@ -96,7 +96,8 @@ def depth_api(_: gr.Blocks, app: FastAPI):
             'zoedepth_k': 8, #outdoor
             'zoedepth_nk': 9,
             'marigold_v1': 10,
-            'depth_anything': 11
+            'depth_anything': 11,
+            'depth_anything_v2': 12
         }
         
         model_type = options["model_type"]

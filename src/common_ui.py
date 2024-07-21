@@ -40,15 +40,16 @@ def main_ui_panel(is_depth_tab):
                                                       'zoedepth_n (indoor)', 'zoedepth_k (outdoor)', 'zoedepth_nk',
                                                       'Marigold v1', 'Depth Anything', 'Depth Anything v2 Small',
                                                       'Depth Anything v2 Base', 'Depth Anything v2 Large'],
-                                             type="index")
+                                              value='Depth Anything v2 Base', type="index")
         with gr.Box() as cur_option_root:
             inp -= 'depthmap_gen_row_1', cur_option_root
             with gr.Row():
                 inp += go.BOOST, gr.Checkbox(label="BOOST",
-                                             info="Generate depth map parts in a mosaic fashion - very slow")
-                inp += go.NET_SIZE_MATCH, gr.Checkbox(label="Match net size to input size", visible=False,
+                                             info="Generate depth map parts in a mosaic fashion - very slow",
+                                             value=False)
+                inp += go.NET_SIZE_MATCH, gr.Checkbox(label="Match net size to input size",
                                                       info="Net size affects quality, performance and VRAM usage")
-            with gr.Row(visible=False) as options_depend_on_match_size:
+            with gr.Row() as options_depend_on_match_size:
                 inp += go.NET_WIDTH, gr.Slider(minimum=64, maximum=2048, step=64, label='Net width')
                 inp += go.NET_HEIGHT, gr.Slider(minimum=64, maximum=2048, step=64, label='Net height')
             with gr.Row():

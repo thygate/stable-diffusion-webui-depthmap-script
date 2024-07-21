@@ -1,6 +1,6 @@
 ## Changelog
 ### 0.4.8
- * Depth Anything V2 support Thanks [@graemeniedermayer](https://github.com/graemeniedermayer)!
+ * Depth Anything V2 support, thanks [@graemeniedermayer](https://github.com/graemeniedermayer)!
 ### 0.4.7
  * Tiling mode
  * Reduced VRAM consumption for Depth Anything, as well as for ZoeDepth k and nk

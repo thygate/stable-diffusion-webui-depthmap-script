@@ -302,6 +302,24 @@ class ModelHolder:
 
     @staticmethod
     def get_default_net_size(model_type):
+        # Have you ever wondered why so many things in so many code repositories are not optimal?
+        # For example, this here is a set of int:tuple. Why wouldn't it be a set of enum:tuple?
+        # Or even better, why won't every model be defined separately with all it's necessary values and constants in one place? And why one like of this comment is much longer than the other ones?!
+        # Why won't the models indexed by enum elements, not integers?
+        # The answer is as definite as it is horrifying: tech depth.
+        # This here is a prime example of how tech debt piles up: one slightly iffy decision a long time ago,
+        # then nothing is done with it for quite some time, stuff starts depending on it, more stuff is added.
+        # The old code are like blocks are like jenga blocks that are experiencing ever-increasing pressure,
+        # in tower that (just as code) grows to infinity. And noone wants to knock out the jenga.
+        # Noone wants to spend hours of their life fixing it - because adding new features is more exciting.
+        # Once merely a suboptimal thing, that worked perfectly at a time, turns into this monster that slowly
+        # takes your sanity away. It's not that it ambushes you directly - like a hungry moskquito it knows that
+        # being too annoying will warrant immediate action and smashing. Instead, it bothers you just a
+        # couple of sound decibels and droplets of blood less than necessary for you to actually go and deal with it.
+        # And mind you, this is one buffed maskito: well, actually it got beefed up with time.
+        # Now it is just a giant mockyto monster. Noone wants to fight it because it is scary,
+        # and thus this threshold of pain is much higher. Don't repeat our mistakes: fight the giant mojito monsters and
+        # don't let them spread!
         sizes = {
             0: [448, 448],
             1: [512, 512],

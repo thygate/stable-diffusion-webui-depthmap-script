@@ -16,8 +16,8 @@ class GenerationOptions(enum.Enum):
         self.df = default_value
 
     COMPUTE_DEVICE = "GPU"
-    MODEL_TYPE = "res101"  # Will become enum element
-    BOOST = True
+    MODEL_TYPE = "Depth Anything v2 Base"  # Will become enum element
+    BOOST = False
     NET_SIZE_MATCH = False
     NET_WIDTH = 448
     NET_HEIGHT = 448

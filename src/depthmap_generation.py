@@ -25,6 +25,11 @@ from pix2pix.models.pix2pix4depth_model import Pix2Pix4DepthModel
 from marigold.marigold import MarigoldPipeline
 # pix2pix/merge net imports
 from pix2pix.options.test_options import TestOptions
+# depthanyting v2
+try:
+    from depth_anything_v2 import DepthAnythingV2
+except:
+    print('depth_anything_v2 import failed... somehow')
 
 # Our code
 from src.misc import *
@@ -80,6 +85,8 @@ class ModelHolder:
             model_dir = "./models/leres"
         if model_type == 11:
             model_dir = "./models/depth_anything"
+        if model_type in [12, 13, 14]:
+            model_dir = "./models/depth_anything_v2"
 
         # create paths to model if not present
         os.makedirs(model_dir, exist_ok=True)
@@ -227,6 +234,19 @@ class ModelHolder:
                                    "https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/checkpoints/depth_anything_vitl14.pth")
 
             model.load_state_dict(torch.load(model_path))
+        elif model_type in [12, 13, 14]:  # depth_anything_v2 small, base, large
+            letter = {12: 's', 13: 'b', 14: 'l'}[model_type]
+            word = {12: 'Small', 13: 'Base', 14: 'Large'}[model_type]
+            model_path = f"{model_dir}/depth_anything_v2_vit{letter}.pth"
+            ensure_file_downloaded(model_path,
+                                   f"https://huggingface.co/depth-anything/Depth-Anything-V2-{word}/resolve/main/depth_anything_v2_vit{letter}.pth")
+            model_configs = {'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
+                             'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
+                             'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
+                             'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}}
+            model = DepthAnythingV2(**model_configs[f'vit{letter}'])
+            model.load_state_dict(torch.load(model_path, map_location='cpu'))
+        # 15 is reserved for Depth Anything V2 Giant
 
         if tiling_mode:
             def flatten(el):
@@ -250,6 +270,9 @@ class ModelHolder:
                 # TODO: Fix for zoedepth_n - it completely trips and generates black images
                 if model_type in [1, 2, 3, 4, 5, 6, 8, 9, 11] and not boost:
                     model = model.half()
+                if model_type in [12, 13, 14]:
+                    model.depth_head.half()
+                    model.pretrained.half()
         model.to(device)  # to correct device
 
         self.depth_model = model
@@ -291,7 +314,10 @@ class ModelHolder:
             8: [384, 768],
             9: [384, 512],
             10: [768, 768],
-            11: [518, 518]
+            11: [518, 518],
+            12: [518, 518],
+            13: [518, 518],
+            14: [518, 518]
         }
         if model_type in sizes:
             return sizes[model_type]
@@ -350,6 +376,8 @@ class ModelHolder:
                                                   self.marigold_ensembles, self.marigold_steps)
             elif self.depth_model_type == 11:
                 raw_prediction = estimatedepthanything(img, self.depth_model, net_width, net_height)
+            elif self.depth_model_type in [12, 13, 14]:
+                raw_prediction = estimatedepthanything_v2(img, self.depth_model, net_width, net_height)
         else:
             raw_prediction = estimateboost(img, self.depth_model, self.depth_model_type, self.pix2pix_model,
                                            self.boost_rmax)
@@ -497,6 +525,20 @@ def estimatedepthanything(image, model, w, h):
     )[0, 0]
 
     return depth.cpu().numpy()
+
+
+def estimatedepthanything_v2(image, model, w, h):
+    # This is an awkward re-conversion, but I believe it should not impact quality
+    img = cv2.cvtColor((image * 255.1).astype('uint8'), cv2.COLOR_BGR2RGB)
+    with torch.no_grad():
+        # Compare to: model.infer_image(img, w)
+        image, (h, w) = model.image2tensor(img, w)
+        # Casting to correct type, it is the same as type of some model tensor (the one here is arbitrary)
+        image_casted = image.type_as(model.pretrained.blocks[0].norm1.weight.data)
+        depth = model.forward(image_casted).type_as(image)
+        import torch.nn.functional as F
+        depth = F.interpolate(depth[:, None], (h, w), mode="bilinear", align_corners=True)[0, 0]
+        return depth.cpu().numpy()
 
 
 class ImageandPatchs:
@@ -719,6 +761,8 @@ def estimateboost(img, model, model_type, pix2pixmodel, whole_size_threshold):
     elif model_type == 1:  # dpt_beit_large_512
         net_receptive_field_size = 512
     elif model_type == 11:  # depth_anything
+        net_receptive_field_size = 518
+    elif model_type in [12, 13, 14]:  # depth_anything_v2
         net_receptive_field_size = 518
     else:  # other midas  # TODO Marigold support
         net_receptive_field_size = 384
@@ -995,6 +1039,8 @@ def singleestimate(img, msize, model, net_type):
         return estimatemarigold(img, model, msize, msize)
     elif net_type == 11:
         return estimatedepthanything(img, model, msize, msize)
+    elif net_type in [12, 13, 14]:
+        return estimatedepthanything_v2(img, model, msize, msize)
     elif net_type >= 7:
         # np to PIL
         return estimatezoedepth(Image.fromarray(np.uint8(img * 255)).convert('RGB'), model, msize, msize)

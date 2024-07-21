@@ -225,3 +225,14 @@ Depth Anything: Unleashing the Power of Large-Scale Unlabeled Data
       primaryClass={cs.CV}
 }
 ```
+
+Depth Anything V2
+
+```bibtex
+@article{depth_anything_v2,
+  title={Depth Anything V2},
+  author={Yang, Lihe and Kang, Bingyi and Huang, Zilong and Zhao, Zhen and Xu, Xiaogang and Feng, Jiashi and Zhao, Hengshuang},
+  journal={arXiv:2406.09414},
+  year={2024}
+}
+```

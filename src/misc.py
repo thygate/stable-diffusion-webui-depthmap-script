@@ -15,7 +15,7 @@ def get_commit_hash():
 
 REPOSITORY_NAME = "stable-diffusion-webui-depthmap-script"
 SCRIPT_NAME = "DepthMap"
-SCRIPT_VERSION = "v0.4.7"
+SCRIPT_VERSION = "v0.4.8"
 SCRIPT_FULL_NAME = f"{SCRIPT_NAME} {SCRIPT_VERSION} ({get_commit_hash()})"
 
 

@@ -20,3 +20,6 @@ https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/
 
 Marigold
 https://github.com/prs-eth/Marigold/tree/22437a
+
+depth_anything_v2
+https://github.com/DepthAnything/Depth-Anything-V2/tree/bc0283

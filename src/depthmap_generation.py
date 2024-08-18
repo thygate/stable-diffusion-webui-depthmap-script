@@ -22,12 +22,12 @@ from lib.multi_depth_model_woauxi import RelDepthModel
 from lib.net_tools import strip_prefix_if_present
 from pix2pix.models.pix2pix4depth_model import Pix2Pix4DepthModel
 # Marigold
-from marigold.marigold import MarigoldPipeline
+from dmarigold.marigold import MarigoldPipeline
 # pix2pix/merge net imports
 from pix2pix.options.test_options import TestOptions
 # depthanyting v2
 try:
-    from depth_anything_v2 import DepthAnythingV2
+    from ddepth_anything_v2 import DepthAnythingV2
 except:
     print('depth_anything_v2 import failed... somehow')
 

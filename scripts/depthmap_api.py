@@ -58,7 +58,7 @@ def depth_api(_: gr.Blocks, app: FastAPI):
 
         if len(depth_input_images) == 0:
             raise HTTPException(status_code=422, detail="No images supplied")
-        print(f"Processing {str(len(depth_input_images))} images trough the API")
+        print(f"Processing {str(len(depth_input_images))} images through the API")
 
         pil_images = []
         for input_image in depth_input_images:
@@ -81,7 +81,7 @@ def depth_api(_: gr.Blocks, app: FastAPI):
     ):
         if len(depth_input_images) == 0:
             raise HTTPException(status_code=422, detail="No images supplied")
-        print(f"Processing {str(len(depth_input_images))} images trough the API")
+        print(f"Processing {str(len(depth_input_images))} images through the API")
 
         # You can use either these strings, or integers
         available_models = {

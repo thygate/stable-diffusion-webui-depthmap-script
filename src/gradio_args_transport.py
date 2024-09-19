@@ -69,12 +69,23 @@ class GradioComponentBundle:
         return [self.internal[x] for x in sorted(list(self.internal.keys()))]
 
     def add_rule(self, first, rule, second):
+        is_gradio4 = int(gr.__version__[0])>3
         first = self[first] if first in self else first
         second = self[second] if second in self else second
         if rule == 'visible-if-not':
-            second.change(fn=lambda v: first.update(visible=not v), inputs=[second], outputs=[first])
+            def update_visible_if_not(v):
+                if is_gradio4:
+                    return gr.Column(visible=not v)
+                else:
+                    return first.update(visible=not v)
+            second.change(update_visible_if_not, [second], [first])
         elif rule == 'visible-if':
-            second.change(fn=lambda v: first.update(visible=v), inputs=[second], outputs=[first])
+            def update_visible_if(v):
+                if is_gradio4:
+                    return gr.Column(visible=v)
+                else:
+                    return first.update(visible=v)
+            second.change(update_visible_if, [second], [first])
         else:
             raise Exception(f'Unknown rule type {rule}')
 

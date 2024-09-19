@@ -25,6 +25,13 @@ ensure_gradio_temp_directory()
 
 
 def main_ui_panel(is_depth_tab):
+
+    is_gradio4 = int(gr.__version__[0])>3
+    if is_gradio4:
+        Box = gr.Group
+    else:
+        Box = gr.Box
+
     inp = GradioComponentBundle()
     # TODO: Greater visual separation
     with gr.Blocks():
@@ -41,7 +48,7 @@ def main_ui_panel(is_depth_tab):
                                                       'Marigold v1', 'Depth Anything', 'Depth Anything v2 Small',
                                                       'Depth Anything v2 Base', 'Depth Anything v2 Large'],
                                               value='Depth Anything v2 Base', type="index")
-        with gr.Box() as cur_option_root:
+        with Box() as cur_option_root:
             inp -= 'depthmap_gen_row_1', cur_option_root
             with gr.Row():
                 inp += go.BOOST, gr.Checkbox(label="BOOST",
@@ -57,7 +64,7 @@ def main_ui_panel(is_depth_tab):
                     label='Tiling mode', info='Reduces seams that appear if the depthmap is tiled into a grid'
                 )
 
-        with gr.Box() as cur_option_root:
+        with Box() as cur_option_root:
             inp -= 'depthmap_gen_row_2', cur_option_root
             with gr.Row():
                 with gr.Group():  # 50% of width
@@ -71,7 +78,7 @@ def main_ui_panel(is_depth_tab):
                 inp += go.OUTPUT_DEPTH_COMBINE_AXIS, gr.Radio(
                     label="Combine axis", choices=['Vertical', 'Horizontal'], type="value", visible=False)
 
-        with gr.Box() as cur_option_root:
+        with Box() as cur_option_root:
             inp -= 'depthmap_gen_row_3', cur_option_root
             with gr.Row():
                 inp += go.CLIPDEPTH, gr.Checkbox(label="Clip and renormalize DepthMap")
@@ -81,7 +88,7 @@ def main_ui_panel(is_depth_tab):
                 inp += go.CLIPDEPTH_FAR, gr.Slider(minimum=0, maximum=1, step=0.001, label='Far clip')
                 inp += go.CLIPDEPTH_NEAR, gr.Slider(minimum=0, maximum=1, step=0.001, label='Near clip')
 
-        with gr.Box():
+        with Box():
             with gr.Row():
                 inp += go.GEN_STEREO, gr.Checkbox(label="Generate stereoscopic (3D) image(s)")
             with gr.Column(visible=False) as stereo_options:
@@ -104,7 +111,7 @@ def main_ui_panel(is_depth_tab):
                     inp += go.STEREO_BALANCE, gr.Slider(minimum=-1.0, maximum=1.0, step=0.05,
                                                        label='Balance between eyes')
 
-        with gr.Box():
+        with Box():
             with gr.Row():
                 inp += go.GEN_NORMALMAP, gr.Checkbox(label="Generate NormalMap")
             with gr.Column(visible=False) as normalmap_options:
@@ -124,11 +131,11 @@ def main_ui_panel(is_depth_tab):
                     inp += go.NORMALMAP_INVERT, gr.Checkbox(label="Invert")
 
         if backbone.get_opt('depthmap_script_gen_heatmap_from_ui', False):
-            with gr.Box():
+            with Box():
                 with gr.Row():
                     inp += go.GEN_HEATMAP, gr.Checkbox(label="Generate HeatMap")
 
-        with gr.Box():
+        with Box():
             with gr.Column():
                 inp += go.GEN_SIMPLE_MESH, gr.Checkbox(label="Generate simple 3D mesh")
             with gr.Column(visible=False) as mesh_options:
@@ -139,7 +146,7 @@ def main_ui_panel(is_depth_tab):
                     inp += go.SIMPLE_MESH_SPHERICAL, gr.Checkbox(label="Equirectangular projection")
 
         if is_depth_tab:
-            with gr.Box():
+            with Box():
                 with gr.Column():
                     inp += go.GEN_INPAINTED_MESH, gr.Checkbox(
                         label="Generate 3D inpainted mesh")
@@ -149,7 +156,7 @@ def main_ui_panel(is_depth_tab):
                         label="Generate 4 demo videos with 3D inpainted mesh.")
                     gr.HTML("More options for generating video can be found in the Generate video tab.")
 
-        with gr.Box():
+        with Box():
             # TODO: it should be clear from the UI that there is an option of the background removal
             #  that does not use the model selected above
             with gr.Row():
@@ -163,7 +170,7 @@ def main_ui_panel(is_depth_tab):
                         label="Rembg Model", type="value",
                         choices=['u2net', 'u2netp', 'u2net_human_seg', 'silueta', "isnet-general-use", "isnet-anime"])
 
-        with gr.Box():
+        with Box():
             gr.HTML(f"{SCRIPT_FULL_NAME}<br/>")
             gr.HTML("Information, comment and share @ <a "
                     "href='https://github.com/thygate/stable-diffusion-webui-depthmap-script'>"
@@ -171,25 +178,41 @@ def main_ui_panel(is_depth_tab):
 
         def update_default_net_size(model_type):
             w, h = ModelHolder.get_default_net_size(model_type)
-            return inp[go.NET_WIDTH].update(value=w), inp[go.NET_HEIGHT].update(value=h)
-
+            if is_gradio4:
+                return gr.Slider(step=w), gr.Slider(step=h)
+            else:
+                return inp[go.NET_WIDTH].update(value=w), inp[go.NET_HEIGHT].update(value=h)
+            
         inp[go.MODEL_TYPE].change(
             fn=update_default_net_size,
             inputs=inp[go.MODEL_TYPE],
             outputs=[inp[go.NET_WIDTH], inp[go.NET_HEIGHT]]
         )
+        def update_boost(a, b):
+            if is_gradio4:
+                return (gr.Checkbox(visible= not a), gr.Row(visible = not a and not b ))
+            else:
+                return (inp[go.NET_SIZE_MATCH].update(visible=not a),
+                             options_depend_on_match_size.update(visible=not a and not b))
 
         inp[go.BOOST].change(  # Go boost! Wroom!..
-            fn=lambda a, b: (inp[go.NET_SIZE_MATCH].update(visible=not a),
-                             options_depend_on_match_size.update(visible=not a and not b)),
+            fn=update_boost,
             inputs=[inp[go.BOOST], inp[go.NET_SIZE_MATCH]],
             outputs=[inp[go.NET_SIZE_MATCH], options_depend_on_match_size]
         )
         inp.add_rule(options_depend_on_match_size, 'visible-if-not', go.NET_SIZE_MATCH)
+        
+        def update_tiling(a):
+            if is_gradio4:
+                if a:
+                    return (gr.Checkbox(value=False),  gr.Checkbox(value= True))
+                return (inp[go.BOOST], inp[go.NET_SIZE_MATCH])
+            else:
+                (inp[go.BOOST].update(value=False), inp[go.NET_SIZE_MATCH].update(value=True)
+                    ) if a else (inp[go.BOOST].update(), inp[go.NET_SIZE_MATCH].update())
+        
         inp[go.TILING_MODE].change(  # Go boost! Wroom!..
-            fn=lambda a: (
-                inp[go.BOOST].update(value=False), inp[go.NET_SIZE_MATCH].update(value=True)
-            ) if a else (inp[go.BOOST].update(), inp[go.NET_SIZE_MATCH].update()),
+            fn= update_tiling,
             inputs=[inp[go.TILING_MODE]],
             outputs=[inp[go.BOOST], inp[go.NET_SIZE_MATCH]]
         )
@@ -248,13 +271,13 @@ def depthmap_mode_video(inp):
                   "pick settings so that the generation is not too slow. For the best results, "
                   "use a zoedepth model, since they provide the highest level of coherency between frames.")
     inp += gr.File(elem_id='depthmap_vm_input', label="Video or animated file",
-                   file_count="single", interactive=True, type="file")
+                   file_count="single", interactive=True, type="binary")
     inp += gr.Checkbox(elem_id="depthmap_vm_custom_checkbox",
                        label="Use custom/pregenerated DepthMap video", value=False)
     inp += gr.Dropdown(elem_id="depthmap_vm_smoothening_mode", label="Smoothening",
                        type="value", choices=['none', 'experimental'], value='experimental')
     inp += gr.File(elem_id='depthmap_vm_custom', file_count="single",
-                   interactive=True, type="file", visible=False)
+                   interactive=True, type="binary", visible=False)
     with gr.Row():
         inp += gr.Checkbox(elem_id='depthmap_vm_compress_checkbox', label="Compress colorvideos?", value=False)
         inp += gr.Slider(elem_id='depthmap_vm_compress_bitrate', label="Bitrate (kbit)", visible=False,
@@ -287,11 +310,11 @@ def on_ui_tabs():
                                                 elem_id="depthmap_input_image")
                                 # TODO: depthmap generation settings should disappear when using this
                                 inp += gr.File(label="Custom DepthMap", file_count="single", interactive=True,
-                                               type="file", elem_id='custom_depthmap_img', visible=False)
+                                               type="binary", elem_id='custom_depthmap_img', visible=False)
                         inp += gr.Checkbox(elem_id="custom_depthmap", label="Use custom DepthMap", value=False)
                     with gr.TabItem('Batch Process') as depthmap_mode_1:
                         inp += gr.File(elem_id='image_batch', label="Batch Process", file_count="multiple",
-                                       interactive=True, type="file")
+                                       interactive=True, type="binary")
                     with gr.TabItem('Batch from Directory') as depthmap_mode_2:
                         inp += gr.Textbox(elem_id="depthmap_batch_input_dir", label="Input directory",
                                           **backbone.get_hide_dirs(),
@@ -370,12 +393,20 @@ def on_ui_tabs():
         depthmap_mode_2.select(lambda: '2', None, inp['depthmap_mode'])
         depthmap_mode_3.select(lambda: '3', None, inp['depthmap_mode'])
 
+        is_gradio4 = int(gr.__version__[0])>3
         def custom_depthmap_change_fn(mode, zero_on, three_on):
             hide = mode == '0' and zero_on or mode == '3' and three_on
-            return inp['custom_depthmap_img'].update(visible=hide), \
-                inp['depthmap_gen_row_0'].update(visible=not hide), \
-                inp['depthmap_gen_row_1'].update(visible=not hide), \
-                inp['depthmap_gen_row_3'].update(visible=not hide), not hide
+            if is_gradio4:
+                return gr.Row(visible=hide), \
+                    gr.Group(visible = not hide), \
+                    gr.Group(visible = not hide), \
+                    gr.Group(visible = not hide), not hide
+            else:
+                return inp['custom_depthmap_img'].update(visible=hide), \
+                    inp['depthmap_gen_row_0'].update(visible=not hide), \
+                    inp['depthmap_gen_row_1'].update(visible=not hide), \
+                    inp['depthmap_gen_row_3'].update(visible=not hide), not hide
+
         custom_depthmap_change_els = ['depthmap_mode', 'custom_depthmap', 'depthmap_vm_custom_checkbox']
         for el in custom_depthmap_change_els:
             inp[el].change(

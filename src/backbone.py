@@ -60,21 +60,39 @@ try:
 
     def unload_sd_model():
         from modules import shared, devices
-        if shared.sd_model is not None:
-            if shared.sd_model.cond_stage_model is not None:
-                shared.sd_model.cond_stage_model.to(devices.cpu)
-            if shared.sd_model.first_stage_model is not None:
-                shared.sd_model.first_stage_model.to(devices.cpu)
+        try:
+            if shared.sd_model is not None:
+                if shared.sd_model.cond_stage_model is not None:
+                    shared.sd_model.cond_stage_model.to(devices.cpu)
+                if shared.sd_model.first_stage_model is not None:
+                    shared.sd_model.first_stage_model.to(devices.cpu)
+        except Exception as e:
+            from backend import memory_management
+            print('trying to catch forge (might be a attribute error)')
+            if type(e)== AttributeError:
+                memory_management.unload_all_models()
+                memory_management.soft_empty_cache()
+            else:
+                raise
         # Maybe something else???
 
 
     def reload_sd_model():
         from modules import shared, devices
-        if shared.sd_model is not None:
-            if shared.sd_model.cond_stage_model is not None:
-                shared.sd_model.cond_stage_model.to(devices.device)
-            if shared.sd_model.first_stage_model:
-                shared.sd_model.first_stage_model.to(devices.device)
+        try:
+            if shared.sd_model is not None:
+                if shared.sd_model.cond_stage_model is not None:
+                    shared.sd_model.cond_stage_model.to(devices.device)
+                if shared.sd_model.first_stage_model:
+                    shared.sd_model.first_stage_model.to(devices.device)
+        except Exception as e:
+            from backend import memory_management
+            print('trying to catch forge (might be a attribute error)')
+            if type(e)== AttributeError:
+                memory_management.unload_all_models()
+                memory_management.soft_empty_cache()
+            else:
+                raise
         # Maybe something else???
 
     def get_hide_dirs():
